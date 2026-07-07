@@ -8,6 +8,7 @@ const EMPTY_MARK := "empty"
 const PIECE_MARK := "piece"
 const BLOCKED_MARK := "blocked"
 const HINT_MARK := "hint"
+const KING_MARK := "king"
 
 var rows := 6
 var cols := 6
@@ -189,8 +190,8 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 	draw_style_box(box, rect)
 
 	var state: String = cell_states[row][col]
-	if state == PIECE_MARK or state == HINT_MARK:
-		_draw_piece(rect, cell_size, state == HINT_MARK)
+	if state == PIECE_MARK or state == HINT_MARK or state == KING_MARK:
+		_draw_piece(rect, cell_size, state == HINT_MARK, state == KING_MARK)
 	elif state == BLOCKED_MARK:
 		_draw_blocked(rect, cell_size)
 
@@ -203,9 +204,11 @@ func _guide_kind(cell_key: Vector2i) -> String:
 	return str(value)
 
 
-func _draw_piece(rect: Rect2, cell_size: float, is_hint: bool) -> void:
+func _draw_piece(rect: Rect2, cell_size: float, is_hint: bool, is_king: bool = false) -> void:
 	if is_hint:
 		draw_circle(rect.get_center(), cell_size * 0.35, Color(1.0, 0.84, 0.35, 0.34))
+	if is_king:
+		draw_circle(rect.get_center(), cell_size * 0.35, Color(1.0, 0.84, 0.35, 0.36))
 	var font := ThemeDB.fallback_font
 	var font_size := int(cell_size * (0.55 + pulse_strength * 0.05))
 	var baseline := rect.position.y + rect.size.y * 0.69

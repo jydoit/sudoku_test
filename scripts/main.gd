@@ -867,6 +867,7 @@ func _load_level(index: int, allow_resume: bool = false) -> void:
 		is_completed = resume_completed
 	else:
 		cell_states = _blank_states(rows, cols)
+	_apply_king_position_to_state()
 
 	level_label.text = "关卡 %d" % int(current_level["levelId"])
 	if help_button:
@@ -883,7 +884,7 @@ func _load_level(index: int, allow_resume: bool = false) -> void:
 	if hint_button:
 		hint_button.show()
 	_update_level_picker()
-	coach_label.text = str(current_level.get("tutorial", "放置全部皇冠，满足四条规则。"))
+	coach_label.text = _level_coach_text()
 	coach_label.add_theme_color_override("font_color", Color("#72552B"))
 	if progress_bar:
 		progress_bar.max_value = int(current_level["targetCount"])
@@ -896,11 +897,46 @@ func _load_level(index: int, allow_resume: bool = false) -> void:
 	_save_game()
 
 
+func _level_coach_text() -> String:
+	var king_info := str(current_level.get("kingInfo", "")).strip_edges()
+	if king_info != "":
+		return king_info
+	return str(current_level.get("tutorial", "放置全部皇冠，满足行、列、颜色区域和相邻规则。"))
+
+
+func _apply_king_position_to_state() -> void:
+	var king := _king_position()
+	if king.x >= 0:
+		cell_states[king.y][king.x] = "king"
+
+
+func _king_position() -> Vector2i:
+	if in_tutorial:
+		return Vector2i(-1, -1)
+	var raw = current_level.get("kingPosition", [])
+	if not (raw is Array) or raw.size() < 2:
+		return Vector2i(-1, -1)
+	var row := int(raw[0])
+	var col := int(raw[1])
+	if row < 0 or row >= int(current_level.get("rows", 0)) or col < 0 or col >= int(current_level.get("cols", 0)):
+		return Vector2i(-1, -1)
+	return Vector2i(col, row)
+
+
+func _is_king_cell(row: int, col: int) -> bool:
+	var king := _king_position()
+	return king.x == col and king.y == row
+
+
+func _is_piece_state(state: String) -> bool:
+	return state == "piece" or state == "hint" or state == "king"
+
+
 func _on_cell_pressed(row: int, col: int) -> void:
 	if in_tutorial:
 		_on_tutorial_cell_pressed(row, col)
 		return
-	if is_completed:
+	if is_completed or _is_king_cell(row, col):
 		return
 	active_hint_step.clear()
 	active_hint_stage = 0
@@ -938,10 +974,11 @@ func _clear_board() -> void:
 	if in_tutorial:
 		_use_tutorial_clear()
 		return
-	if is_completed or _piece_positions().is_empty() and not _has_blocked_cells():
+	if is_completed or _clearable_marks_empty():
 		return
 	_push_history()
 	cell_states = _blank_states(int(current_level["rows"]), int(current_level["cols"]))
+	_apply_king_position_to_state()
 	active_hint_step.clear()
 	active_hint_stage = 0
 	board.set_states(cell_states)
@@ -994,7 +1031,7 @@ func _validate_and_update(allow_completion: bool) -> void:
 	if progress_label:
 		progress_label.text = "%d / %d" % [pieces.size(), int(current_level["targetCount"])]
 	undo_button.disabled = move_history.is_empty()
-	clear_button.disabled = pieces.is_empty() and not _has_blocked_cells()
+	clear_button.disabled = _clearable_marks_empty()
 
 	if not conflicts.is_empty() and immediate_errors:
 		coach_label.text = "有冲突：红色格子违反了行、列、区域或相邻规则。"
@@ -1002,7 +1039,7 @@ func _validate_and_update(allow_completion: bool) -> void:
 		if allow_completion:
 			Input.vibrate_handheld(35)
 	else:
-		coach_label.text = str(current_level.get("tutorial", "放置全部皇冠，满足四条规则。"))
+		coach_label.text = _level_coach_text()
 		coach_label.add_theme_color_override("font_color", Color("#72552B"))
 
 	if allow_completion and pieces.size() == int(current_level["targetCount"]) and conflicts.is_empty():
@@ -1551,7 +1588,7 @@ func _hint_step_still_relevant(step: Dictionary) -> bool:
 	if target.x < 0:
 		return false
 	var state: String = cell_states[target.y][target.x]
-	return state != "piece" and state != "hint"
+	return not _is_piece_state(state)
 
 
 func _build_staged_hint(step: Dictionary, stage: int) -> Dictionary:
@@ -1671,7 +1708,7 @@ func _excluded_cells_in_cells(cells: Array[Vector2i]) -> Array[Dictionary]:
 		var state: String = cell_states[cell.y][cell.x]
 		if state == "blocked":
 			result.append({"cell": cell, "reason": "已标 X"})
-		elif state == "piece" or state == "hint":
+		elif _is_piece_state(state):
 			result.append({"cell": cell, "reason": "已有皇冠"})
 		else:
 			var reason := _first_conflict_reason(cell)
@@ -1805,7 +1842,7 @@ func _single_candidate_message(unit_name: String, position: Vector2i, unit_cells
 		var state: String = cell_states[cell.y][cell.x]
 		if state == "blocked":
 			blocked += 1
-		elif state == "piece" or state == "hint":
+		elif _is_piece_state(state):
 			occupied += 1
 		elif _first_conflict_reason(cell) != "":
 			conflict += 1
@@ -1902,21 +1939,21 @@ func _region_ids() -> Array[int]:
 
 func _row_has_piece(row: int) -> bool:
 	for col in range(int(current_level["cols"])):
-		if cell_states[row][col] == "piece" or cell_states[row][col] == "hint":
+		if _is_piece_state(str(cell_states[row][col])):
 			return true
 	return false
 
 
 func _col_has_piece(col: int) -> bool:
 	for row in range(int(current_level["rows"])):
-		if cell_states[row][col] == "piece" or cell_states[row][col] == "hint":
+		if _is_piece_state(str(cell_states[row][col])):
 			return true
 	return false
 
 
 func _region_has_piece(region_id: int) -> bool:
 	for cell in _region_cells(region_id):
-		if cell_states[cell.y][cell.x] == "piece" or cell_states[cell.y][cell.x] == "hint":
+		if _is_piece_state(str(cell_states[cell.y][cell.x])):
 			return true
 	return false
 
@@ -1925,7 +1962,7 @@ func _piece_positions() -> Array:
 	var result: Array = []
 	for row in range(cell_states.size()):
 		for col in range(cell_states[row].size()):
-			if cell_states[row][col] == "piece" or cell_states[row][col] == "hint":
+			if _is_piece_state(str(cell_states[row][col])):
 				result.append(Vector2i(col, row))
 	return result
 
@@ -1935,6 +1972,15 @@ func _has_blocked_cells() -> bool:
 		if row.has("blocked"):
 			return true
 	return false
+
+
+func _clearable_marks_empty() -> bool:
+	for row in range(cell_states.size()):
+		for col in range(cell_states[row].size()):
+			var state: String = cell_states[row][col]
+			if state == "blocked" or state == "piece" or state == "hint":
+				return false
+	return true
 
 
 

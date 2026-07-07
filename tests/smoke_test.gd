@@ -29,9 +29,18 @@ func _run() -> void:
 
 	for level in game.levels:
 		_validate_solution(level)
+	for index in range(9):
+		assert(str(game.levels[index].get("kingInfo", "")).begins_with("国王提示："), "First nine levels should include king guidance copy")
+		assert(game.levels[index].get("kingPosition", []).size() == 2, "First nine levels should include an opening king position")
+	assert(str(game.levels[9].get("kingInfo", "")) == "", "Level 10 should not use the first-nine king guidance copy")
+	assert(game.levels[9].get("kingPosition", []).is_empty(), "Level 10 should not start with a king position")
 
 	game.immediate_errors = true
 	game._load_level(0)
+	assert(str(game.coach_label.text).begins_with("国王提示："), "Level 1 should display king guidance in the coach area")
+	var king_position: Array = game.current_level["kingPosition"]
+	assert(game.cell_states[int(king_position[0])][int(king_position[1])] == "king", "Level 1 should show a fixed king at the opening position")
+	assert(game._piece_positions().size() == 1, "Opening king should count as an existing piece")
 	game._on_cell_pressed(0, 0)
 	assert(game.cell_states[0][0] == "blocked", "First tap must place an exclusion mark")
 	game._on_cell_pressed(0, 0)
@@ -42,14 +51,15 @@ func _run() -> void:
 	game._undo()
 	assert(game._piece_positions().size() == 1, "Undo must restore the previous board")
 	game._clear_board()
-	assert(game._piece_positions().is_empty(), "Clear must remove pieces")
+	assert(game._piece_positions().size() == 1, "Clear must keep the fixed opening king")
+	assert(game.cell_states[int(king_position[0])][int(king_position[1])] == "king", "Clear must not remove the fixed king")
 
 	game.hint_count = 3
 	game._update_hint_button()
 	var coins_before: int = game.coin_count
 	var hints_before: int = game.hint_count
 	game._use_hint()
-	assert(game._piece_positions().is_empty(), "Hint should teach without placing a piece")
+	assert(game._piece_positions().size() == 1, "Hint should teach without placing a new piece")
 	assert(game.board.guide_cells.size() >= 1, "Hint must highlight the best next reasoning step")
 	assert(str(game.coach_label.text).length() >= 20, "Hint must explain why this step is useful now")
 	assert(game.hint_count == hints_before - 1, "Hint must consume one available use")
