@@ -23,7 +23,19 @@ func _run() -> void:
 	assert(game.levels.size() >= 50, "MVP should include 50 default levels")
 	assert(game.home_screen != null, "Home screen should exist")
 	assert(game.game_screen != null, "Game screen should exist")
+	game.tutorial_completed = true
+	game.tutorial_started = false
+	if game.tutorial_resume_dialog:
+		game.tutorial_resume_dialog.hide()
+	game._load_level(0)
 	game._show_game()
+	assert(game.level_select_button != null, "Level screen should expose level selection")
+	game._open_level_select()
+	assert(game.level_select_dialog.visible, "Level selection dialog should open")
+	assert(game.level_select_picker.get_item_count() == game.levels.size(), "Level selection should list all levels")
+	game.level_select_picker.select(1)
+	game._confirm_level_select()
+	assert(int(game.current_level["levelId"]) == int(game.levels[1]["levelId"]), "Level selection should enter the selected level")
 	await process_frame
 	assert(game.board != null and game.board.size.x >= 400.0, "Board must render at a mobile-friendly size")
 
@@ -44,13 +56,30 @@ func _run() -> void:
 	game._on_cell_pressed(0, 0)
 	assert(game.cell_states[0][0] == "blocked", "First tap must place an exclusion mark")
 	game._on_cell_pressed(0, 0)
-	assert(game.cell_states[0][0] == "piece", "Second tap must place a piece")
-	game._on_cell_pressed(0, 1)
-	game._on_cell_pressed(0, 1)
-	assert(game.board.error_cells.size() == 2, "Two pieces in one row must conflict")
+	assert(game.cell_states[0][0] == "empty", "Second tap must cancel an exclusion mark")
+	var drag_cells := _first_two_editable_cells(game)
+	var drag_start: Vector2i = drag_cells[0]
+	var drag_next: Vector2i = drag_cells[1]
+	game._on_cell_drag_started(drag_start.y, drag_start.x)
+	game._on_cell_dragged(drag_next.y, drag_next.x)
+	game._on_cell_drag_ended()
+	assert(game.cell_states[drag_start.y][drag_start.x] == "blocked" and game.cell_states[drag_next.y][drag_next.x] == "blocked", "Drag from empty cells must mark X")
+	game._on_cell_drag_started(drag_start.y, drag_start.x)
+	game._on_cell_dragged(drag_next.y, drag_next.x)
+	game._on_cell_drag_ended()
+	assert(game.cell_states[drag_start.y][drag_start.x] == "empty" and game.cell_states[drag_next.y][drag_next.x] == "empty", "Drag from X cells must erase X")
+	var solution_cell: Array = _first_editable_solution_cell(game)
+	game._on_cell_double_pressed(int(solution_cell[0]), int(solution_cell[1]))
+	assert(game.cell_states[int(solution_cell[0])][int(solution_cell[1])] == "piece", "Double tap on the answer must place a crown")
+	var wrong_cell := Vector2i(0, 0)
+	while game._is_solution_cell(wrong_cell.y, wrong_cell.x):
+		wrong_cell.x += 1
+	game._on_cell_double_pressed(wrong_cell.y, wrong_cell.x)
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Wrong double tap must leave a red X")
 	game._undo()
-	assert(game._piece_positions().size() == 1, "Undo must restore the previous board")
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Wrong red X must not be undoable")
 	game._clear_board()
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Wrong red X must not be clearable")
 	assert(game._piece_positions().size() == 1, "Clear must keep the fixed opening king")
 	assert(game.cell_states[int(king_position[0])][int(king_position[1])] == "king", "Clear must not remove the fixed king")
 
@@ -67,8 +96,7 @@ func _run() -> void:
 
 	game._load_level(0)
 	for coordinate in game.current_level["solution"]:
-		game._on_cell_pressed(int(coordinate[0]), int(coordinate[1]))
-		game._on_cell_pressed(int(coordinate[0]), int(coordinate[1]))
+		game._on_cell_double_pressed(int(coordinate[0]), int(coordinate[1]))
 	assert(game.is_completed, "A valid solution must complete the level")
 
 	await create_timer(0.8).timeout
@@ -77,6 +105,26 @@ func _run() -> void:
 	_restore_save(had_save, previous_save)
 	print("SMOKE TEST PASSED: levels, conflicts, undo, clear, hint and completion")
 	quit()
+
+
+func _first_two_editable_cells(game) -> Array:
+	var result: Array = []
+	for row in range(int(game.current_level["rows"])):
+		for col in range(int(game.current_level["cols"])):
+			if game._is_king_cell(row, col):
+				continue
+			if str(game.cell_states[row][col]) == "empty":
+				result.append(Vector2i(col, row))
+				if result.size() == 2:
+					return result
+	return result
+
+
+func _first_editable_solution_cell(game) -> Array:
+	for coordinate in game.current_level["solution"]:
+		if not game._is_king_cell(int(coordinate[0]), int(coordinate[1])):
+			return coordinate
+	return game.current_level["solution"][0]
 
 
 func _validate_solution(level: Dictionary) -> void:
