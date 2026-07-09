@@ -2,10 +2,12 @@ extends Control
 
 const LevelStoreScript = preload("res://scripts/level_store.gd")
 const GameBoardScript = preload("res://scripts/game_board.gd")
+const LevelDirectorScript = preload("res://scripts/level_director.gd")
 const SAVE_PATH := "user://color_queens_save.json"
-const SAVE_VERSION := 3
+const SAVE_VERSION := 4
 const HINT_COST := 5
 const INITIAL_HINT_COUNT := 3
+const INITIAL_HEART_COUNT := 3
 const WIN_REWARD := 10
 const INK := Color("#26334A")
 const MUTED := Color("#718096")
@@ -58,16 +60,24 @@ const TUTORIAL_LEVELS = [
 
 var levels: Array = []
 var current_level_index := 0
+var player_level_number := 1
 var current_level: Dictionary = {}
+var active_schedule: Dictionary = {}
+var active_king_positions: Array = []
 var cell_states: Array = []
 var move_history: Array = []
 var completed_levels: Array = []
+var director_progress: Dictionary = {}
 var coin_count := 55
+var heart_count := INITIAL_HEART_COUNT
 var hint_count := INITIAL_HINT_COUNT
 var immediate_errors := true
 var is_completed := false
 var active_hint_step: Dictionary = {}
 var active_hint_stage := 0
+var run_started_unix := 0
+var run_move_count := 0
+var run_hint_count := 0
 var resume_level_id := -1
 var resume_states: Array = []
 var resume_completed := false
@@ -122,6 +132,7 @@ var toast_label: Label
 var tutorial_center_popup: Label
 var tutorial_hand_label: Label
 var help_dialog: AcceptDialog
+var heart_dialog: AcceptDialog
 var tutorial_skip_dialog: ConfirmationDialog
 var tutorial_resume_dialog: ConfirmationDialog
 var toast_tween: Tween
@@ -130,6 +141,7 @@ var tutorial_hand_tween: Tween
 var drag_mode := ""
 var drag_changed := false
 var drag_cells := {}
+var opening_king_reveal_pending := false
 
 
 
@@ -141,7 +153,9 @@ func _ready() -> void:
 	_load_save()
 	_build_ui()
 	current_level_index = clampi(current_level_index, 0, levels.size() - 1)
-	_load_level(current_level_index, true)
+	var resume_schedule := _schedule_for_current_level()
+	current_level_index = int(resume_schedule.get("levelIndex", current_level_index))
+	_load_level(current_level_index, true, resume_schedule)
 	if tutorial_completed:
 		_show_home()
 	elif tutorial_started:
@@ -169,6 +183,7 @@ func _build_ui() -> void:
 	_build_tutorial_center_popup()
 	_build_tutorial_hand_pointer()
 	_build_level_select_dialog()
+	_build_heart_dialog()
 	_build_tutorial_dialogs()
 
 
@@ -223,7 +238,7 @@ func _build_home_top_resources() -> Control:
 	home_coin_label = _resource_label("●  %d" % coin_count, Color("#E6A63A"))
 	bar.add_child(home_coin_label)
 
-	home_heart_label = _resource_label("♥  3", Color("#F06B78"))
+	home_heart_label = _resource_label("♥  %d" % heart_count, Color("#F06B78"))
 	bar.add_child(home_heart_label)
 
 	home_star_label = _resource_label("★  %d" % completed_levels.size(), Color("#5D74D9"))
@@ -384,7 +399,7 @@ func _build_home_resource_bar() -> Control:
 	home_coin_label = _resource_label("●  %d" % coin_count, Color("#E6A63A"))
 	row.add_child(home_coin_label)
 
-	home_heart_label = _resource_label("♥  3", Color("#F06B78"))
+	home_heart_label = _resource_label("♥  %d" % heart_count, Color("#F06B78"))
 	row.add_child(home_heart_label)
 
 	var spacer := Control.new()
@@ -807,10 +822,18 @@ func _build_tutorial_hand_pointer() -> void:
 func _build_help_dialog() -> void:
 	help_dialog = AcceptDialog.new()
 	help_dialog.title = "怎么玩"
-	help_dialog.dialog_text = "找出全部皇冠，并同时满足：\n\n• 每一行只有一个皇冠\n• 每一列只有一个皇冠\n• 每个颜色区域只有一个皇冠\n• 皇冠不能八方向相邻\n\n单击空格标记 X，再次单击取消 X；双击空格尝试找皇冠，点错会留下不可撤回的红色 X。"
+	help_dialog.dialog_text = "找出全部皇冠，并同时满足：\n\n• 每一行只有一个皇冠\n• 每一列只有一个皇冠\n• 每个颜色区域只有一个皇冠\n• 皇冠不能八方向相邻\n\n单击空格标记 X，再次单击取消 X；双击空格放置皇冠。若皇冠与已有皇冠发生规则冲突，会消耗 1 点体力。"
 	help_dialog.ok_button_text = "知道了"
 	help_dialog.unresizable = true
 	add_child(help_dialog)
+
+
+func _build_heart_dialog() -> void:
+	heart_dialog = AcceptDialog.new()
+	heart_dialog.title = "体力提示"
+	heart_dialog.ok_button_text = "知道了"
+	heart_dialog.unresizable = true
+	add_child(heart_dialog)
 
 
 func _build_tutorial_dialogs() -> void:
@@ -858,16 +881,42 @@ func _build_level_select_dialog() -> void:
 	_refresh_level_select_picker()
 
 
+func _schedule_for_current_level() -> Dictionary:
+	_sync_director_completed_levels()
+	if not active_schedule.is_empty():
+		var schedule_index := int(active_schedule.get("levelIndex", current_level_index))
+		if schedule_index >= 0 and schedule_index < levels.size():
+			if int(active_schedule.get("displayLevel", player_level_number)) == player_level_number:
+				return active_schedule
+	return LevelDirectorScript.schedule_for_display_level(levels, player_level_number, director_progress)
 
-func _load_level(index: int, allow_resume: bool = false) -> void:
+
+
+func _schedule_for_manual_level(index: int) -> Dictionary:
+	var display := index + 1 if index < LevelDirectorScript.FIXED_OPENING_COUNT else player_level_number
+	var mode := "fixed" if index < LevelDirectorScript.FIXED_OPENING_COUNT else "manual"
+	return LevelDirectorScript.manual_schedule_for_level(levels, index, maxi(1, display), mode)
+
+
+func _sync_director_completed_levels() -> void:
+	LevelDirectorScript.normalize_progress(director_progress)
+	director_progress["completedLevelIds"] = completed_levels.duplicate()
+
+
+func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = {}) -> void:
 	in_tutorial = false
 	_hide_tutorial_hand()
 	if tutorial_skip_button:
 		tutorial_skip_button.hide()
 	if level_picker:
 		level_picker.disabled = false
-	current_level_index = index
-	current_level = levels[index]
+	if schedule.is_empty():
+		schedule = _schedule_for_manual_level(index)
+	active_schedule = schedule.duplicate(true)
+	current_level_index = int(active_schedule.get("levelIndex", index))
+	current_level_index = clampi(current_level_index, 0, levels.size() - 1)
+	player_level_number = maxi(1, int(active_schedule.get("displayLevel", player_level_number)))
+	current_level = levels[current_level_index]
 	is_completed = false
 	active_hint_step.clear()
 	active_hint_stage = 0
@@ -876,14 +925,20 @@ func _load_level(index: int, allow_resume: bool = false) -> void:
 
 	var rows := int(current_level["rows"])
 	var cols := int(current_level["cols"])
-	if allow_resume and resume_level_id == int(current_level["levelId"]) and _states_match_size(resume_states, rows, cols):
+	if allow_resume and _can_restore_saved_level(rows, cols):
 		cell_states = resume_states.duplicate(true)
 		is_completed = resume_completed
+		if run_started_unix <= 0:
+			run_started_unix = int(Time.get_unix_time_from_system())
 	else:
 		cell_states = _blank_states(rows, cols)
-	_apply_king_position_to_state()
+		run_started_unix = int(Time.get_unix_time_from_system())
+		run_move_count = 0
+		run_hint_count = 0
+	_update_active_king_positions()
+	_apply_king_positions_to_state()
 
-	level_label.text = "关卡 %d" % int(current_level["levelId"])
+	level_label.text = _display_level_title()
 	if help_button:
 		help_button.show()
 	if completion_next_button:
@@ -904,6 +959,7 @@ func _load_level(index: int, allow_resume: bool = false) -> void:
 		progress_bar.max_value = int(current_level["targetCount"])
 	board.set_level(current_level, cell_states, REGION_COLORS)
 	_validate_and_update(false)
+	_request_opening_king_reveal()
 	_update_home()
 	if is_completed:
 		reward_label.text = "本关已完成 · 继续挑战下一关"
@@ -911,23 +967,72 @@ func _load_level(index: int, allow_resume: bool = false) -> void:
 	_save_game()
 
 
+func _can_restore_saved_level(rows: int, cols: int) -> bool:
+	if resume_level_id != int(current_level["levelId"]):
+		return false
+	if not _states_match_size(resume_states, rows, cols):
+		return false
+	var display := int(active_schedule.get("displayLevel", player_level_number))
+	if not resume_completed and display <= LevelDirectorScript.FIXED_OPENING_COUNT:
+		return false
+	return true
+
+
+func _request_opening_king_reveal() -> void:
+	var display := int(active_schedule.get("displayLevel", player_level_number))
+	if display > 9:
+		opening_king_reveal_pending = false
+		return
+	if str(active_schedule.get("mode", "")) != "fixed":
+		opening_king_reveal_pending = false
+		return
+	if active_king_positions.is_empty():
+		opening_king_reveal_pending = false
+		return
+	opening_king_reveal_pending = true
+	_play_pending_opening_king_reveal()
+
+
+func _play_pending_opening_king_reveal() -> void:
+	if not opening_king_reveal_pending:
+		return
+	if not game_screen or not game_screen.visible:
+		return
+	if not board or active_king_positions.is_empty():
+		return
+	opening_king_reveal_pending = false
+	board.call_deferred("play_king_reveal", active_king_positions.duplicate())
+
+
 func _level_coach_text() -> String:
 	var king_info := str(current_level.get("kingInfo", "")).strip_edges()
+	var prefix := "难度挑战： " if bool(active_schedule.get("isMilestoneChallenge", false)) else ""
 	if king_info != "":
-		return king_info
-	return str(current_level.get("tutorial", "放置全部皇冠，满足行、列、颜色区域和相邻规则。"))
+		return prefix + king_info
+	return prefix + str(current_level.get("tutorial", "放置全部皇冠，满足行、列、颜色区域和相邻规则。"))
 
 
-func _apply_king_position_to_state() -> void:
-	var king := _king_position()
-	if king.x >= 0:
-		cell_states[king.y][king.x] = "king"
+func _display_level_title() -> String:
+	if bool(active_schedule.get("isMilestoneChallenge", false)):
+		return "关卡 %d · 难度挑战" % player_level_number
+	return "关卡 %d" % player_level_number
 
 
-func _king_position() -> Vector2i:
+func _update_active_king_positions() -> void:
+	active_king_positions.clear()
 	if in_tutorial:
-		return Vector2i(-1, -1)
-	var raw = current_level.get("kingPosition", [])
+		return
+	var raw_positions = active_schedule.get("kingPositions", [])
+	if not (raw_positions is Array) or raw_positions.is_empty():
+		if current_level.has("kingPosition"):
+			raw_positions = [current_level.get("kingPosition", [])]
+	for raw in raw_positions:
+		var king := _parse_king_position(raw)
+		if king.x >= 0 and not active_king_positions.has(king):
+			active_king_positions.append(king)
+
+
+func _parse_king_position(raw) -> Vector2i:
 	if not (raw is Array) or raw.size() < 2:
 		return Vector2i(-1, -1)
 	var row := int(raw[0])
@@ -937,9 +1042,17 @@ func _king_position() -> Vector2i:
 	return Vector2i(col, row)
 
 
+func _apply_king_positions_to_state() -> void:
+	for king in active_king_positions:
+		if king.x >= 0:
+			cell_states[king.y][king.x] = "king"
+
+
 func _is_king_cell(row: int, col: int) -> bool:
-	var king := _king_position()
-	return king.x == col and king.y == row
+	for king in active_king_positions:
+		if king.x == col and king.y == row:
+			return true
+	return false
 
 
 func _is_piece_state(state: String) -> bool:
@@ -953,7 +1066,7 @@ func _on_cell_pressed(row: int, col: int) -> void:
 	if is_completed or _is_king_cell(row, col):
 		return
 	var state: String = cell_states[row][col]
-	if state == "wrong" or state == "piece" or state == "hint":
+	if state == "hint":
 		return
 	active_hint_step.clear()
 	active_hint_stage = 0
@@ -963,8 +1076,13 @@ func _on_cell_pressed(row: int, col: int) -> void:
 		cell_states[row][col] = "blocked"
 	elif state == "blocked":
 		cell_states[row][col] = "empty"
+	elif state == "piece":
+		cell_states[row][col] = "blocked"
+	elif state == "wrong":
+		cell_states[row][col] = "empty"
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
+	run_move_count += 1
 	_validate_and_update(true)
 	_save_game()
 
@@ -976,20 +1094,23 @@ func _on_cell_double_pressed(row: int, col: int) -> void:
 	if is_completed or _is_king_cell(row, col):
 		return
 	var state: String = cell_states[row][col]
-	if state == "wrong" or state == "piece" or state == "hint":
+	if state == "piece" or state == "hint":
 		return
 	active_hint_step.clear()
 	active_hint_stage = 0
 	board.set_guides({})
-	if _is_solution_cell(row, col):
-		_push_history()
-		cell_states[row][col] = "piece"
-	else:
-		cell_states[row][col] = "wrong"
-	Input.vibrate_handheld(35)
+	_push_history()
+	cell_states[row][col] = "piece"
+	var placed_cell := Vector2i(col, row)
+	var placed_has_conflict := _piece_conflicts_at(placed_cell)
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
 	_validate_and_update(true)
+	if placed_has_conflict:
+		_consume_heart_for_rule_conflict()
+	else:
+		coach_label.text = "已放置皇冠。继续用行、列、颜色区域和相邻规则检查其它位置。"
+		coach_label.add_theme_color_override("font_color", Color("#72552B"))
 	_save_game()
 
 
@@ -1003,7 +1124,7 @@ func _on_cell_drag_started(row: int, col: int) -> void:
 	var state: String = cell_states[row][col]
 	if state == "empty":
 		drag_mode = "mark"
-	elif state == "blocked":
+	elif state == "blocked" or state == "wrong":
 		drag_mode = "erase"
 	else:
 		drag_mode = ""
@@ -1050,7 +1171,7 @@ func _apply_drag_cell(row: int, col: int) -> void:
 	var next_state := state
 	if drag_mode == "mark" and state == "empty":
 		next_state = "blocked"
-	elif drag_mode == "erase" and state == "blocked":
+	elif drag_mode == "erase" and (state == "blocked" or state == "wrong"):
 		next_state = "empty"
 	else:
 		return
@@ -1067,14 +1188,10 @@ func _undo() -> void:
 		return
 	if move_history.is_empty() or is_completed:
 		return
-	var restored: Array = move_history.pop_back()
-	for row in range(cell_states.size()):
-		for col in range(cell_states[row].size()):
-			if cell_states[row][col] == "wrong":
-				restored[row][col] = "wrong"
-	cell_states = restored
+	cell_states = move_history.pop_back()
 	board.set_states(cell_states)
 	_validate_and_update(false)
+	run_move_count += 1
 	_save_game()
 
 
@@ -1085,13 +1202,14 @@ func _clear_board() -> void:
 	if is_completed or _clearable_marks_empty():
 		return
 	_push_history()
-	cell_states = _blank_states_preserving_wrong()
-	_apply_king_position_to_state()
+	cell_states = _blank_states(int(current_level["rows"]), int(current_level["cols"]))
+	_apply_king_positions_to_state()
 	active_hint_step.clear()
 	active_hint_stage = 0
 	board.set_states(cell_states)
 	board.set_guides({})
 	_validate_and_update(false)
+	run_move_count += 1
 	_save_game()
 	_show_toast("棋盘已清空，可撤销恢复")
 
@@ -1125,6 +1243,7 @@ func _use_hint() -> void:
 	coach_label.add_theme_color_override("font_color", Color("#23845C"))
 	_update_coin_label()
 	_update_hint_button()
+	run_hint_count += 1
 	_save_game()
 	_show_toast("已给出当前最优先的一步判断")
 
@@ -1168,6 +1287,10 @@ func _find_conflicts(pieces: Array) -> Dictionary:
 				result[a] = true
 				result[b] = true
 	return result
+
+
+func _piece_conflicts_at(cell: Vector2i) -> bool:
+	return _find_conflicts(_piece_positions()).has(cell)
 
 
 func _build_best_next_hint() -> Dictionary:
@@ -2086,7 +2209,7 @@ func _clearable_marks_empty() -> bool:
 	for row in range(cell_states.size()):
 		for col in range(cell_states[row].size()):
 			var state: String = cell_states[row][col]
-			if state == "blocked" or state == "piece" or state == "hint":
+			if state == "blocked" or state == "piece" or state == "hint" or state == "wrong":
 				return false
 	return true
 
@@ -3202,7 +3325,9 @@ func _finish_tutorial(skipped: bool) -> void:
 	_hide_tutorial_hand()
 	tutorial_step_index = 0
 	tutorial_button_stage = 0
-	_load_level(0)
+	player_level_number = 1
+	active_schedule = LevelDirectorScript.schedule_for_display_level(levels, player_level_number, director_progress)
+	_load_level(int(active_schedule.get("levelIndex", 0)), false, active_schedule)
 	_show_game()
 	_save_game()
 	_show_toast("已跳过教程，进入第 1 关" if skipped else "新手教程完成，进入第 1 关")
@@ -3218,6 +3343,7 @@ func _complete_level() -> void:
 		completed_levels.append(level_id)
 		reward = WIN_REWARD
 		coin_count += reward
+	_record_level_result()
 	_update_coin_label()
 	_update_home()
 	board.play_victory()
@@ -3231,23 +3357,30 @@ func _complete_level() -> void:
 	tween.tween_property(completion_overlay, "modulate:a", 1.0, 0.2)
 
 
+func _record_level_result() -> void:
+	_sync_director_completed_levels()
+	var elapsed := maxf(1.0, float(int(Time.get_unix_time_from_system()) - run_started_unix))
+	LevelDirectorScript.record_completion(director_progress, current_level, active_schedule, elapsed, run_move_count, run_hint_count)
+	_sync_director_completed_levels()
+
+
 func _next_level() -> void:
 	if in_tutorial:
 		_next_tutorial_step()
 		return
-	var next_index := current_level_index + 1
-	if next_index >= levels.size():
-		next_index = 0
-	_load_level(next_index)
-	if next_index == 0:
-		_show_toast("全部体验关卡完成，已回到第一关")
+	player_level_number += 1
+	var next_schedule := LevelDirectorScript.schedule_for_display_level(levels, player_level_number, director_progress)
+	var next_index := int(next_schedule.get("levelIndex", 0))
+	_load_level(next_index, false, next_schedule)
+	if bool(next_schedule.get("isMilestoneChallenge", false)):
+		_show_toast("难度挑战：本关根据最近表现安排")
 
 
 func _replay_level() -> void:
 	if in_tutorial:
 		_start_tutorial_step(tutorial_step_index)
 		return
-	_load_level(current_level_index)
+	_load_level(current_level_index, false, active_schedule)
 
 
 func _on_coin_plus() -> void:
@@ -3310,10 +3443,11 @@ func _open_level_editor() -> void:
 func _on_level_selected(index: int) -> void:
 	if index == current_level_index:
 		return
-	_load_level(index)
+	active_schedule = _schedule_for_manual_level(index)
+	_load_level(index, false, active_schedule)
 	_show_game()
 	_save_game()
-	_show_toast("已切换到关卡 %d" % int(current_level["levelId"]))
+	_show_toast("调试切换：levelId %d" % int(current_level["levelId"]))
 
 
 func _is_solution_cell(row: int, col: int) -> bool:
@@ -3321,15 +3455,6 @@ func _is_solution_cell(row: int, col: int) -> bool:
 		if int(coordinate[0]) == row and int(coordinate[1]) == col:
 			return true
 	return false
-
-
-func _blank_states_preserving_wrong() -> Array:
-	var states := _blank_states(int(current_level["rows"]), int(current_level["cols"]))
-	for row in range(cell_states.size()):
-		for col in range(cell_states[row].size()):
-			if cell_states[row][col] == "wrong":
-				states[row][col] = "wrong"
-	return states
 
 
 func _push_history() -> void:
@@ -3365,18 +3490,28 @@ func _load_save() -> void:
 	if not data is Dictionary:
 		return
 	current_level_index = int(data.get("currentLevelIndex", 0))
+	player_level_number = maxi(1, int(data.get("playerLevelNumber", current_level_index + 1)))
 	coin_count = int(data.get("coinCount", 55))
-	if int(data.get("saveVersion", 1)) >= SAVE_VERSION:
+	if int(data.get("saveVersion", 1)) >= 2:
 		hint_count = maxi(0, int(data.get("hintCount", INITIAL_HINT_COUNT)))
 	else:
 		# Version 1 stored the number of hints used, not the remaining count.
 		hint_count = INITIAL_HINT_COUNT
 	completed_levels.assign(data.get("completedLevels", []))
+	heart_count = maxi(0, int(data.get("heartCount", INITIAL_HEART_COUNT)))
 	for index in range(completed_levels.size()):
 		completed_levels[index] = int(completed_levels[index])
 	resume_level_id = int(data.get("currentLevelId", -1))
 	resume_states = data.get("cellStates", [])
 	resume_completed = bool(data.get("isCompleted", false))
+	var loaded_schedule = data.get("activeSchedule", {})
+	active_schedule = loaded_schedule if loaded_schedule is Dictionary else {}
+	var loaded_progress = data.get("directorProgress", {})
+	director_progress = loaded_progress if loaded_progress is Dictionary else {}
+	LevelDirectorScript.normalize_progress(director_progress)
+	run_started_unix = int(data.get("runStartedUnix", 0))
+	run_move_count = int(data.get("runMoveCount", 0))
+	run_hint_count = int(data.get("runHintCount", 0))
 	immediate_errors = bool(data.get("immediateErrors", true))
 	tutorial_completed = bool(data.get("tutorialCompleted", false))
 	tutorial_started = bool(data.get("tutorialStarted", false))
@@ -3386,11 +3521,19 @@ func _load_save() -> void:
 func _save_game() -> void:
 	if current_level.is_empty():
 		return
+	_sync_director_completed_levels()
 	var data := {
 		"saveVersion": SAVE_VERSION,
 		"currentLevelIndex": current_level_index,
 		"currentLevelId": int(current_level["levelId"]),
+		"playerLevelNumber": player_level_number,
+		"activeSchedule": active_schedule,
+		"directorProgress": director_progress,
+		"runStartedUnix": run_started_unix,
+		"runMoveCount": run_move_count,
+		"runHintCount": run_hint_count,
 		"coinCount": coin_count,
+		"heartCount": heart_count,
 		"completedLevels": completed_levels,
 		"selectedTheme": "crown",
 		"hintCount": hint_count,
@@ -3411,6 +3554,36 @@ func _update_coin_label() -> void:
 		coin_label.text = "●  %d" % coin_count
 	if home_coin_label:
 		home_coin_label.text = "●  %d" % coin_count
+
+
+func _update_heart_label() -> void:
+	if home_heart_label:
+		home_heart_label.text = "♥  %d" % heart_count
+
+
+func _consume_heart_for_rule_conflict() -> void:
+	if heart_count > 0:
+		heart_count -= 1
+	_update_heart_label()
+	_update_home()
+	_show_heart_placeholder()
+
+
+func _show_heart_placeholder() -> void:
+	if not heart_dialog:
+		return
+	if heart_count > 0:
+		heart_dialog.dialog_text = "皇冠违反了行、列、颜色区域或相邻规则，体力 -1。\n\n剩余体力：%d\n\n激励广告恢复体力功能后续接入。" % heart_count
+	else:
+		heart_dialog.dialog_text = "皇冠违反了规则，当前体力已用完。\n\n这里后续会接入激励广告：观看广告恢复体力。"
+	_hide_other_dialogs(heart_dialog)
+	heart_dialog.popup_centered(Vector2i(420, 220))
+
+
+func _hide_other_dialogs(active_dialog: Window) -> void:
+	for dialog in [help_dialog, tutorial_skip_dialog, tutorial_resume_dialog, level_select_dialog]:
+		if dialog and dialog != active_dialog and dialog.visible:
+			dialog.hide()
 
 
 func _update_hint_button() -> void:
@@ -3456,6 +3629,10 @@ func _simulate_new_user_flow() -> void:
 	tutorial_step_index = 0
 	tutorial_interaction_stage = 0
 	current_level_index = 0
+	player_level_number = 1
+	active_schedule.clear()
+	active_king_positions.clear()
+	director_progress.clear()
 	resume_level_id = -1
 	resume_states = []
 	resume_completed = false
@@ -3472,6 +3649,7 @@ func _show_game() -> void:
 	_update_tutorial_button()
 	if board:
 		board.queue_redraw()
+	_play_pending_opening_king_reveal()
 
 
 func _update_tutorial_button() -> void:
@@ -3492,33 +3670,33 @@ func _update_tutorial_button() -> void:
 func _update_home() -> void:
 	if not home_screen or levels.is_empty():
 		return
-	var level_id := int(levels[current_level_index]["levelId"])
-	var area_index := int(current_level_index / 10) + 1
-	var area_start := (area_index - 1) * 10
-	var area_end := mini(area_start + 10, levels.size())
-	var area_completed := 0
-	for index in range(area_start, area_end):
-		if completed_levels.has(int(levels[index]["levelId"])):
-			area_completed += 1
+	var area_index := int((player_level_number - 1) / 10) + 1
+	var area_completed := (player_level_number - 1) % 10
+	if is_completed:
+		area_completed += 1
+	area_completed = clampi(area_completed, 0, 10)
+	var next_title := "下一关：%d" % player_level_number
+	if bool(active_schedule.get("isMilestoneChallenge", false)):
+		next_title += " · 难度挑战"
 
 	if home_coin_label:
 		home_coin_label.text = "●  %d" % coin_count
 	if home_heart_label:
-		home_heart_label.text = "♥  3"
+		home_heart_label.text = "♥  %d" % heart_count
 	if home_star_label:
 		home_star_label.text = "★  %d" % completed_levels.size()
 	if home_level_label:
-		home_level_label.text = "下一关：%d" % level_id
+		home_level_label.text = next_title
 	if home_area_label:
-		home_area_label.text = "第 %d 庭院 · 已修复 %d / %d" % [area_index, area_completed, area_end - area_start]
+		home_area_label.text = "第 %d 庭院 · 进度 %d / 10" % [area_index, area_completed]
 	if home_progress_bar:
-		home_progress_bar.max_value = area_end - area_start
+		home_progress_bar.max_value = 10
 		home_progress_bar.value = area_completed
 	if home_progress_label:
-		home_progress_label.text = "%d / %d" % [area_completed, area_end - area_start]
+		home_progress_label.text = "%d / 10" % area_completed
 	if home_start_button:
 		if tutorial_completed:
-			home_start_button.text = "开始第 %d 关" % level_id
+			home_start_button.text = "开始第 %d 关" % player_level_number
 		elif tutorial_started:
 			home_start_button.text = "继续新手教程"
 		else:

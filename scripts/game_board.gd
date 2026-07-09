@@ -28,6 +28,8 @@ var pulse_strength := 0.0
 var guide_pulse_cell := Vector2i(-1, -1)
 var guide_pulse_cells: Dictionary = {}
 var guide_pulse_strength := 0.0
+var king_reveal_cells: Dictionary = {}
+var king_reveal_strength := 0.0
 var victory_strength := 0.0
 var tutorial_mask_enabled := false
 var tutorial_focus_cell := Vector2i(-1, -1)
@@ -52,6 +54,8 @@ func set_level(level: Dictionary, states: Array, colors: Array) -> void:
 	region_colors = colors
 	error_cells.clear()
 	guide_cells.clear()
+	king_reveal_cells.clear()
+	king_reveal_strength = 0.0
 	tutorial_mask_enabled = false
 	tutorial_focus_cell = Vector2i(-1, -1)
 	victory_strength = 0.0
@@ -103,6 +107,31 @@ func play_guide_feedback_for_cells(cells: Array) -> void:
 	_play_guide_feedback_tween()
 
 
+func play_king_reveal(cells: Array) -> void:
+	king_reveal_cells.clear()
+	king_reveal_strength = 0.0
+	if cells.is_empty():
+		return
+	for cell in cells:
+		if cell is Vector2i:
+			king_reveal_cells[cell] = true
+	var tween := create_tween()
+	tween.tween_interval(0.16)
+	tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_method(_set_king_reveal, 0.0, 1.0, 0.18)
+	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tween.tween_method(_set_king_reveal, 1.0, 0.18, 0.16)
+	tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_method(_set_king_reveal, 0.18, 1.0, 0.16)
+	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tween.tween_method(_set_king_reveal, 1.0, 0.0, 0.28)
+	tween.finished.connect(func() -> void:
+		king_reveal_cells.clear()
+		king_reveal_strength = 0.0
+		queue_redraw()
+	)
+
+
 func _play_guide_feedback_tween() -> void:
 	var tween := create_tween()
 	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
@@ -126,6 +155,11 @@ func _set_pulse(value: float) -> void:
 
 func _set_guide_pulse(value: float) -> void:
 	guide_pulse_strength = value
+	queue_redraw()
+
+
+func _set_king_reveal(value: float) -> void:
+	king_reveal_strength = value
 	queue_redraw()
 
 
@@ -240,10 +274,14 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 	var gap := maxf(3.0, cell_size * 0.045)
 	var rect := Rect2(origin + Vector2(col, row) * cell_size + Vector2.ONE * gap, Vector2.ONE * (cell_size - gap * 2.0))
 	var cell_key := Vector2i(col, row)
+	var state: String = cell_states[row][col]
 	if cell_key == pulse_cell:
 		rect = rect.grow(cell_size * 0.045 * pulse_strength)
 	if guide_pulse_cells.has(cell_key) or cell_key == guide_pulse_cell:
 		rect = rect.grow(cell_size * 0.07 * guide_pulse_strength)
+	var king_reveal_scale := king_reveal_strength if state == KING_MARK and king_reveal_cells.has(cell_key) else 0.0
+	if king_reveal_scale > 0.0:
+		rect = rect.grow(cell_size * 0.10 * king_reveal_scale)
 
 	var region_id := int(regions[row][col]) - 1
 	var color: Color = region_colors[region_id % region_colors.size()]
@@ -286,9 +324,8 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 		box.set_border_width_all(maxi(3, int(cell_size * (0.055 + guide_pulse_strength * 0.035))))
 	draw_style_box(box, rect)
 
-	var state: String = cell_states[row][col]
 	if state == PIECE_MARK or state == HINT_MARK or state == KING_MARK:
-		_draw_piece(rect, cell_size, state == HINT_MARK, state == KING_MARK)
+		_draw_piece(rect, cell_size, state == HINT_MARK, state == KING_MARK, king_reveal_scale)
 	elif state == BLOCKED_MARK:
 		_draw_blocked(rect, cell_size)
 	elif state == WRONG_MARK:
@@ -323,13 +360,11 @@ func _guide_kind(cell_key: Vector2i) -> String:
 	return str(value)
 
 
-func _draw_piece(rect: Rect2, cell_size: float, is_hint: bool, is_king: bool = false) -> void:
+func _draw_piece(rect: Rect2, cell_size: float, is_hint: bool, _is_king: bool = false, king_reveal_scale: float = 0.0) -> void:
 	if is_hint:
 		draw_circle(rect.get_center(), cell_size * 0.35, Color(1.0, 0.84, 0.35, 0.34))
-	if is_king:
-		draw_circle(rect.get_center(), cell_size * 0.35, Color(1.0, 0.84, 0.35, 0.36))
 	var font := ThemeDB.fallback_font
-	var font_size := int(cell_size * (0.55 + pulse_strength * 0.05))
+	var font_size := int(cell_size * (0.55 + pulse_strength * 0.05 + king_reveal_scale * 0.30))
 	var baseline := rect.position.y + rect.size.y * 0.69
 	draw_string(font, Vector2(rect.position.x, baseline), piece_symbol, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, font_size, Color("#26334A"))
 
