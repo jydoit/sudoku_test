@@ -175,13 +175,12 @@ Color Queens 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域�
 
 - 单击空格标记普通排除 X。
 - 再次单击普通排除 X 取消标记，恢复为空格。
-- 单击皇冠、提示皇冠或红色 X 不改变格子状态。
+- 单击普通皇冠会转为普通排除 X；提示皇冠保持锁定，不可点击修改。
 - 按住并从空格开始滑动时，沿途空格连续标记为普通排除 X。
 - 按住并从普通 X 开始滑动时，沿途普通 X 连续取消为空格；滑动经过皇冠、提示皇冠或红色 X 时保持原状态。
 - 双击空格或普通排除 X 尝试标记皇冠。
-- 双击正确答案格时，触发震动反馈并显示皇冠。
-- 双击非答案格时，触发震动反馈并显示红色 X。
-- 红色 X 不可取消，也不可通过撤销或清除恢复。
+- 双击空格或普通排除 X 放置皇冠；仅当皇冠违反行、列、颜色区域或相邻规则时提示冲突并消耗体力。
+- 正式关卡不再用“是否等于标准答案坐标”判定错误；玩家可继续调整未冲突的皇冠。
 - 棋盘支持鼠标点击和触屏点击。
 - 有冲突时冲突格变红。
 - 提示时显示观察范围、候选、排除和建议格。
@@ -283,7 +282,7 @@ Color Queens 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域�
 
 功能逻辑：
 
-- 默认包含 50 个 6x6 关卡。
+- 默认包含 1670 个关卡，覆盖 5x5 到 9x9。
 - 每关包含唯一答案。
 - 每关必须标记难度。
 - 每关必须标记 `logicStatus: no_guess`。
@@ -293,6 +292,12 @@ Color Queens 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域�
 
 - 数据文件：`data/levels.json`。
 - 加载器：`scripts/level_store.gd`。
+- 出关导演：`scripts/level_director.gd`，负责解耦玩家显示关卡顺序与 `levelId`。
+- 前 10 个显示关卡固定编排：1-5 为 5x5 simple，6-8 为 5x5 medium，9 为 5x5 simple，10 为 5x5 hard 挑战关。
+- 第 10 关之后根据玩家进度、size、难度和最近行为动态选择关卡；关卡选择按 size/difficulty 索引读取，并用最近 50 个 `levelId` 做去重。
+- 每逢 10 的整数关为挑战关；挑战关后一关为缓冲关，保持挑战关 size、难度降低一档，并显示提示皇冠。
+- 第 11-50 关保留提示皇冠；50 关后每隔 5 关屏蔽一次提示皇冠。
+- 动态提示皇冠数量按棋盘 size 加权：5x5 固定 1 个，6x6 为 1-2 个，7x7 为 1-3 个，8x8 及以上为 1-3 个。
 - 基础校验包括行列尺寸、区域行列数和答案数量。
 - 更完整的唯一解与路径校验目前由 `tests/smoke_test.gd` 覆盖。
 
@@ -326,6 +331,8 @@ Color Queens 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域�
 - `WIN_REWARD` 当前为 10。
 - `_next_level()` 和 `_replay_level()` 处理弹窗按钮。
 - `completion_overlay` 为全屏遮罩弹窗。
+- 关卡完成会记录耗时、步数、提示数和难度收益；收益计算的耗时上限为 15 分钟。
+- 成功打开下一关会为上一局补记继续游玩收益；次日再次打开会为最近完成局补记次留收益。
 
 功能截图与交互流转：
 
@@ -355,8 +362,9 @@ Color Queens 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域�
 - 存档路径：`user://color_queens_save.json`。
 - `_load_save()` 加载并兼容旧版本。
 - `_save_game()` 在关键状态变化后写入。
-- 当前保存字段包括 `currentLevelIndex`、`currentLevelId`、`cellStates`、`isCompleted`、`coinCount`、`hintCount`、`completedLevels`、`immediateErrors`、`tutorialCompleted`、`tutorialStarted`、`tutorialStepIndex`；`cellStates` 会保存不可撤销的红色 X。
-- `SAVE_VERSION` 当前为 3。
+- 当前保存字段包括 `currentLevelIndex`、`currentLevelId`、`playerLevelNumber`、`activeSchedule`、`directorProgress`、`runStartedUnix`、`runMoveCount`、`runHintCount`、`cellStates`、`isCompleted`、`coinCount`、`heartCount`、`hintCount`、`completedLevels`、`immediateErrors`、`tutorialCompleted`、`tutorialStarted`、`tutorialStepIndex`。
+- `directorProgress` 保存最近通关记录、size/difficulty 统计、下一关开启和次留补记状态。
+- `SAVE_VERSION` 当前为 4。
 
 功能截图与交互流转：
 
@@ -437,8 +445,9 @@ Color Queens 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域�
 | 初始免费提示 | 3 | `INITIAL_HINT_COUNT` | 新存档默认提示次数 |
 | 提示金币成本 | 5 | `HINT_COST` | 免费提示用完后的消耗 |
 | 通关奖励 | 10 | `WIN_REWARD` | 首次通关奖励 |
-| 默认棋盘尺寸 | 6x6 | `data/levels.json` | 当前关卡固定 6x6 |
-| 默认关卡数 | 50 | `data/levels.json` | MVP 内置关卡 |
+| 默认棋盘尺寸 | 5x5-9x9 | `data/levels.json` | 由关卡导演按进度解锁 |
+| 默认关卡数 | 1670 | `data/levels.json` | MVP 内置关卡 |
+| 动态提示皇冠 | 11-50 关默认显示，50 关后每 5 关屏蔽 | `LevelDirector._should_reveal_dynamic_kings()` | 提示皇冠开局带动画 |
 | 新手引导触发 | 新存档启动后立即进入 | `scripts/main.gd` | 完成后写入存档，后续不再强制触发 |
 | 新手引导形式 | 单张 5x5 教程棋盘 | `TUTORIAL_LEVELS` | 用同一张棋盘图串联核心操作和规则 |
 | 新手引导棋盘 | 5x5 | `TUTORIAL_LEVELS` | 教程全程不换图，让用户在同一棋盘上逐步找出全部皇冠 |

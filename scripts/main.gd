@@ -151,6 +151,7 @@ func _ready() -> void:
 		_show_fatal_error("没有找到可用关卡")
 		return
 	_load_save()
+	LevelDirectorScript.record_retention_if_needed(director_progress, _today_string())
 	_build_ui()
 	current_level_index = clampi(current_level_index, 0, levels.size() - 1)
 	var resume_schedule := _schedule_for_current_level()
@@ -979,13 +980,6 @@ func _can_restore_saved_level(rows: int, cols: int) -> bool:
 
 
 func _request_opening_king_reveal() -> void:
-	var display := int(active_schedule.get("displayLevel", player_level_number))
-	if display > 9:
-		opening_king_reveal_pending = false
-		return
-	if str(active_schedule.get("mode", "")) != "fixed":
-		opening_king_reveal_pending = false
-		return
 	if active_king_positions.is_empty():
 		opening_king_reveal_pending = false
 		return
@@ -1009,6 +1003,9 @@ func _level_coach_text() -> String:
 	var prefix := "难度挑战： " if bool(active_schedule.get("isMilestoneChallenge", false)) else ""
 	if king_info != "":
 		return prefix + king_info
+	var display := int(active_schedule.get("displayLevel", player_level_number))
+	if str(active_schedule.get("mode", "")) == "fixed" and display <= 9 and not active_king_positions.is_empty():
+		return prefix + "国王提示：开局已展示一个皇冠，请围绕它继续推理。"
 	return prefix + str(current_level.get("tutorial", "放置全部皇冠，满足行、列、颜色区域和相邻规则。"))
 
 
@@ -1023,7 +1020,7 @@ func _update_active_king_positions() -> void:
 	if in_tutorial:
 		return
 	var raw_positions = active_schedule.get("kingPositions", [])
-	if not (raw_positions is Array) or raw_positions.is_empty():
+	if not active_schedule.has("kingPositions") or not (raw_positions is Array):
 		if current_level.has("kingPosition"):
 			raw_positions = [current_level.get("kingPosition", [])]
 	for raw in raw_positions:
@@ -3360,7 +3357,7 @@ func _complete_level() -> void:
 func _record_level_result() -> void:
 	_sync_director_completed_levels()
 	var elapsed := maxf(1.0, float(int(Time.get_unix_time_from_system()) - run_started_unix))
-	LevelDirectorScript.record_completion(director_progress, current_level, active_schedule, elapsed, run_move_count, run_hint_count)
+	LevelDirectorScript.record_completion(director_progress, current_level, active_schedule, elapsed, run_move_count, run_hint_count, _today_string())
 	_sync_director_completed_levels()
 
 
@@ -3372,6 +3369,8 @@ func _next_level() -> void:
 	var next_schedule := LevelDirectorScript.schedule_for_display_level(levels, player_level_number, director_progress)
 	var next_index := int(next_schedule.get("levelIndex", 0))
 	_load_level(next_index, false, next_schedule)
+	LevelDirectorScript.record_next_level_opened(director_progress)
+	_save_game()
 	if bool(next_schedule.get("isMilestoneChallenge", false)):
 		_show_toast("难度挑战：本关根据最近表现安排")
 
@@ -3480,6 +3479,11 @@ func _states_match_size(states: Array, rows: int, cols: int) -> bool:
 		if not row is Array or row.size() != cols:
 			return false
 	return true
+
+
+func _today_string() -> String:
+	var date := Time.get_date_dict_from_system()
+	return "%04d-%02d-%02d" % [int(date["year"]), int(date["month"]), int(date["day"])]
 
 
 func _load_save() -> void:
