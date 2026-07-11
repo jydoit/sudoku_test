@@ -103,7 +103,9 @@ func _run() -> void:
 	assert(game.tutorial_completed, "Tutorial should be saved complete")
 	assert(not game.in_tutorial, "Game should leave tutorial")
 	assert(int(game.current_level["levelId"]) == 1, "Tutorial should enter formal level 1")
-	assert(game._piece_positions().is_empty(), "Formal level 1 should start clean")
+	assert(game._piece_positions().size() == 1, "Formal level 1 should start with the fixed opening king")
+	var king_position: Array = game.current_level["kingPosition"]
+	assert(game.cell_states[int(king_position[0])][int(king_position[1])] == "king", "Formal level 1 should display the opening king")
 	assert(not game.tutorial_skip_button.visible, "Formal level should hide the tutorial top button")
 	assert(game.top_home_button.visible, "Formal level should restore the home button")
 	assert(not game.board.tutorial_mask_enabled, "Formal level should not keep tutorial mask")

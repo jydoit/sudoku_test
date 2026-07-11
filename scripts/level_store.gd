@@ -48,3 +48,15 @@ static func _validate_level(level: Dictionary) -> void:
 	for row in regions:
 		assert(row.size() == cols, "Region column count does not match level")
 	assert(level.get("solution", []).size() == int(level.get("targetCount", 0)), "Solution size does not match target")
+	if level.has("kingPosition"):
+		var king: Array = level.get("kingPosition", [])
+		assert(king.size() >= 2, "King position must use [row, col]")
+		var king_row := int(king[0])
+		var king_col := int(king[1])
+		assert(king_row >= 0 and king_row < rows and king_col >= 0 and king_col < cols, "King position must be inside the board")
+		var in_solution := false
+		for coordinate in level.get("solution", []):
+			if int(coordinate[0]) == king_row and int(coordinate[1]) == king_col:
+				in_solution = true
+				break
+		assert(in_solution, "King position must be one of the solution cells")
