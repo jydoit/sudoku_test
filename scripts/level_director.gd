@@ -10,6 +10,7 @@ const MILESTONE_INTERVAL := 10
 const UCB_BOOTSTRAP_RUNS := 18
 const UCB_EXPLORATION := 0.72
 const MAX_REWARD_ELAPSED_SECONDS := 15.0 * 60.0
+const RETENTION_WINDOW_SECONDS := 24 * 60 * 60
 const NEXT_LEVEL_OPEN_BONUS := 0.08
 const RETENTION_BONUS := 0.15
 const KING_SOLUTION_ORDINALS := [2, 4, 6, 8]
@@ -157,18 +158,20 @@ static func _find_nth_level_index(level_index: Dictionary, size: int, difficulty
 
 static func unlocked_sizes(display_level: int) -> Array:
 	var display := maxi(1, display_level)
-	if display >= 120:
-		return [6, 7, 8, 9]
-	if display >= 80:
-		return [5, 6, 7, 8]
-	if display >= 50:
+	if display >= 450:
+		return [6, 7, 8,9]
+	if display >= 300:
+		return [6, 7, 8]
+	if display >= 180:
 		return [5, 6, 7]
-	if display >= 20:
+	if display >= 80:
 		return [5, 6]
+	if display >= 30:
+		return [5]
 	return [5]
 
 
-static func record_completion(progress: Dictionary, level: Dictionary, schedule: Dictionary, elapsed_seconds: float, moves: int, hints: int, completed_date: String = "") -> void:
+static func record_completion(progress: Dictionary, level: Dictionary, schedule: Dictionary, elapsed_seconds: float, moves: int, hints: int, completed_date: String = "", completed_unix: int = 0) -> void:
 	normalize_progress(progress)
 	var size := int(level.get("rows", schedule.get("selectedSize", 0)))
 	var difficulty := str(level.get("difficulty", schedule.get("selectedDifficulty", "normal")))
@@ -201,7 +204,8 @@ static func record_completion(progress: Dictionary, level: Dictionary, schedule:
 		"reward": reward,
 		"openedNextLevel": false,
 		"retainedNextDay": false,
-		"completedDate": completed_date
+		"completedDate": completed_date,
+		"completedUnix": completed_unix
 	})
 	while runs.size() > MAX_RUN_HISTORY:
 		runs.pop_front()
@@ -216,14 +220,19 @@ static func record_next_level_opened(progress: Dictionary) -> void:
 	_add_reward_bonus(progress, run, NEXT_LEVEL_OPEN_BONUS, "openedNextLevel")
 
 
-static func record_retention_if_needed(progress: Dictionary, today: String) -> void:
+static func record_retention_if_needed(progress: Dictionary, today: String, now_unix: int = 0) -> void:
 	normalize_progress(progress)
 	var runs: Array = progress["recentRuns"]
-	if runs.is_empty():
+	if runs.is_empty() or now_unix <= 0:
 		return
-	var run: Dictionary = runs[runs.size() - 1]
-	if str(run.get("completedDate", "")) != "" and str(run.get("completedDate", "")) != today:
-		_add_reward_bonus(progress, run, RETENTION_BONUS, "retainedNextDay")
+	for run in runs:
+		if not run is Dictionary:
+			continue
+		var completed_date := str(run.get("completedDate", ""))
+		var completed_unix := int(run.get("completedUnix", 0))
+		var age_seconds := now_unix - completed_unix
+		if completed_date != "" and completed_date != today and completed_unix > 0 and age_seconds >= 0 and age_seconds < RETENTION_WINDOW_SECONDS:
+			_add_reward_bonus(progress, run, RETENTION_BONUS, "retainedNextDay")
 
 
 static func _make_schedule(level: Dictionary, index: int, display: int, mode: String, is_milestone: bool, allowed_sizes: Array, selected_size: int, selected_difficulty: String) -> Dictionary:

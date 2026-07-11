@@ -151,7 +151,7 @@ func _ready() -> void:
 		_show_fatal_error("没有找到可用关卡")
 		return
 	_load_save()
-	LevelDirectorScript.record_retention_if_needed(director_progress, _today_string())
+	LevelDirectorScript.record_retention_if_needed(director_progress, _today_string(), int(Time.get_unix_time_from_system()))
 	_build_ui()
 	current_level_index = clampi(current_level_index, 0, levels.size() - 1)
 	var resume_schedule := _schedule_for_current_level()
@@ -3356,8 +3356,9 @@ func _complete_level() -> void:
 
 func _record_level_result() -> void:
 	_sync_director_completed_levels()
-	var elapsed := maxf(1.0, float(int(Time.get_unix_time_from_system()) - run_started_unix))
-	LevelDirectorScript.record_completion(director_progress, current_level, active_schedule, elapsed, run_move_count, run_hint_count, _today_string())
+	var completed_unix := int(Time.get_unix_time_from_system())
+	var elapsed := maxf(1.0, float(completed_unix - run_started_unix))
+	LevelDirectorScript.record_completion(director_progress, current_level, active_schedule, elapsed, run_move_count, run_hint_count, _today_string(), completed_unix)
 	_sync_director_completed_levels()
 
 

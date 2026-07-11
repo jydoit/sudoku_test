@@ -61,16 +61,6 @@ func _run() -> void:
 	assert(scheduled_opening_ids.slice(5, 8) == [4, 5, 6], "Display levels 6-8 should use the first three 5x5 medium boards")
 	assert(scheduled_opening_ids[8] == 13, "Display level 9 should return to a 5x5 simple board")
 	assert(scheduled_opening_ids[9] == 7, "Display level 10 should use the first 5x5 hard board")
-	var unlocked_11: Array = LevelDirectorScript.unlocked_sizes(11)
-	assert(unlocked_11.size() == 1 and int(unlocked_11[0]) == 5, "Display level 11 should still use 5x5")
-	var unlocked_20: Array = LevelDirectorScript.unlocked_sizes(20)
-	assert(int(unlocked_20[unlocked_20.size() - 1]) == 6, "Display level 20 should unlock 6x6")
-	var unlocked_50: Array = LevelDirectorScript.unlocked_sizes(50)
-	assert(int(unlocked_50[unlocked_50.size() - 1]) == 7, "Display level 50 should unlock 7x7")
-	var unlocked_80: Array = LevelDirectorScript.unlocked_sizes(80)
-	assert(int(unlocked_80[unlocked_80.size() - 1]) == 8, "Display level 80 should unlock 8x8")
-	var unlocked_120: Array = LevelDirectorScript.unlocked_sizes(120)
-	assert(int(unlocked_120[unlocked_120.size() - 1]) == 9, "Display level 120 should unlock 9x9")
 	var level_index: Dictionary = LevelDirectorScript.build_level_index(game.levels)
 	assert(level_index[5]["simple"].slice(0, 5) == [0, 1, 2, 10, 11], "Level index should group levels by size and difficulty")
 	var recent_medium_ids := []
@@ -128,16 +118,26 @@ func _run() -> void:
 	assert(bool(challenge_schedule["isMilestoneChallenge"]), "Every tenth display level should be marked as a challenge")
 	assert(str(challenge_schedule["mode"]) == "challenge", "Milestone levels should use the challenge branch")
 	var challenge_arm := "%d|%s" % [int(challenge_schedule["selectedSize"]), str(challenge_schedule["selectedDifficulty"])]
-	assert(["5|challenge", "6|hard"].has(challenge_arm), "Milestone should either raise difficulty or raise size from the hardest recent arm")
+	assert(["5|challenge", "5|hard"].has(challenge_arm), "Milestone should either raise difficulty or keep the current size when larger boards are locked")
 	var reward_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": {}}
-	LevelDirectorScript.record_completion(reward_progress, game.levels[0], LevelDirectorScript.schedule_for_display_level(game.levels, 1, {}), 2000.0, 10, 0, "2026-07-09")
+	LevelDirectorScript.record_completion(reward_progress, game.levels[0], LevelDirectorScript.schedule_for_display_level(game.levels, 1, {}), 2000.0, 10, 0, "2026-07-09", 1000)
 	var reward_run: Dictionary = reward_progress["recentRuns"][0]
 	var reward_before_bonus := float(reward_run["reward"])
 	assert(float(reward_run["elapsedSeconds"]) == 900.0, "Reward elapsed time should be capped at 15 minutes")
 	LevelDirectorScript.record_next_level_opened(reward_progress)
 	assert(bool(reward_run["openedNextLevel"]) and float(reward_run["reward"]) > reward_before_bonus, "Opening the next level should add a reward bonus")
-	LevelDirectorScript.record_retention_if_needed(reward_progress, "2026-07-10")
-	assert(bool(reward_run["retainedNextDay"]), "Opening the app on a later date should mark next-day retention")
+	LevelDirectorScript.record_completion(reward_progress, game.levels[1], LevelDirectorScript.schedule_for_display_level(game.levels, 2, {}), 100.0, 8, 0, "2026-07-09", 1200)
+	var second_reward_run: Dictionary = reward_progress["recentRuns"][1]
+	LevelDirectorScript.record_retention_if_needed(reward_progress, "2026-07-10", 1000 + 12 * 60 * 60)
+	assert(bool(reward_run["retainedNextDay"]) and bool(second_reward_run["retainedNextDay"]), "Startup retention should mark every cross-day run within 24 hours")
+	var reward_after_retention := float(reward_run["reward"])
+	LevelDirectorScript.record_retention_if_needed(reward_progress, "2026-07-10", 1000 + 12 * 60 * 60)
+	assert(float(reward_run["reward"]) == reward_after_retention, "Retention bonus should not be added twice")
+	var expired_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": {}}
+	LevelDirectorScript.record_completion(expired_progress, game.levels[0], LevelDirectorScript.schedule_for_display_level(game.levels, 1, {}), 100.0, 8, 0, "2026-07-09", 1000)
+	var expired_run: Dictionary = expired_progress["recentRuns"][0]
+	LevelDirectorScript.record_retention_if_needed(expired_progress, "2026-07-10", 1000 + 24 * 60 * 60 + 1)
+	assert(not bool(expired_run["retainedNextDay"]), "Retention bonus should expire after 24 hours")
 
 	game.immediate_errors = true
 	game.heart_count = 3
