@@ -676,17 +676,10 @@ func _build_action_bar() -> Control:
 	row.custom_minimum_size.y = 74
 	row.add_theme_constant_override("separation", 10)
 
-	undo_button = _action_button("↶  撤销")
-	undo_button.pressed.connect(_undo)
-	row.add_child(undo_button)
-
-	clear_button = _action_button("×  清除")
-	clear_button.pressed.connect(_clear_board)
-	row.add_child(clear_button)
-
 	hint_button = _action_button("", Color("#EAF8F0"))
 	hint_button.add_theme_color_override("font_color", Color("#23845C"))
 	hint_button.pressed.connect(_use_hint)
+	hint_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(hint_button)
 	_update_hint_button()
 	return row
@@ -947,10 +940,6 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 	if completion_replay_button:
 		completion_replay_button.text = "重玩本关"
 		completion_replay_button.show()
-	if undo_button:
-		undo_button.show()
-	if clear_button:
-		clear_button.show()
 	if hint_button:
 		hint_button.show()
 	_update_level_picker()
@@ -1254,8 +1243,10 @@ func _validate_and_update(allow_completion: bool) -> void:
 		progress_bar.value = pieces.size()
 	if progress_label:
 		progress_label.text = "%d / %d" % [pieces.size(), int(current_level["targetCount"])]
-	undo_button.disabled = move_history.is_empty()
-	clear_button.disabled = _clearable_marks_empty()
+	if undo_button:
+		undo_button.disabled = move_history.is_empty()
+	if clear_button:
+		clear_button.disabled = _clearable_marks_empty()
 
 	if not conflicts.is_empty() and immediate_errors:
 		coach_label.text = "有冲突：红色格子违反了行、列、区域或相邻规则。"
@@ -2270,7 +2261,8 @@ func _start_tutorial_step(index: int) -> void:
 	elif kind == "adjacent_row_col":
 		call_deferred("_focus_tutorial_cell", _next_tutorial_adjacent_row_col_cell(), 0.36)
 	elif kind == "tools":
-		call_deferred("_focus_tutorial_control", undo_button, 0.24)
+		tutorial_button_stage = 2
+		call_deferred("_focus_tutorial_control", hint_button, 0.24)
 	_update_hint_button()
 	_update_home()
 	_save_game()
@@ -2319,15 +2311,11 @@ func _set_tutorial_guides() -> void:
 
 
 func _update_tutorial_action_bar() -> void:
-	if not undo_button or not clear_button or not hint_button:
+	if not hint_button:
 		return
 	if in_tutorial and _tutorial_kind() == "single_map":
-		undo_button.visible = true
-		clear_button.visible = false
 		hint_button.visible = true
-		undo_button.disabled = move_history.is_empty()
 		hint_button.disabled = tutorial_interaction_stage != TUTORIAL_PHASE_HINT
-		_apply_action_button_style(undo_button, CARD)
 		_apply_action_button_style(hint_button, Color("#FFE06F") if tutorial_interaction_stage == TUTORIAL_PHASE_HINT else Color("#EAFBF0"))
 		hint_button.add_theme_color_override("font_color", INK if tutorial_interaction_stage == TUTORIAL_PHASE_HINT else Color("#2D9E63"))
 		_update_hint_button()
@@ -2335,27 +2323,17 @@ func _update_tutorial_action_bar() -> void:
 			coach_label.text = "点一下提示，看看下一步该观察哪里。"
 		return
 	var show_actions := in_tutorial and _tutorial_kind() == "tools"
-	undo_button.visible = show_actions
-	clear_button.visible = show_actions
 	hint_button.visible = show_actions
 	if not show_actions:
 		_restore_action_button_styles()
 		return
-	undo_button.disabled = tutorial_button_stage != 0
-	clear_button.disabled = tutorial_button_stage != 1
 	hint_button.disabled = tutorial_button_stage != 2
 	_update_tutorial_action_button_styles()
-	if tutorial_button_stage == 0:
-		coach_label.text = "棋盘上先放了一个 X。请点击撤销按钮，让它恢复为空白。"
-	elif tutorial_button_stage == 1:
-		coach_label.text = "棋盘上有几处尝试标记。请点击清除按钮，一次清空它们。"
-	elif tutorial_button_stage == 2:
+	if tutorial_button_stage == 2:
 		coach_label.text = "点一下提示，看看下一步该观察哪里。"
 
 
 func _update_tutorial_action_button_styles() -> void:
-	_apply_action_button_style(undo_button, Color("#FFE06F") if tutorial_button_stage == 0 else Color("#F6FBFF"))
-	_apply_action_button_style(clear_button, Color("#FFE06F") if tutorial_button_stage == 1 else Color("#F6FBFF"))
 	_apply_action_button_style(hint_button, Color("#FFE06F") if tutorial_button_stage == 2 else Color("#F6FBFF"))
 	hint_button.add_theme_color_override("font_color", INK)
 
@@ -2428,7 +2406,7 @@ func _on_tutorial_cell_double_pressed(row: int, col: int) -> void:
 		_focus_tutorial_cell(target, 0.12)
 		return
 	if kind == "tools" and tutorial_button_stage != 3:
-		_show_toast("先按底部按钮顺序学习：撤销、清除、提示")
+		_show_toast("先点击底部提示按钮")
 		return
 	cell_states[row][col] = "piece"
 	board.set_states(cell_states)
@@ -2535,7 +2513,7 @@ func _on_tutorial_adjacent_row_col_cell_pressed(row: int, col: int, crown: Vecto
 
 func _on_tutorial_hint_target_pressed(row: int, col: int, target: Vector2i) -> void:
 	if tutorial_button_stage != 3:
-		_show_toast("先按底部按钮顺序学习：撤销、清除、提示")
+		_show_toast("先点击底部提示按钮")
 		return
 	if Vector2i(col, row) != target:
 		_show_toast("请双击高亮格找到皇冠")
@@ -2723,9 +2701,6 @@ func _update_tutorial_progress() -> void:
 		progress_bar.value = _piece_positions().size()
 	if progress_label:
 		progress_label.text = "%d / %d" % [_piece_positions().size(), int(current_level["targetCount"])]
-	if undo_button and in_tutorial and _tutorial_kind() == "single_map":
-		undo_button.disabled = move_history.is_empty()
-
 
 func _validate_tutorial_step(row: int, col: int) -> void:
 	match _tutorial_kind():
@@ -2787,7 +2762,7 @@ func _validate_tutorial_step(row: int, col: int) -> void:
 			else:
 				coach_label.text = "先把皇冠周围一圈点成 X，还剩 %d 个。" % [8 - _tutorial_blocked_adjacent_count(_tutorial_target())]
 		"tools":
-			_show_toast("这一关按底部按钮顺序学习：撤销、清除、提示")
+			_show_toast("这一关请先学习提示按钮")
 
 
 func _tutorial_unique_guides(piece: Vector2i) -> Dictionary:
@@ -3180,7 +3155,7 @@ func _use_tutorial_undo() -> void:
 	_set_tutorial_button_demo_state(1)
 	_refresh_tutorial_button_demo()
 	_update_tutorial_action_bar()
-	_focus_tutorial_control(clear_button, 0.18)
+	_focus_tutorial_control(hint_button, 0.18)
 
 
 func _use_tutorial_clear() -> void:
@@ -3858,9 +3833,5 @@ func _card_style(color: Color, radius: int, shadow: bool = false, padding: int =
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event.is_pressed() and not event.is_echo():
 		match event.keycode:
-			KEY_Z:
-				_undo()
-			KEY_R:
-				_clear_board()
 			KEY_H:
 				_use_hint()

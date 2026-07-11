@@ -216,6 +216,26 @@ func _run() -> void:
 	game._use_hint()
 	assert(game._piece_positions().size() == 1, "Hint should teach without placing a new piece")
 	assert(game.board.guide_cells.size() >= 1, "Hint must highlight the best next reasoning step")
+	var guide_target := Vector2i(-1, -1)
+	for guide_cell in game.board.guide_cells.keys():
+		if game.board._guide_cell_is_actionable(guide_cell):
+			guide_target = guide_cell
+			break
+	assert(guide_target.x >= 0 and game.board._interaction_allowed_for_cell(guide_target), "Actionable hint target cells should remain interactive")
+	for guide_cell in game.board.guide_cells.keys():
+		assert(game.board._cell_is_attention_target(guide_cell), "All hint guide cells should remain visually unmasked")
+	var marked_cell: Vector2i = game._piece_positions()[0]
+	assert(game.board._cell_is_attention_target(marked_cell), "Existing crowns should remain visually unmasked during hints")
+	var masked_cell := Vector2i(-1, -1)
+	for row in range(int(game.current_level["rows"])):
+		for col in range(int(game.current_level["cols"])):
+			var candidate := Vector2i(col, row)
+			if not game.board._cell_is_attention_target(candidate):
+				masked_cell = candidate
+				break
+		if masked_cell.x >= 0:
+			break
+	assert(masked_cell.x >= 0 and not game.board._interaction_allowed_for_cell(masked_cell), "Cells outside the hint range should be masked and non-interactive")
 	assert(str(game.coach_label.text).length() >= 20, "Hint must explain why this step is useful now")
 	assert(game.hint_count == hints_before - 1, "Hint must consume one available use")
 	assert(game.coin_count == coins_before, "Free hint uses must not charge coins")
