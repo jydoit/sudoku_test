@@ -218,6 +218,20 @@ func _run() -> void:
 	assert(_count_state(game.cell_states, "blocked") == 0, "Fixed opening levels should not restore old X marks")
 	assert(_count_state(game.cell_states, "wrong") == 0, "Fixed opening levels should not restore old wrong marks")
 
+	game.crown_find_count = game.INITIAL_CROWN_FIND_COUNT
+	game._update_crown_find_button()
+	var direct_target := _first_empty_solution_vector(game)
+	game._use_crown_find()
+	assert(game.cell_states[direct_target.y][direct_target.x] == "hint", "Crown find should directly place a locked crown on a solution cell")
+	assert(game.crown_find_count == game.INITIAL_CROWN_FIND_COUNT - 1, "Crown find should consume one use")
+	assert(game._piece_positions().has(direct_target), "Crown find result should count as a placed crown")
+	while game.crown_find_count > 0:
+		game._use_crown_find()
+	assert(game.crown_find_count == 0, "Crown find count should stop at zero")
+	assert(game.crown_find_button.disabled, "Crown find button should disable when uses are exhausted")
+	game._clear_board()
+	assert(game.crown_find_count == 0, "Clearing the board should not restore crown find uses")
+
 	game.hint_count = 3
 	game._update_hint_button()
 	var coins_before: int = game.coin_count
@@ -280,6 +294,16 @@ func _first_editable_solution_cell(game) -> Array:
 		if not game._is_king_cell(int(coordinate[0]), int(coordinate[1])):
 			return coordinate
 	return game.current_level["solution"][0]
+
+
+func _first_empty_solution_vector(game) -> Vector2i:
+	for coordinate in game.current_level["solution"]:
+		var row := int(coordinate[0])
+		var col := int(coordinate[1])
+		if str(game.cell_states[row][col]) == "empty":
+			return Vector2i(col, row)
+	assert(false, "Test level should have at least one empty solution cell")
+	return Vector2i(-1, -1)
 
 
 func _first_non_solution_cells(game, count: int) -> Array[Vector2i]:

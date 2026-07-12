@@ -4,10 +4,11 @@ const LevelStoreScript = preload("res://scripts/level_store.gd")
 const GameBoardScript = preload("res://scripts/game_board.gd")
 const LevelDirectorScript = preload("res://scripts/level_director.gd")
 const SAVE_PATH := "user://color_queens_save.json"
-const SAVE_VERSION := 4
+const SAVE_VERSION := 5
 const HINT_COST := 5
 const INITIAL_HINT_COUNT := 3
 const INITIAL_HEART_COUNT := 3
+const INITIAL_CROWN_FIND_COUNT := 3
 const WIN_REWARD := 10
 const INK := Color("#26334A")
 const MUTED := Color("#718096")
@@ -71,6 +72,7 @@ var director_progress: Dictionary = {}
 var coin_count := 55
 var heart_count := INITIAL_HEART_COUNT
 var hint_count := INITIAL_HINT_COUNT
+var crown_find_count := INITIAL_CROWN_FIND_COUNT
 var immediate_errors := true
 var is_completed := false
 var is_failed := false
@@ -103,10 +105,6 @@ var game_screen: Control
 var home_coin_label: Label
 var home_heart_label: Label
 var home_star_label: Label
-var home_level_label: Label
-var home_area_label: Label
-var home_progress_bar: ProgressBar
-var home_progress_label: Label
 var home_start_button: Button
 var level_select_button: Button
 var home_chest_label: Label
@@ -118,12 +116,14 @@ var level_label: Label
 var help_button: Button
 var top_home_button: Button
 var coin_label: Label
-var level_heart_label: Label
+var level_heart_label: Control
+var level_heart_slots: Array[Label] = []
 var progress_bar: ProgressBar
 var progress_label: Label
 var coach_label: Label
 var undo_button: Button
 var clear_button: Button
+var crown_find_button: Button
 var hint_button: Button
 var tutorial_skip_button: Button
 var completion_overlay: ColorRect
@@ -291,14 +291,6 @@ func _build_home_castle() -> Control:
 	castle_body.add_theme_font_size_override("font_size", 66)
 	castle.add_child(castle_body)
 
-	home_area_label = Label.new()
-	home_area_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	home_area_label.add_theme_color_override("font_color", Color.WHITE)
-	home_area_label.add_theme_color_override("font_shadow_color", Color(0.10, 0.23, 0.45, 0.22))
-	home_area_label.add_theme_constant_override("shadow_offset_x", 0)
-	home_area_label.add_theme_constant_override("shadow_offset_y", 2)
-	home_area_label.add_theme_font_size_override("font_size", 19)
-	castle.add_child(home_area_label)
 	return castle
 
 
@@ -464,46 +456,6 @@ func _build_home_hero() -> Control:
 	castle.add_theme_font_size_override("font_size", 54)
 	column.add_child(castle)
 
-	home_area_label = Label.new()
-	home_area_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	home_area_label.add_theme_color_override("font_color", Color("#385B86"))
-	home_area_label.add_theme_font_size_override("font_size", 18)
-	column.add_child(home_area_label)
-	return panel
-
-
-func _build_home_progress() -> Control:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.y = 86
-	panel.add_theme_stylebox_override("panel", _card_style(CARD, 18, true, 14))
-
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 8)
-	panel.add_child(column)
-
-	home_level_label = Label.new()
-	home_level_label.add_theme_color_override("font_color", INK)
-	home_level_label.add_theme_font_size_override("font_size", 19)
-	column.add_child(home_level_label)
-
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	column.add_child(row)
-
-	home_progress_bar = ProgressBar.new()
-	home_progress_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	home_progress_bar.custom_minimum_size.y = 22
-	home_progress_bar.show_percentage = false
-	home_progress_bar.add_theme_stylebox_override("background", _button_style(Color("#E8E3DB"), 11))
-	home_progress_bar.add_theme_stylebox_override("fill", _button_style(Color("#48B985"), 11))
-	row.add_child(home_progress_bar)
-
-	home_progress_label = Label.new()
-	home_progress_label.custom_minimum_size.x = 70
-	home_progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	home_progress_label.add_theme_color_override("font_color", MUTED)
-	home_progress_label.add_theme_font_size_override("font_size", 15)
-	row.add_child(home_progress_label)
 	return panel
 
 
@@ -688,17 +640,15 @@ func _build_action_bar() -> Control:
 	row.custom_minimum_size.y = 74
 	row.add_theme_constant_override("separation", 10)
 
-	level_heart_label = Label.new()
-	level_heart_label.text = _heart_text()
-	level_heart_label.tooltip_text = "本关生命"
-	level_heart_label.custom_minimum_size.y = 74
-	level_heart_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	level_heart_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	level_heart_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	level_heart_label.add_theme_color_override("font_color", Color("#F25D72"))
-	level_heart_label.add_theme_font_size_override("font_size", 29)
-	level_heart_label.add_theme_stylebox_override("normal", _card_style(CARD, 20, true))
+	level_heart_label = _build_heart_display()
 	row.add_child(level_heart_label)
+
+	crown_find_button = _action_button("", Color("#FFF4CE"))
+	crown_find_button.custom_minimum_size.y = 74
+	crown_find_button.add_theme_color_override("font_color", Color("#B97A09"))
+	crown_find_button.pressed.connect(_use_crown_find)
+	crown_find_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(crown_find_button)
 
 	hint_button = _action_button("", Color("#EAF8F0"))
 	hint_button.custom_minimum_size.y = 74
@@ -706,8 +656,32 @@ func _build_action_bar() -> Control:
 	hint_button.pressed.connect(_use_hint)
 	hint_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(hint_button)
+	_update_crown_find_button()
 	_update_hint_button()
 	return row
+
+
+func _build_heart_display() -> Control:
+	var panel := PanelContainer.new()
+	panel.tooltip_text = "本关生命"
+	panel.custom_minimum_size.y = 74
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", _card_style(CARD, 20, true))
+
+	var hearts := HBoxContainer.new()
+	hearts.alignment = BoxContainer.ALIGNMENT_CENTER
+	hearts.add_theme_constant_override("separation", 1)
+	panel.add_child(hearts)
+	level_heart_slots.clear()
+	for index in range(INITIAL_HEART_COUNT):
+		var heart := Label.new()
+		heart.custom_minimum_size = Vector2(22, 42)
+		heart.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		heart.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		heart.add_theme_font_size_override("font_size", 29)
+		hearts.add_child(heart)
+		level_heart_slots.append(heart)
+	return panel
 
 
 func _build_ad_placeholder() -> Control:
@@ -893,7 +867,7 @@ func _build_tutorial_hand_pointer() -> void:
 func _build_help_dialog() -> void:
 	help_dialog = AcceptDialog.new()
 	help_dialog.title = "怎么玩"
-	help_dialog.dialog_text = "找出全部皇冠，并同时满足：\n\n• 每一行只有一个皇冠\n• 每一列只有一个皇冠\n• 每个颜色区域只有一个皇冠\n• 皇冠不能八方向相邻\n\n单击空格标记 X，再次单击取消 X；双击空格尝试放置皇冠。若点错皇冠位置，会扣除 1 个红心并标记不可修改的红色 X。红心为 0 时，本关失败。"
+	help_dialog.dialog_text = "找出全部皇冠，并同时满足：\n\n• 每一行只有一个皇冠\n• 每一列只有一个皇冠\n• 每个颜色区域只有一个皇冠\n• 皇冠不能八方向相邻\n\n单击空格标记 X，再次单击取消 X；双击空格尝试放置皇冠。若点错皇冠位置，会扣除 1 个红心并标记不可修改的红色 X。底部皇冠按钮可直接找到一个皇冠，初始 3 次。红心为 0 时，本关失败。"
 	help_dialog.ok_button_text = "知道了"
 	help_dialog.unresizable = true
 	add_child(help_dialog)
@@ -1017,7 +991,11 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 	if hint_button:
 		hint_button.show()
 		hint_button.disabled = is_failed
+	if crown_find_button:
+		crown_find_button.show()
+		crown_find_button.disabled = is_failed
 	_update_heart_label()
+	_update_crown_find_button()
 	_update_level_picker()
 	coach_label.text = _level_coach_text()
 	coach_label.add_theme_color_override("font_color", Color("#72552B"))
@@ -1321,6 +1299,45 @@ func _use_hint() -> void:
 	_show_toast("已给出当前最优先的一步判断")
 
 
+func _use_crown_find() -> void:
+	if in_tutorial or is_completed or is_failed:
+		return
+	if crown_find_count <= 0:
+		_show_toast("皇冠直找次数已用完，后续会接入激励广告补充")
+		_update_crown_find_button()
+		return
+	var target := _next_findable_solution_cell()
+	if target.x < 0:
+		_show_toast("当前已经没有可直接找到的皇冠")
+		_update_crown_find_button()
+		return
+
+	_push_history()
+	active_hint_step.clear()
+	active_hint_stage = 0
+	board.set_guides({})
+	cell_states[target.y][target.x] = "hint"
+	crown_find_count -= 1
+	board.set_states(cell_states)
+	board.play_cell_feedback(target.y, target.x)
+	_validate_and_update(true)
+	run_move_count += 1
+	_update_crown_find_button()
+	_save_game()
+	_show_toast("已直接找到一个皇冠")
+
+
+func _next_findable_solution_cell() -> Vector2i:
+	for coordinate in current_level.get("solution", []):
+		var row := int(coordinate[0])
+		var col := int(coordinate[1])
+		var state: String = cell_states[row][col]
+		if state == "piece" or state == "hint" or state == "king":
+			continue
+		return Vector2i(col, row)
+	return Vector2i(-1, -1)
+
+
 func _validate_and_update(allow_completion: bool) -> void:
 	var pieces := _piece_positions()
 	var conflicts := _find_conflicts(pieces)
@@ -1334,6 +1351,7 @@ func _validate_and_update(allow_completion: bool) -> void:
 		undo_button.disabled = move_history.is_empty()
 	if clear_button:
 		clear_button.disabled = _clearable_marks_empty()
+	_update_crown_find_button()
 
 	if not conflicts.is_empty() and immediate_errors:
 		coach_label.text = "有冲突：红色格子违反了行、列、区域或相邻规则。"
@@ -2394,6 +2412,8 @@ func _set_tutorial_guides() -> void:
 func _update_tutorial_action_bar() -> void:
 	if not hint_button:
 		return
+	if crown_find_button:
+		crown_find_button.visible = false
 	if in_tutorial and _tutorial_kind() == "single_map":
 		hint_button.visible = true
 		hint_button.disabled = tutorial_interaction_stage != TUTORIAL_PHASE_HINT
@@ -2424,6 +2444,9 @@ func _restore_action_button_styles() -> void:
 		_apply_action_button_style(undo_button, CARD)
 	if clear_button:
 		_apply_action_button_style(clear_button, CARD)
+	if crown_find_button:
+		_apply_action_button_style(crown_find_button, Color("#FFF4CE"))
+		crown_find_button.add_theme_color_override("font_color", Color("#B97A09"))
 	if hint_button:
 		_apply_action_button_style(hint_button, Color("#EAFBF0"))
 		hint_button.add_theme_color_override("font_color", Color("#2D9E63"))
@@ -3329,6 +3352,8 @@ func _show_tutorial_challenge_ready() -> void:
 		clear_button.hide()
 	if hint_button:
 		hint_button.hide()
+	if crown_find_button:
+		crown_find_button.hide()
 	completion_title.text = "已经了解全部规则"
 	reward_label.text = "开始真正的挑战吧！"
 	if result_icon_label:
@@ -3623,6 +3648,7 @@ func _load_save() -> void:
 	else:
 		# Version 1 stored the number of hints used, not the remaining count.
 		hint_count = INITIAL_HINT_COUNT
+	crown_find_count = clampi(int(data.get("crownFindCount", INITIAL_CROWN_FIND_COUNT)), 0, INITIAL_CROWN_FIND_COUNT)
 	completed_levels.assign(data.get("completedLevels", []))
 	heart_count = maxi(0, int(data.get("heartCount", INITIAL_HEART_COUNT)))
 	for index in range(completed_levels.size()):
@@ -3661,6 +3687,7 @@ func _save_game() -> void:
 		"runHintCount": run_hint_count,
 		"coinCount": coin_count,
 		"heartCount": heart_count,
+		"crownFindCount": crown_find_count,
 		"completedLevels": completed_levels,
 		"selectedTheme": "crown",
 		"hintCount": hint_count,
@@ -3685,17 +3712,15 @@ func _update_coin_label() -> void:
 
 
 func _update_heart_label() -> void:
-	if level_heart_label:
-		level_heart_label.text = _heart_text()
+	if not level_heart_slots.is_empty():
+		for index in range(level_heart_slots.size()):
+			var heart := level_heart_slots[index]
+			var is_full := index < heart_count
+			heart.text = "♥" if is_full else "♡"
+			heart.add_theme_color_override("font_color", Color("#F25D72") if is_full else Color("#F25D72"))
+			heart.add_theme_font_size_override("font_size", 29 if is_full else 32)
 	if home_heart_label:
 		home_heart_label.text = "♥  %d" % heart_count
-
-
-func _heart_text() -> String:
-	var hearts := ""
-	for index in range(INITIAL_HEART_COUNT):
-		hearts += "♥" if index < heart_count else "♡"
-	return hearts
 
 
 func _consume_heart_for_wrong_crown() -> void:
@@ -3718,6 +3743,8 @@ func _fail_level() -> void:
 	board.set_guides({})
 	if hint_button:
 		hint_button.disabled = true
+	if crown_find_button:
+		crown_find_button.disabled = true
 	coach_label.text = "红心已用完，本关挑战失败。"
 	coach_label.add_theme_color_override("font_color", Color("#B93D4D"))
 	_prepare_failure_result_page()
@@ -3744,6 +3771,18 @@ func _update_hint_button() -> void:
 		hint_button.text = "✦  提示  ×%d" % hint_count
 	else:
 		hint_button.text = "✦  提示  -%d" % HINT_COST
+
+
+func _update_crown_find_button() -> void:
+	if not crown_find_button:
+		return
+	if in_tutorial:
+		crown_find_button.text = "♛"
+		crown_find_button.disabled = true
+		return
+	var has_target := not current_level.is_empty() and _next_findable_solution_cell().x >= 0
+	crown_find_button.text = "♛  ×%d" % crown_find_count
+	crown_find_button.disabled = is_completed or is_failed or crown_find_count <= 0 or not has_target
 
 
 func _update_level_picker() -> void:
@@ -3815,19 +3854,13 @@ func _update_tutorial_button() -> void:
 		level_select_button.visible = not in_tutorial
 	if level_heart_label:
 		level_heart_label.visible = not in_tutorial
+	if crown_find_button:
+		crown_find_button.visible = not in_tutorial
 
 
 func _update_home() -> void:
 	if not home_screen or levels.is_empty():
 		return
-	var area_index := int((player_level_number - 1) / 10) + 1
-	var area_completed := (player_level_number - 1) % 10
-	if is_completed:
-		area_completed += 1
-	area_completed = clampi(area_completed, 0, 10)
-	var next_title := "下一关：%d" % player_level_number
-	if bool(active_schedule.get("isMilestoneChallenge", false)):
-		next_title += " · 难度挑战"
 
 	if home_coin_label:
 		home_coin_label.text = "●  %d" % coin_count
@@ -3835,15 +3868,6 @@ func _update_home() -> void:
 		home_heart_label.text = "♥  %d" % heart_count
 	if home_star_label:
 		home_star_label.text = "★  %d" % completed_levels.size()
-	if home_level_label:
-		home_level_label.text = next_title
-	if home_area_label:
-		home_area_label.text = "第 %d 庭院 · 进度 %d / 10" % [area_index, area_completed]
-	if home_progress_bar:
-		home_progress_bar.max_value = 10
-		home_progress_bar.value = area_completed
-	if home_progress_label:
-		home_progress_label.text = "%d / 10" % area_completed
 	if home_start_button:
 		if tutorial_completed:
 			home_start_button.text = "开始第 %d 关" % player_level_number
