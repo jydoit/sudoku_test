@@ -174,31 +174,40 @@ func _run() -> void:
 	assert(game.cell_states[int(solution_cell[0])][int(solution_cell[1])] == "piece", "Double tap on the answer must place a crown")
 	game._undo()
 	assert(game.cell_states[int(solution_cell[0])][int(solution_cell[1])] == "empty", "Undo should remove the placed crown")
-	var exploratory_cell := _first_non_solution_non_conflicting_cell(game)
-	var hearts_before_explore: int = game.heart_count
-	game._on_cell_double_pressed(exploratory_cell.y, exploratory_cell.x)
-	assert(game.cell_states[exploratory_cell.y][exploratory_cell.x] == "piece", "Non-solution exploratory crowns should be allowed when they do not break rules")
-	assert(game.heart_count == hearts_before_explore, "Non-conflicting exploratory crowns should not consume hearts")
-	game._on_cell_pressed(exploratory_cell.y, exploratory_cell.x)
-	assert(game.cell_states[exploratory_cell.y][exploratory_cell.x] == "blocked", "Editable crowns should turn into X on single tap")
-	game._on_cell_pressed(exploratory_cell.y, exploratory_cell.x)
-	assert(game.cell_states[exploratory_cell.y][exploratory_cell.x] == "empty", "X created from an editable crown should clear on the next tap")
-	var conflict_cell := _first_conflicting_cell(game)
-	var hearts_before_conflict: int = game.heart_count
-	game._on_cell_double_pressed(conflict_cell.y, conflict_cell.x)
-	assert(game.cell_states[conflict_cell.y][conflict_cell.x] == "piece", "Rule-breaking crowns should stay editable as normal pieces")
-	assert(game.heart_count == hearts_before_conflict - 1, "Rule-breaking crowns should consume one heart")
-	assert(game.board.error_cells.has(conflict_cell), "Rule-breaking crowns should be highlighted by conflict detection")
-	assert(game.heart_dialog.visible, "Rule-breaking crowns should show the heart placeholder dialog")
-	game.heart_dialog.hide()
-	game.cell_states[conflict_cell.y][conflict_cell.x] = "wrong"
+	var wrong_cells := _first_non_solution_cells(game, game.INITIAL_HEART_COUNT)
+	var wrong_cell: Vector2i = wrong_cells[0]
+	var hearts_before_wrong: int = game.heart_count
+	game._on_cell_double_pressed(wrong_cell.y, wrong_cell.x)
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Double tap on a non-answer cell should mark a red X")
+	assert(game.heart_count == hearts_before_wrong - 1, "Wrong crown attempts should consume one heart")
+	assert(not game.board.error_cells.has(wrong_cell), "Wrong crown attempts should not be treated as rule-conflict crowns")
+	assert(not game.is_failed, "A single wrong crown attempt should not fail the level while hearts remain")
+	game._on_cell_pressed(wrong_cell.y, wrong_cell.x)
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Single tap must not clear locked red X marks")
+	game._on_cell_drag_started(wrong_cell.y, wrong_cell.x)
+	game._on_cell_drag_ended()
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Dragging from a locked red X must not erase it")
+	for index in range(1, wrong_cells.size()):
+		var next_wrong: Vector2i = wrong_cells[index]
+		game._on_cell_double_pressed(next_wrong.y, next_wrong.x)
+	assert(game.is_failed, "The level should fail when hearts reach zero")
+	assert(game.completion_overlay.visible, "Failing the level should show the result overlay")
+	assert(game.completion_next_button.text == "重新挑战", "Failure primary action should retry the level")
+	assert(game.completion_replay_button.text == "返回首页", "Failure secondary action should return home")
+	game._replay_level()
+	assert(not game.is_failed, "Retrying should clear the failed state")
+	assert(game.heart_count == game.INITIAL_HEART_COUNT, "Retrying should restore three hearts")
+	game.cell_states[wrong_cell.y][wrong_cell.x] = "wrong"
 	game.board.set_states(game.cell_states)
-	game._on_cell_pressed(conflict_cell.y, conflict_cell.x)
-	assert(game.cell_states[conflict_cell.y][conflict_cell.x] == "empty", "Single tap must clear legacy wrong red X marks")
-	game.cell_states[conflict_cell.y][conflict_cell.x] = "wrong"
+	game._on_cell_pressed(wrong_cell.y, wrong_cell.x)
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Single tap must keep locked wrong red X marks")
+	game.cell_states[wrong_cell.y][wrong_cell.x] = "wrong"
+	var clearable_cell: Vector2i = _first_empty_non_king_cell(game)
+	game.cell_states[clearable_cell.y][clearable_cell.x] = "blocked"
 	game.board.set_states(game.cell_states)
 	game._clear_board()
-	assert(game.cell_states[conflict_cell.y][conflict_cell.x] == "empty", "Clear must remove legacy wrong red X marks")
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Clear must keep locked wrong red X marks")
+	assert(game.cell_states[clearable_cell.y][clearable_cell.x] == "empty", "Clear must remove normal X marks")
 	assert(game._piece_positions().size() == 1, "Clear must keep the fixed opening king")
 	assert(game.cell_states[int(king_position[0])][int(king_position[1])] == "king", "Clear must not remove the fixed king")
 	game.resume_level_id = int(game.current_level["levelId"])
@@ -271,6 +280,32 @@ func _first_editable_solution_cell(game) -> Array:
 		if not game._is_king_cell(int(coordinate[0]), int(coordinate[1])):
 			return coordinate
 	return game.current_level["solution"][0]
+
+
+func _first_non_solution_cells(game, count: int) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for row in range(int(game.current_level["rows"])):
+		for col in range(int(game.current_level["cols"])):
+			if game._is_king_cell(row, col) or game._is_solution_cell(row, col):
+				continue
+			if str(game.cell_states[row][col]) != "empty":
+				continue
+			result.append(Vector2i(col, row))
+			if result.size() == count:
+				return result
+	assert(false, "Test level should have enough non-solution cells for wrong crown attempts")
+	return result
+
+
+func _first_empty_non_king_cell(game) -> Vector2i:
+	for row in range(int(game.current_level["rows"])):
+		for col in range(int(game.current_level["cols"])):
+			if game._is_king_cell(row, col):
+				continue
+			if str(game.cell_states[row][col]) == "empty":
+				return Vector2i(col, row)
+	assert(false, "Test level should have at least one empty editable cell")
+	return Vector2i(-1, -1)
 
 
 func _first_non_solution_non_conflicting_cell(game) -> Vector2i:

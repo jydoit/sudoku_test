@@ -130,22 +130,14 @@ func _complete_current_exclusions(game) -> void:
 		if game.tutorial_interaction_stage == game.TUTORIAL_PHASE_ROW_COL:
 			assert(game._tutorial_hand_cell_action() == "single", "Row/column phase should demonstrate tapping, not sliding")
 			assert(game.coach_label.text == "每行、每列都只能有一个皇冠。这个皇冠所在的行和列，其他格都可以标记 X。", "Row/column phase should use concise exclusion copy")
-			for line_cell in game._tutorial_row_col_cells(game.tutorial_active_crown):
-				assert(game.board.guide_cells.has(line_cell), "Row/column phase should keep the entire line highlighted")
 		else:
 			assert(game._tutorial_hand_cell_action() == "slide", "Adjacent phase should demonstrate sliding")
-		var target: Vector2i = _last_empty_valid_exclusion_cell(game)
+		var target: Vector2i = game._next_tutorial_single_map_exclusion_cell()
 		assert(target.x >= 0, "Exclusion phase should always have a guided target")
+		assert(game.board.guide_cells.size() == 1, "Tutorial exclusion phases should only reveal the current target cell")
+		assert(game.board.guide_cells.has(target), "Tutorial should guide exactly the current target cell")
 		game._on_cell_dragged(target.y, target.x)
 		await process_frame
-
-
-func _last_empty_valid_exclusion_cell(game) -> Vector2i:
-	var result := Vector2i(-1, -1)
-	for cell in game._tutorial_single_map_valid_exclusion_cells():
-		if game.cell_states[cell.y][cell.x] == "empty":
-			result = cell
-	return result
 
 
 func _restore_save(had_save: bool, contents: String) -> void:
