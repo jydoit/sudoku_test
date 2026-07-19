@@ -195,6 +195,8 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 
 - 交互状态由 `scripts/main.gd` 中 `cell_states` 管理，状态包括 `empty`、`blocked`、`piece`、`hint`、`wrong`。
 - 棋盘绘制由 `scripts/game_board.gd` 自绘完成。
+- 棋盘渲染使用整数像素对齐的格子尺寸和起点；每个格子保持独立圆角矩形，颜色块和提示灰色浮层使用同一套独立格子坐标，避免小数像素造成的视觉错位。
+- 棋盘格子之间的缝隙使用底层填充：每个格子的圆角留白也归入间隔层，同色相邻格之间使用该色的加深色，不同色块边界和棋盘最外缘统一使用半透明深色外框色，既保持独立圆角格子，也减少纯白分割带来的简陋感。
 - `GameBoard` 通过 `cell_pressed(row, col)`、`cell_double_pressed(row, col)`、`cell_drag_started(row, col)`、`cell_dragged(row, col)`、`cell_drag_ended()` 信号把点击、双击和滑动传回主逻辑。
 - 高亮类型包括 `unit`、`candidate`、`exclude`、`place`。
 - `play_cell_feedback()` 和 `play_guide_feedback()` 提供格子反馈动画。
@@ -373,7 +375,8 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - `_save_game()` 在关键状态变化后写入。
 - 当前保存字段包括 `currentLevelIndex`、`currentLevelId`、`playerLevelNumber`、`activeSchedule`、`directorProgress`、`runStartedUnix`、`runMoveCount`、`runHintCount`、`cellStates`、`isCompleted`、`isFailed`、`coinCount`、`heartCount`、`hintCount`、`completedLevels`、`immediateErrors`、`tutorialCompleted`、`tutorialStarted`、`tutorialStepIndex`。
 - `directorProgress` 保存最近通关记录、size/difficulty 统计、下一关开启和次留补记状态。
-- `SAVE_VERSION` 当前为 4。
+- 首页点击“开始关卡”时，如果当前恢复的正式关卡已经完成，会自动推进并加载下一关，避免停留在已完成且不可操作的棋盘。
+- `SAVE_VERSION` 当前为 5。
 
 功能截图与交互流转：
 
@@ -383,6 +386,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 
 - 关卡切换、点击格子、使用提示、通关、新手教程推进后会保存。
 - 重新启动后恢复最近关卡、棋盘状态和教程状态。
+- 已完成关卡从首页继续时应进入下一关，且下一关可正常点击、滑动和双击操作。
 - 新存档首次启动会因为没有 `tutorialCompleted` 而直接进入新手引导。
 - 旧版本存档不会导致启动失败。
 

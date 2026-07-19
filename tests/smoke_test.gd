@@ -30,6 +30,22 @@ func _run() -> void:
 		game.tutorial_resume_dialog.hide()
 	game._load_level(0)
 	game._show_game()
+	var completed_start_level_id := int(game.current_level["levelId"])
+	game.completed_levels = [completed_start_level_id]
+	game.director_progress = {"completedLevelIds": [completed_start_level_id], "recentRuns": [], "statsByArm": {}}
+	game.is_completed = true
+	game._show_home()
+	game._start_current_flow()
+	assert(game.game_screen.visible, "Starting from home after a completed saved level should enter the game")
+	assert(game.player_level_number == 2, "Starting from home after a completed saved level should advance to the next display level")
+	assert(not game.is_completed, "The auto-advanced level should be playable")
+	var resumed_editable_cell := _first_empty_non_king_cell(game)
+	game._on_cell_pressed(resumed_editable_cell.y, resumed_editable_cell.x)
+	assert(game.cell_states[resumed_editable_cell.y][resumed_editable_cell.x] == "blocked", "The auto-advanced level should accept normal input")
+	game.completed_levels.clear()
+	game.director_progress.clear()
+	game._load_level(0)
+	game._show_game()
 	assert(game.level_select_button != null, "Level screen should expose level selection")
 	game._open_level_select()
 	assert(game.level_select_dialog.visible, "Level selection dialog should open")

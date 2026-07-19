@@ -3803,6 +3803,8 @@ func _show_home() -> void:
 
 func _start_current_flow() -> void:
 	if tutorial_completed:
+		if is_completed:
+			_next_level()
 		_show_game()
 	elif tutorial_started:
 		tutorial_resume_dialog.popup_centered(Vector2i(420, 220))

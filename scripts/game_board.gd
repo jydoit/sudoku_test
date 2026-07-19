@@ -14,6 +14,8 @@ const BLOCKED_MARK := "blocked"
 const HINT_MARK := "hint"
 const KING_MARK := "king"
 const WRONG_MARK := "wrong"
+const REGION_BORDER_COLOR := Color("#1F2530", 0.46)
+const SAME_REGION_GAP_MIX := 0.22
 
 var rows := 6
 var cols := 6
@@ -272,8 +274,9 @@ func _draw() -> void:
 	outer.corner_radius_top_right = 22
 	outer.corner_radius_bottom_left = 22
 	outer.corner_radius_bottom_right = 22
-	draw_style_box(outer, board_rect.grow(2.5))
+	draw_style_box(outer, board_rect.grow(_region_border_width(cell_size) * 0.5))
 
+	_draw_cell_gap_backgrounds(board_rect.position, cell_size)
 	for row in range(rows):
 		for col in range(cols):
 			_draw_cell(row, col, board_rect.position, cell_size)
@@ -282,8 +285,7 @@ func _draw() -> void:
 
 
 func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
-	var gap := maxf(2.2, cell_size * 0.033)
-	var rect := Rect2(origin + Vector2(col, row) * cell_size + Vector2.ONE * gap, Vector2.ONE * (cell_size - gap * 2.0))
+	var rect := _cell_rect(row, col, origin, cell_size)
 	var cell_key := Vector2i(col, row)
 	var state: String = cell_states[row][col]
 	var cell_pulse_strength := pulse_strength if cell_key == pulse_cell else 0.0
@@ -293,8 +295,7 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 	if king_reveal_scale > 0.0:
 		rect = rect.grow(cell_size * 0.10 * king_reveal_scale)
 
-	var region_id := int(regions[row][col]) - 1
-	var color: Color = region_colors[region_id % region_colors.size()]
+	var color := _cell_base_color(row, col)
 	if error_cells.has(cell_key):
 		color = color.lerp(Color("#FF5E67"), 0.58)
 	elif victory_strength > 0.0:
@@ -302,10 +303,11 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 
 	var box := StyleBoxFlat.new()
 	box.bg_color = color
-	box.corner_radius_top_left = int(cell_size * 0.065)
-	box.corner_radius_top_right = int(cell_size * 0.065)
-	box.corner_radius_bottom_left = int(cell_size * 0.065)
-	box.corner_radius_bottom_right = int(cell_size * 0.065)
+	var corner_radius := _cell_corner_radius(cell_size)
+	box.corner_radius_top_left = corner_radius
+	box.corner_radius_top_right = corner_radius
+	box.corner_radius_bottom_left = corner_radius
+	box.corner_radius_bottom_right = corner_radius
 	if error_cells.has(cell_key):
 		box.border_color = Color("#D92F42")
 		box.set_border_width_all(maxi(2, int(cell_size * 0.04)))
@@ -319,47 +321,80 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 		_draw_wrong(rect, cell_size)
 
 
+func _draw_cell_gap_backgrounds(origin: Vector2, cell_size: float) -> void:
+	var gap := _cell_gap(cell_size)
+	var strip_size := gap * 2.0
+
+	for row in range(rows):
+		for col in range(cols):
+			var slot_rect := Rect2(origin + Vector2(col, row) * cell_size, Vector2.ONE * cell_size)
+			draw_rect(slot_rect, _same_region_gap_color(row, col), true)
+
+	for row in range(rows):
+		for col in range(cols - 1):
+			var rect := Rect2(
+				Vector2(origin.x + (col + 1) * cell_size - gap, origin.y + row * cell_size + gap),
+				Vector2(strip_size, cell_size - gap * 2.0)
+			)
+			draw_rect(rect, _gap_color_between(row, col, row, col + 1), true)
+
+	for row in range(rows - 1):
+		for col in range(cols):
+			var rect := Rect2(
+				Vector2(origin.x + col * cell_size + gap, origin.y + (row + 1) * cell_size - gap),
+				Vector2(cell_size - gap * 2.0, strip_size)
+			)
+			draw_rect(rect, _gap_color_between(row, col, row + 1, col), true)
+
+	for row in range(rows - 1):
+		for col in range(cols - 1):
+			var rect := Rect2(
+				Vector2(origin.x + (col + 1) * cell_size - gap, origin.y + (row + 1) * cell_size - gap),
+				Vector2(strip_size, strip_size)
+			)
+			draw_rect(rect, _gap_corner_color(row, col), true)
+
+
 func _draw_region_borders(origin: Vector2, cell_size: float) -> void:
-	var border_width := maxf(2.4, cell_size * 0.040)
-	var border_color := Color("#1F2530", 0.86)
+	var border_width := _region_border_width(cell_size)
 
 	for row in range(rows + 1):
 		for col in range(cols):
 			var left := origin.x + col * cell_size
 			var right := left + cell_size
 			var y := origin.y + row * cell_size
-			if row == 0 or row == rows or int(regions[row - 1][col]) != int(regions[row][col]):
-				_draw_region_edge(Vector2(left, y), Vector2(right, y), border_color, border_width)
+			if row == 0 or row == rows:
+				_draw_region_edge(Vector2(left, y), Vector2(right, y), REGION_BORDER_COLOR, border_width)
 
 	for col in range(cols + 1):
 		for row in range(rows):
 			var x := origin.x + col * cell_size
 			var top := origin.y + row * cell_size
 			var bottom := top + cell_size
-			if col == 0 or col == cols or int(regions[row][col - 1]) != int(regions[row][col]):
-				_draw_region_edge(Vector2(x, top), Vector2(x, bottom), border_color, border_width)
+			if col == 0 or col == cols:
+				_draw_region_edge(Vector2(x, top), Vector2(x, bottom), REGION_BORDER_COLOR, border_width)
 
 
 func _draw_region_edge(from: Vector2, to: Vector2, color: Color, width: float) -> void:
-	draw_line(from, to, color, width, true)
+	draw_line(from, to, color, width, false)
 
 
 func _draw_attention_mask(origin: Vector2, cell_size: float) -> void:
 	if guide_cells.is_empty() and not tutorial_mask_enabled:
 		return
-	var gap := maxf(2.2, cell_size * 0.033)
 	for row in range(rows):
 		for col in range(cols):
 			var cell_key := Vector2i(col, row)
 			if _cell_is_attention_target(cell_key):
 				continue
-			var rect := Rect2(origin + Vector2(col, row) * cell_size + Vector2.ONE * gap, Vector2.ONE * (cell_size - gap * 2.0))
+			var rect := _cell_rect(row, col, origin, cell_size)
 			var mask_box := StyleBoxFlat.new()
 			mask_box.bg_color = Color(0.82, 0.84, 0.88, 0.58)
-			mask_box.corner_radius_top_left = int(cell_size * 0.065)
-			mask_box.corner_radius_top_right = int(cell_size * 0.065)
-			mask_box.corner_radius_bottom_left = int(cell_size * 0.065)
-			mask_box.corner_radius_bottom_right = int(cell_size * 0.065)
+			var corner_radius := _cell_corner_radius(cell_size)
+			mask_box.corner_radius_top_left = corner_radius
+			mask_box.corner_radius_top_right = corner_radius
+			mask_box.corner_radius_bottom_left = corner_radius
+			mask_box.corner_radius_bottom_right = corner_radius
 			draw_style_box(mask_box, rect)
 
 
@@ -419,9 +454,67 @@ func _draw_wrong(rect: Rect2, cell_size: float) -> void:
 
 
 func _board_geometry() -> Dictionary:
-	var usable_size := Vector2(maxf(1.0, size.x - 18.0), maxf(1.0, size.y - 18.0))
-	var board_size := minf(usable_size.x, usable_size.y)
-	var cell_size := board_size / float(maxi(rows, cols))
+	var max_dimension: int = maxi(1, maxi(rows, cols))
+	var usable_size := Vector2(maxf(1.0, floor(size.x - 18.0)), maxf(1.0, floor(size.y - 18.0)))
+	var board_size: float = floor(minf(usable_size.x, usable_size.y))
+	var cell_size: float = maxf(1.0, floor(board_size / float(max_dimension)))
 	var actual_size := Vector2(cols * cell_size, rows * cell_size)
-	var board_position := (size - actual_size) * 0.5
+	var board_position: Vector2 = ((size - actual_size) * 0.5).floor()
 	return {"rect": Rect2(board_position, actual_size), "cell_size": cell_size}
+
+
+func _cell_rect(row: int, col: int, origin: Vector2, cell_size: float) -> Rect2:
+	var gap := _cell_gap(cell_size)
+	return Rect2(origin + Vector2(col, row) * cell_size + Vector2.ONE * gap, Vector2.ONE * (cell_size - gap * 2.0))
+
+
+func _cell_base_color(row: int, col: int) -> Color:
+	if region_colors.is_empty():
+		return Color.WHITE
+	var index := _region_color_index_for_cell(row, col)
+	var color: Color = region_colors[index]
+	return color
+
+
+func _region_color_index_for_cell(row: int, col: int) -> int:
+	if region_colors.is_empty():
+		return 0
+	return posmod(int(regions[row][col]) - 1, region_colors.size())
+
+
+func _gap_color_between(first_row: int, first_col: int, second_row: int, second_col: int) -> Color:
+	if _region_id_for_cell(first_row, first_col) == _region_id_for_cell(second_row, second_col):
+		return _same_region_gap_color(first_row, first_col)
+	return REGION_BORDER_COLOR
+
+
+func _gap_corner_color(row: int, col: int) -> Color:
+	var region_id := _region_id_for_cell(row, col)
+	if _region_id_for_cell(row, col + 1) != region_id:
+		return REGION_BORDER_COLOR
+	if _region_id_for_cell(row + 1, col) != region_id:
+		return REGION_BORDER_COLOR
+	if _region_id_for_cell(row + 1, col + 1) != region_id:
+		return REGION_BORDER_COLOR
+	return _same_region_gap_color(row, col)
+
+
+func _region_id_for_cell(row: int, col: int) -> int:
+	return int(regions[row][col])
+
+
+func _same_region_gap_color(row: int, col: int) -> Color:
+	return _cell_base_color(row, col).lerp(REGION_BORDER_COLOR, SAME_REGION_GAP_MIX)
+
+
+func _cell_gap(cell_size: float) -> float:
+	return maxf(2.0, round(cell_size * 0.033))
+
+
+func _cell_corner_radius(cell_size: float) -> int:
+	return int(round(cell_size * 0.065))
+
+
+func _region_border_width(cell_size: float) -> float:
+	var width := maxi(2, int(round(cell_size * 0.040)))
+	return float(width if width % 2 == 0 else width + 1)
