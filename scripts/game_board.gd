@@ -7,15 +7,15 @@ signal cell_drag_started(row: int, col: int)
 signal cell_dragged(row: int, col: int)
 signal cell_drag_ended()
 
-const BOARD_INK := Color("#26334A")
+const UITokensScript = preload("res://scripts/ui_tokens.gd")
+const BOARD_INK := UITokensScript.INK
 const EMPTY_MARK := "empty"
 const PIECE_MARK := "piece"
 const BLOCKED_MARK := "blocked"
 const HINT_MARK := "hint"
 const KING_MARK := "king"
 const WRONG_MARK := "wrong"
-const REGION_BORDER_COLOR := Color("#1F2530", 0.46)
-const SAME_REGION_GAP_MIX := 0.22
+const REGION_BORDER_COLOR := UITokensScript.BOARD_BORDER
 
 var rows := 6
 var cols := 6
@@ -31,6 +31,7 @@ var guide_pulse_cell := Vector2i(-1, -1)
 var guide_pulse_cells: Dictionary = {}
 var guide_pulse_strength := 0.0
 var king_reveal_cells: Dictionary = {}
+var hidden_king_cells: Dictionary = {}
 var king_reveal_strength := 0.0
 var victory_strength := 0.0
 var tutorial_mask_enabled := false
@@ -57,6 +58,7 @@ func set_level(level: Dictionary, states: Array, colors: Array) -> void:
 	error_cells.clear()
 	guide_cells.clear()
 	king_reveal_cells.clear()
+	hidden_king_cells.clear()
 	king_reveal_strength = 0.0
 	tutorial_mask_enabled = false
 	tutorial_focus_cell = Vector2i(-1, -1)
@@ -133,6 +135,34 @@ func play_king_reveal(cells: Array) -> void:
 		king_reveal_strength = 0.0
 		queue_redraw()
 	)
+
+
+func prepare_king_reveal(cells: Array) -> void:
+	hidden_king_cells.clear()
+	for cell in cells:
+		if cell is Vector2i:
+			hidden_king_cells[cell] = true
+	queue_redraw()
+
+
+func reveal_king_cell(cell: Vector2i) -> void:
+	hidden_king_cells.erase(cell)
+	queue_redraw()
+	play_king_reveal([cell])
+
+
+func reveal_all_prepared_kings() -> void:
+	hidden_king_cells.clear()
+	queue_redraw()
+
+
+func cell_global_center(row: int, col: int) -> Vector2:
+	if row < 0 or row >= rows or col < 0 or col >= cols:
+		return global_position
+	var geometry := _board_geometry()
+	var board_rect: Rect2 = geometry["rect"]
+	var cell_size: float = geometry["cell_size"]
+	return get_global_rect().position + board_rect.position + Vector2(float(col) + 0.5, float(row) + 0.5) * cell_size
 
 
 func _play_guide_feedback_tween() -> void:
@@ -292,8 +322,6 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 	if cell_pulse_strength > 0.0:
 		rect = rect.grow(cell_size * 0.045 * cell_pulse_strength)
 	var king_reveal_scale := king_reveal_strength if state == KING_MARK and king_reveal_cells.has(cell_key) else 0.0
-	if king_reveal_scale > 0.0:
-		rect = rect.grow(cell_size * 0.10 * king_reveal_scale)
 
 	var color := _cell_base_color(row, col)
 	if error_cells.has(cell_key):
@@ -313,7 +341,9 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 		box.set_border_width_all(maxi(2, int(cell_size * 0.04)))
 	draw_style_box(box, rect)
 
-	if state == PIECE_MARK or state == HINT_MARK or state == KING_MARK:
+	if state == KING_MARK and hidden_king_cells.has(cell_key):
+		pass
+	elif state == PIECE_MARK or state == HINT_MARK or state == KING_MARK:
 		_draw_piece(rect, cell_size, state == HINT_MARK, state == KING_MARK, king_reveal_scale, cell_pulse_strength)
 	elif state == BLOCKED_MARK:
 		_draw_blocked(rect, cell_size)
@@ -357,26 +387,12 @@ func _draw_cell_gap_backgrounds(origin: Vector2, cell_size: float) -> void:
 
 func _draw_region_borders(origin: Vector2, cell_size: float) -> void:
 	var border_width := _region_border_width(cell_size)
-
-	for row in range(rows + 1):
-		for col in range(cols):
-			var left := origin.x + col * cell_size
-			var right := left + cell_size
-			var y := origin.y + row * cell_size
-			if row == 0 or row == rows:
-				_draw_region_edge(Vector2(left, y), Vector2(right, y), REGION_BORDER_COLOR, border_width)
-
-	for col in range(cols + 1):
-		for row in range(rows):
-			var x := origin.x + col * cell_size
-			var top := origin.y + row * cell_size
-			var bottom := top + cell_size
-			if col == 0 or col == cols:
-				_draw_region_edge(Vector2(x, top), Vector2(x, bottom), REGION_BORDER_COLOR, border_width)
-
-
-func _draw_region_edge(from: Vector2, to: Vector2, color: Color, width: float) -> void:
-	draw_line(from, to, color, width, false)
+	var board_width := float(cols) * cell_size
+	var board_height := float(rows) * cell_size
+	draw_rect(Rect2(origin, Vector2(board_width, border_width)), REGION_BORDER_COLOR, true)
+	draw_rect(Rect2(Vector2(origin.x, origin.y + board_height - border_width), Vector2(board_width, border_width)), REGION_BORDER_COLOR, true)
+	draw_rect(Rect2(origin, Vector2(border_width, board_height)), REGION_BORDER_COLOR, true)
+	draw_rect(Rect2(Vector2(origin.x + board_width - border_width, origin.y), Vector2(border_width, board_height)), REGION_BORDER_COLOR, true)
 
 
 func _draw_attention_mask(origin: Vector2, cell_size: float) -> void:
@@ -429,28 +445,46 @@ func _draw_piece(rect: Rect2, cell_size: float, is_hint: bool, _is_king: bool = 
 	if is_hint:
 		draw_circle(rect.get_center(), cell_size * 0.35, Color(1.0, 0.84, 0.35, 0.34))
 	var font := ThemeDB.fallback_font
-	var font_size := int(cell_size * (0.55 + cell_pulse_strength * 0.05 + king_reveal_scale * 0.30))
+	var font_ratio := minf(
+		UITokensScript.CROWN_MAX_FONT_RATIO,
+		UITokensScript.CROWN_BASE_FONT_RATIO
+		+ cell_pulse_strength * UITokensScript.CROWN_FEEDBACK_FONT_DELTA
+		+ king_reveal_scale * UITokensScript.OPENING_CROWN_FONT_DELTA
+	)
+	var font_size := int(cell_size * font_ratio)
 	var baseline := rect.position.y + rect.size.y * 0.69
-	draw_string(font, Vector2(rect.position.x, baseline), piece_symbol, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, font_size, Color("#26334A"))
+	draw_string(font, Vector2(rect.position.x, baseline), piece_symbol, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, font_size, BOARD_INK)
 
 
 func _draw_blocked(rect: Rect2, cell_size: float) -> void:
 	var center := rect.get_center()
-	var radius := cell_size * 0.14
-	var color := Color(0.20, 0.26, 0.35, 0.5)
-	var width := maxf(2.0, cell_size * 0.035)
-	draw_line(center - Vector2(radius, radius), center + Vector2(radius, radius), color, width, true)
-	draw_line(center + Vector2(radius, -radius), center + Vector2(-radius, radius), color, width, true)
+	var radius := cell_size * UITokensScript.BLOCKED_X_RADIUS_RATIO
+	var width := maxf(3.0, cell_size * UITokensScript.BLOCKED_X_WIDTH_RATIO)
+	var halo_width := width + maxf(1.5, cell_size * 0.020)
+	var first_start := center - Vector2(radius, radius)
+	var first_end := center + Vector2(radius, radius)
+	var second_start := center + Vector2(radius, -radius)
+	var second_end := center + Vector2(-radius, radius)
+	draw_line(first_start, first_end, UITokensScript.BLOCKED_X_HALO_COLOR, halo_width, true)
+	draw_line(second_start, second_end, UITokensScript.BLOCKED_X_HALO_COLOR, halo_width, true)
+	draw_line(first_start, first_end, UITokensScript.BLOCKED_X_COLOR, width, true)
+	draw_line(second_start, second_end, UITokensScript.BLOCKED_X_COLOR, width, true)
 
 
 func _draw_wrong(rect: Rect2, cell_size: float) -> void:
 	var center := rect.get_center()
-	var radius := cell_size * 0.20
-	var color := Color("#D92F42")
-	var width := maxf(3.0, cell_size * 0.055)
-	draw_line(center - Vector2(radius, radius), center + Vector2(radius, radius), color, width, true)
-	draw_line(center + Vector2(radius, -radius), center + Vector2(-radius, radius), color, width, true)
-	draw_circle(center, cell_size * 0.31, Color(1.0, 0.12, 0.18, 0.12))
+	var radius := cell_size * UITokensScript.WRONG_X_RADIUS_RATIO
+	var width := maxf(4.0, cell_size * UITokensScript.WRONG_X_WIDTH_RATIO)
+	var halo_width := width + maxf(2.5, cell_size * 0.030)
+	var first_start := center - Vector2(radius, radius)
+	var first_end := center + Vector2(radius, radius)
+	var second_start := center + Vector2(radius, -radius)
+	var second_end := center + Vector2(-radius, radius)
+	draw_circle(center, cell_size * UITokensScript.WRONG_X_BACKDROP_RADIUS_RATIO, UITokensScript.WRONG_X_BACKDROP_COLOR)
+	draw_line(first_start, first_end, UITokensScript.WRONG_X_HALO_COLOR, halo_width, true)
+	draw_line(second_start, second_end, UITokensScript.WRONG_X_HALO_COLOR, halo_width, true)
+	draw_line(first_start, first_end, UITokensScript.WRONG_X_COLOR, width, true)
+	draw_line(second_start, second_end, UITokensScript.WRONG_X_COLOR, width, true)
 
 
 func _board_geometry() -> Dictionary:
@@ -504,17 +538,16 @@ func _region_id_for_cell(row: int, col: int) -> int:
 
 
 func _same_region_gap_color(row: int, col: int) -> Color:
-	return _cell_base_color(row, col).lerp(REGION_BORDER_COLOR, SAME_REGION_GAP_MIX)
+	return UITokensScript.same_region_gap_color(_cell_base_color(row, col))
 
 
 func _cell_gap(cell_size: float) -> float:
-	return maxf(2.0, round(cell_size * 0.033))
+	return UITokensScript.cell_gap(cell_size)
 
 
 func _cell_corner_radius(cell_size: float) -> int:
-	return int(round(cell_size * 0.065))
+	return UITokensScript.cell_corner_radius(cell_size)
 
 
-func _region_border_width(cell_size: float) -> float:
-	var width := maxi(2, int(round(cell_size * 0.040)))
-	return float(width if width % 2 == 0 else width + 1)
+func _region_border_width(_cell_size: float) -> float:
+	return UITokensScript.board_border_width(maxi(rows, cols))

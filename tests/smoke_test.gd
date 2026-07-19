@@ -1,6 +1,8 @@
 extends SceneTree
 
 const LevelDirectorScript = preload("res://scripts/level_director.gd")
+const CoinEconomyScript = preload("res://scripts/coin_economy.gd")
+const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const SAVE_PATH := "user://color_queens_save.json"
 
 
@@ -24,6 +26,38 @@ func _run() -> void:
 	assert(game.levels.size() >= 50, "MVP should include 50 default levels")
 	assert(game.home_screen != null, "Home screen should exist")
 	assert(game.game_screen != null, "Game screen should exist")
+	assert(game.progress_bar != null and game.progress_label != null, "Level screen should show crown progress")
+	assert(game.COIN_ICON != null, "Coin balance should use the generated coin texture")
+	assert(game.coin_label.get_parent().get_node_or_null("CoinIcon") != null, "Level coin balance should render the coin icon beside its value")
+	assert(game.opening_king_overlay != null, "Level screen should provide an opening king overlay")
+	assert(game.INK == UITokensScript.INK, "Main UI should use the shared ink token")
+	assert(game.REGION_COLORS == UITokensScript.REGION_COLORS, "Main UI should use the shared region palette")
+	assert(game.board.BOARD_INK == UITokensScript.INK, "Board symbols should use the shared ink token")
+	assert(UITokensScript.BOARD_BORDER.a == 1.0, "Board borders should use a precomposed color with stable visual opacity")
+	assert(UITokensScript.board_border_width(5) == 4.0, "5x5 board border should follow the UI guide")
+	assert(UITokensScript.board_border_width(7) == 3.0, "7x7 board border should follow the UI guide")
+	assert(UITokensScript.board_border_width(9) == 2.0, "9x9 board border should follow the UI guide")
+	assert(UITokensScript.CROWN_MAX_FONT_RATIO <= 0.72, "Opening crown scale should stay inside its cell")
+	assert(CoinEconomyScript.size_base_reward(5) < CoinEconomyScript.size_base_reward(9), "Larger boards should grant a larger base coin reward")
+	assert(CoinEconomyScript.level_base_reward(5, 1) < CoinEconomyScript.level_base_reward(5, 0), "Opening king levels should grant fewer coins")
+	var clean_reward := CoinEconomyScript.completion_reward(5, 0, 0)
+	var mistake_floor_reward := CoinEconomyScript.completion_reward(5, 0, 9)
+	assert(mistake_floor_reward == int(round(float(clean_reward) * 0.5)), "Mistake deductions should stop at half of the level base reward")
+	var economy_test_progress := CoinEconomyScript.default_progress()
+	var economy_base := CoinEconomyScript.level_base_reward(5, 0)
+	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_HINT, 5, 0) == economy_base, "Logic hint should cost one level base")
+	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_REVIVE, 5, 0) == economy_base * 2, "Revive should cost two level bases")
+	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_CROWN_FIND, 5, 0) == economy_base * 3, "Crown find should cost three level bases")
+	assert(CoinEconomyScript.rewarded_ad_coin_grant(economy_base * 3, 0, 5, 0) == economy_base * 3, "A rewarded ad should cover a full tool shortage")
+	assert(CoinEconomyScript.rewarded_ad_coin_grant(economy_base * 3, economy_base * 3 - 1, 5, 0) == economy_base, "A rewarded ad should grant at least one level base without over-funding the wallet")
+	for completion_index in range(3):
+		CoinEconomyScript.record_completion(economy_test_progress, completion_index + 1, 5, 0, 0, economy_base, 0)
+	var discounted_hint_price := CoinEconomyScript.tool_price(CoinEconomyScript.TOOL_HINT, 5, 0, economy_test_progress, 0)
+	assert(discounted_hint_price < economy_base, "Three completions without a coin exchange should discount the next tool price")
+	assert(CoinEconomyScript.tool_price(CoinEconomyScript.TOOL_HINT, 5, 0, economy_test_progress, 3) == economy_base, "Repeated exchanges should restore the standard tool price")
+	assert(game._heart_limit_for_display_level(10) == 3, "The first ten display levels should keep three hearts")
+	assert(game._heart_limit_for_display_level(11) == 2 and game._heart_limit_for_display_level(30) == 2, "Display levels 11-30 should use two hearts")
+	assert(game._heart_limit_for_display_level(31) == 1, "Display level 31 onward should use one heart")
 	game.tutorial_completed = true
 	game.tutorial_started = false
 	if game.tutorial_resume_dialog:
@@ -39,6 +73,9 @@ func _run() -> void:
 	assert(game.game_screen.visible, "Starting from home after a completed saved level should enter the game")
 	assert(game.player_level_number == 2, "Starting from home after a completed saved level should advance to the next display level")
 	assert(not game.is_completed, "The auto-advanced level should be playable")
+	assert(game.opening_king_overlay.visible, "A level with opening kings should show the count overlay")
+	assert(game.board.hidden_king_cells.size() == game.active_king_positions.size(), "Opening kings should stay hidden until their flight animation lands")
+	game._cancel_opening_king_intro()
 	var resumed_editable_cell := _first_empty_non_king_cell(game)
 	game._on_cell_pressed(resumed_editable_cell.y, resumed_editable_cell.x)
 	assert(game.cell_states[resumed_editable_cell.y][resumed_editable_cell.x] == "blocked", "The auto-advanced level should accept normal input")
@@ -208,11 +245,20 @@ func _run() -> void:
 		game._on_cell_double_pressed(next_wrong.y, next_wrong.x)
 	assert(game.is_failed, "The level should fail when hearts reach zero")
 	assert(game.completion_overlay.visible, "Failing the level should show the result overlay")
-	assert(game.completion_next_button.text == "重新挑战", "Failure primary action should retry the level")
-	assert(game.completion_replay_button.text == "返回首页", "Failure secondary action should return home")
+	var revive_price: int = game._current_tool_price(CoinEconomyScript.TOOL_REVIVE)
+	assert(game.completion_next_button.text == "金币复活  -%d" % revive_price, "Failure primary action should expose the current revive price")
+	assert(game.completion_replay_button.text == "重新挑战", "Failure secondary action should restart without preserving the board")
+	var wrong_marks_before_revive := _count_state(game.cell_states, "wrong")
+	game.coin_count = revive_price
+	game._completion_primary_pressed()
+	assert(not game.is_failed, "Coin revive should return the current run to a playable state")
+	assert(game.heart_count == 1, "Coin revive should restore one heart")
+	assert(_count_state(game.cell_states, "wrong") == wrong_marks_before_revive, "Coin revive should preserve the current board")
+	assert(game.coin_count == 0, "Coin revive should reconcile its displayed price")
+	assert(not game.completion_overlay.visible, "Coin revive should close the failure page")
 	game._replay_level()
 	assert(not game.is_failed, "Retrying should clear the failed state")
-	assert(game.heart_count == game.INITIAL_HEART_COUNT, "Retrying should restore three hearts")
+	assert(game.heart_count == game.current_heart_limit, "Retrying should restore the heart limit for the current display level")
 	game.cell_states[wrong_cell.y][wrong_cell.x] = "wrong"
 	game.board.set_states(game.cell_states)
 	game._on_cell_pressed(wrong_cell.y, wrong_cell.x)
@@ -244,7 +290,16 @@ func _run() -> void:
 	while game.crown_find_count > 0:
 		game._use_crown_find()
 	assert(game.crown_find_count == 0, "Crown find count should stop at zero")
-	assert(game.crown_find_button.disabled, "Crown find button should disable when uses are exhausted")
+	assert(not game.crown_find_button.disabled, "Crown find should remain available for coins after free uses are exhausted")
+	assert(str(game.crown_find_button.text).contains("-"), "Crown find should display its current coin price")
+	var pieces_before_shortage: int = game._piece_positions().size()
+	game.coin_count = 0
+	game._use_crown_find()
+	assert(game._piece_positions().size() == pieces_before_shortage, "Insufficient coins must not place a crown")
+	assert(game.coin_shortage_dialog.visible, "Insufficient coins should offer voluntary purchase and rewarded-ad routes")
+	assert(game.pending_coin_tool == CoinEconomyScript.TOOL_CROWN_FIND, "Coin shortage dialog should retain the requested tool")
+	assert(game.pending_rewarded_coin_grant > 0 and game.pending_rewarded_coin_grant <= game.pending_coin_price, "Rewarded-ad grant should cover the shortage without exceeding the requested tool price")
+	game.coin_shortage_dialog.hide()
 	game._clear_board()
 	assert(game.crown_find_count == 0, "Clearing the board should not restore crown find uses")
 
@@ -280,9 +335,17 @@ func _run() -> void:
 	assert(game.coin_count == coins_before, "Free hint uses must not charge coins")
 
 	game._load_level(0)
+	var completion_coins_before: int = game.coin_count
+	var expected_completion_reward := CoinEconomyScript.completion_reward(
+		int(game.current_level["rows"]),
+		game.active_king_positions.size(),
+		0
+	)
 	for coordinate in game.current_level["solution"]:
 		game._on_cell_double_pressed(int(coordinate[0]), int(coordinate[1]))
 	assert(game.is_completed, "A valid solution must complete the level")
+	assert(game.coin_count == completion_coins_before + expected_completion_reward, "Completion should grant the dynamic coin reward")
+	assert(int(game.economy_progress["totalCoinEarned"]) >= expected_completion_reward, "Economy progress should retain earned-coin totals")
 
 	await create_timer(0.8).timeout
 	game.queue_free()

@@ -34,7 +34,7 @@
 底部操作区
 ```
 
-关卡页不承载金币、排行榜、活动、设置、广告等干扰元素。
+关卡页只保留一项与当前操作直接相关的资源信息：当前金币余额。排行榜、活动、设置和广告位仍不进入关卡页。金币余额使用顶部轻量标签展示，不增加购买加号或主动促销入口；只有玩家主动使用付费道具且金币不足时才展示获取方式。
 
 ## 3. 颜色系统
 
@@ -54,6 +54,8 @@
 | `warning_yellow` | 教练提示卡片 | `#FFF1BD` |
 | `danger_red` | 错误、红心 | `#F25D72` |
 | `board_border` | 棋盘外框/区域边界 | `#1F2530`，建议 alpha `0.40-0.55` |
+
+运行时绘制边界时，将 `board_border` 预先合成到浅色页面背景，当前结果色为不透明 `#989BA0`。这样外框和区域分界不会因为底下是红色、蓝色或教程蒙层而产生不同的视觉透明度。
 
 ### 3.2 棋盘默认色板
 
@@ -159,22 +161,25 @@
 
 - 外框最小 `2px`，最大 `4px`。
 - 外框宽度应使用整数像素，避免小数抗锯齿导致虚边。
+- 外框使用四条整数像素实心边带一次性绘制，不按格子分段，避免半透明线段在接缝处重复叠加。
 - 如果自动按格子尺寸计算，建议使用 `cell_size * 0.04`，再 clamp 到 `2-4px`。
 - 不同区域边界的视觉强度应不高于外框；可以使用同色同透明度，但宽度不应超过外框。
 - 同一区域内部缝隙不画黑线，使用该色加深填充。
 - 9x9 棋盘格子更小，应优先减弱线宽，避免棋盘变“网格化”。
 
-当前实现可以映射为：
+运行时实现统一映射到 `scripts/ui_tokens.gd`：
 
 ```gdscript
-const REGION_BORDER_COLOR := Color("#1F2530", 0.46)
-
-func _region_border_width(cell_size: float) -> float:
-	var width := maxi(2, int(round(cell_size * 0.040)))
-	return float(width if width % 2 == 0 else width + 1)
+static func board_border_width(board_size: int) -> float:
+	if board_size <= 6:
+		return 4.0
+	if board_size <= 8:
+		return 3.0
+	return 2.0
 ```
 
-后续如果要严格按棋盘尺寸控制，可改为按 `rows/cols` 分档返回 `2-4px`。
+`scripts/game_board.gd` 只负责调用 token，不再独立维护另一套线宽数值。
+主关卡和新手教程必须调用同一个外框绘制函数；教程灰色引导蒙层只改变非目标格亮度，不改变外框颜色和宽度。
 
 棋盘状态：
 
@@ -187,6 +192,36 @@ func _region_border_width(cell_size: float) -> float:
 | 开局国王 | 锁定皇冠，播放轻微缩放提醒 |
 | 错误红 X | 红色 X，锁定，不可清除 |
 | 提示范围 | 非操作格覆盖半透明灰色蒙层，不闪烁 |
+
+### 6.2 X 标记视觉规范
+
+普通 X 和错误 X 必须在全部 10 种区域色上清楚可见，并保持一眼可区分。
+
+普通 X：
+
+- 主线使用 `ink`，alpha 为 `0.78`。
+- 符号半径为格子尺寸的 `18%`，线宽为格子尺寸的 `4.6%`，最小 `3px`。
+- 主线下面增加低透明度白色细描边，防止深蓝、紫色等深色区域吞没符号。
+- 不增加实心底圈，避免普通排除标记过度抢眼。
+
+错误 X：
+
+- 主线使用深错误红 `#D92F42`，保持不透明。
+- 符号半径为格子尺寸的 `22%`，线宽为格子尺寸的 `6%`，最小 `4px`。
+- 主线下面使用 `#FFF7F8` 浅色描边，描边比主线宽至少 `2.5px`。
+- 背后增加 `danger_red`、alpha `0.22` 的柔和圆形底晕，圆半径为格子尺寸的 `32%`。
+- 错误 X 必须明显强于普通 X，但不能遮挡区域底色和棋盘边界。
+
+X 属于基础可缩放符号，当前优先使用 Godot 自绘线条。若后续主题皮肤需要纹理化图案，再使用透明 SVG/PNG 贴图；贴图应保留相同尺寸比例和语义颜色。
+
+### 6.3 开局提示皇冠与进度规范
+
+- 关卡标题下方始终展示皇冠图标、进度条和 `已找到 / 本关总数`。
+- 有开局提示皇冠时，先显示轻量浮层，文案同时说明本关总皇冠数和赠送的提示皇冠数。
+- 浮层中的皇冠依次运动到对应棋盘格，落位后才显示锁定皇冠，并同步增加进度。
+- 每个皇冠落位后播放一次轻微缩放回弹；最大字号不超过格子尺寸的 `72%`。
+- 缩放只改变皇冠字号，不放大格子绘制矩形，防止边缘格皇冠越过棋盘外框。
+- 浮层期间拦截棋盘输入，全部皇冠落位后淡出并恢复操作。
 
 ## 7. 按钮规范
 
@@ -237,6 +272,7 @@ func _region_border_width(cell_size: float) -> float:
 必须显示：
 
 - 返回首页按钮。
+- 当前持有金币。
 - 选关入口。
 - 当前关卡标题。
 - 教练提示卡片。
@@ -245,7 +281,7 @@ func _region_border_width(cell_size: float) -> float:
 
 不应显示：
 
-- 金币栏。
+- 金币购买加号或促销横幅。
 - 设置入口。
 - 广告位。
 - 排行榜/社交入口。
@@ -274,10 +310,23 @@ func _region_border_width(cell_size: float) -> float:
 ```text
 顶部：挑战失败
 中部：红心/失败反馈
-底部：[重新挑战] [返回首页]
+底部：[金币复活] [重新挑战]
 ```
 
 结果页不显示排行榜、广告、复杂奖励进度。
+
+金币复活按钮必须直接展示本次价格。复活后保留棋盘并恢复 1 颗红心；金币不足时使用系统弹窗展示“观看激励广告 / 购买金币 / 稍后再说”，不得自动播放广告。
+
+### 10.1 金币与付费提示视觉
+
+- 顶部金币标签只显示图标和余额，不使用闪烁、红点或强促销动画。
+- 金币图标使用 `assets/ui/coin.png` 的透明 PNG 贴图，显示尺寸为 `28 × 28px`；不得退化为圆点字符或货币符号。
+- 免费次数存在时，道具按钮显示 `×剩余次数`；免费次数耗尽后改为 `-金币价格`。
+- 所有价格必须在点击前可见，扣款后余额立即刷新。
+- 金币不足弹窗需要同时展示价格、当前余额和缺口。
+- 激励广告按钮同时展示预计补币数量，且一次补币足以完成当前请求。
+- 激励广告是玩家主动选择，不在开局、解题中途或通关后自动弹出。
+- 当前购买与激励广告为接入占位；视觉上不得暗示已经到账。
 
 ## 11. 动效规范
 
@@ -303,6 +352,7 @@ func _region_border_width(cell_size: float) -> float:
 
 | 模块 | 文件 |
 | --- | --- |
+| UI 设计 token | `scripts/ui_tokens.gd` |
 | 首页、关卡页、结果页 UI | `scripts/main.gd` |
 | 棋盘自绘 | `scripts/game_board.gd` |
 | 关卡策略 | `scripts/level_director.gd` |
@@ -310,11 +360,12 @@ func _region_border_width(cell_size: float) -> float:
 
 ### 12.1 规范如何落地到代码
 
-`UI_DESIGN_GUIDE.md` 本身不会自动影响游戏运行，它的作用是把设计决策稳定下来。真正生效需要经过三层：
+`UI_DESIGN_GUIDE.md` 本身不会自动影响游戏运行，它的作用是把设计决策稳定下来。真正生效需要经过四层：
 
 1. 文档层：在本文档中确定视觉规范。
-2. 代码层：把规范转成 Godot 常量、样式函数或绘制函数。
-3. 验收层：通过截图、真机测试和 smoke test 确认实现符合规范。
+2. Token 层：把共享规范同步到 `scripts/ui_tokens.gd`。
+3. 代码层：页面和棋盘只引用 token 常量、样式函数或绘制参数。
+4. 验收层：通过截图、真机测试和 smoke test 确认实现符合规范。
 
 落地优先级：
 
@@ -329,14 +380,19 @@ tests/*.gd 保障关键行为不回退
 
 | 规范项 | 当前代码位置 | 说明 |
 | --- | --- | --- |
-| 棋盘区域色板 | `scripts/main.gd` 的 `REGION_COLORS` | 固定“明亮经典”色板 |
-| 主文字色 | `scripts/main.gd` 的 `INK`、`scripts/game_board.gd` 的 `BOARD_INK` | 后续可统一成同一 token |
-| 棋盘边界色 | `scripts/game_board.gd` 的 `REGION_BORDER_COLOR` | 控制外框和区域分界色 |
-| 同区域缝隙深浅 | `scripts/game_board.gd` 的 `SAME_REGION_GAP_MIX` | 控制同色内部间隔 |
+| 棋盘区域色板 | `scripts/ui_tokens.gd` 的 `REGION_COLORS` | `main.gd` 引用固定“明亮经典”色板 |
+| 主文字色 | `scripts/ui_tokens.gd` 的 `INK` | `main.gd` 和 `game_board.gd` 共同引用 |
+| 棋盘边界色 | `scripts/ui_tokens.gd` 的 `BOARD_BORDER` | 控制外框和区域分界色 |
+| 同区域缝隙深浅 | `scripts/ui_tokens.gd` 的 `SAME_REGION_GAP_MIX` | 控制同色内部间隔 |
 | 棋盘格子尺寸 | `scripts/game_board.gd` 的 `_board_geometry()` | 负责正方形和整数像素对齐 |
-| 格子间隔 | `scripts/game_board.gd` 的 `_cell_gap()` | 控制圆角格之间的间隔 |
-| 格子圆角 | `scripts/game_board.gd` 的 `_cell_corner_radius()` | 控制独立格子圆角 |
-| 外框线宽 | `scripts/game_board.gd` 的 `_region_border_width()` | 控制棋盘外框宽度 |
+| 格子间隔 | `scripts/ui_tokens.gd` 的 `cell_gap()` | `game_board.gd` 调用，控制圆角格之间的间隔 |
+| 格子圆角 | `scripts/ui_tokens.gd` 的 `cell_corner_radius()` | `game_board.gd` 调用，控制独立格子圆角 |
+| 外框线宽 | `scripts/ui_tokens.gd` 的 `board_border_width()` | `game_board.gd` 调用，按棋盘尺寸分档 |
+| 普通 X | `scripts/ui_tokens.gd` 的 `BLOCKED_X_*` | `game_board.gd` 的 `_draw_blocked()` 引用 |
+| 错误 X | `scripts/ui_tokens.gd` 的 `WRONG_X_*` | `game_board.gd` 的 `_draw_wrong()` 引用 |
+| 皇冠进度 | `scripts/main.gd` 的 `_build_progress_row()` | 显示本关已找到数量和总数 |
+| 开局皇冠浮层 | `scripts/main.gd` 的 `_build_opening_king_overlay()` | 展示数量并驱动皇冠飞入棋盘 |
+| 皇冠最大缩放 | `scripts/ui_tokens.gd` 的 `CROWN_MAX_FONT_RATIO` | 防止边缘皇冠越过棋盘外框 |
 | 按钮样式 | `scripts/main.gd` 的 `_button_style()`、`_card_style()` 等 | 后续应收敛成统一按钮 token |
 
 开发流程建议：
@@ -348,7 +404,7 @@ tests/*.gd 保障关键行为不回退
 
 建议后续重构方向：
 
-- 将颜色 token 抽到统一常量区。
+- 新增共享视觉参数时，先加入 `scripts/ui_tokens.gd`，避免页面脚本各自维护相同数值。
 - 将按钮样式函数统一命名和参数化。
 - 将棋盘视觉参数集中到 `GameBoard` 顶部常量。
 - UI 改动后同步更新 `PRODUCT_REQUIREMENTS.md` 和本文档。
