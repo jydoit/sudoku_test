@@ -8,6 +8,9 @@ const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const ToolIconScript = preload("res://scripts/tool_icon.gd")
 const RuleIllustrationScript = preload("res://scripts/rule_illustration.gd")
 const DialogControllerScript = preload("res://scripts/dialog_controller.gd")
+const LocalizationControllerScript = preload("res://scripts/localization_controller.gd")
+const UI_FONT: Font = preload("res://assets/fonts/NotoSansSC-Regular.ttf")
+const ARABIC_FONT: Font = preload("res://assets/fonts/NotoSansArabic-Regular.ttf")
 const COIN_ICON = preload("res://assets/ui/coin.png")
 const LION_KING_ICON = preload("res://assets/ui/lion_king.png")
 const LION_KING_WRONG_ICON = preload("res://assets/ui/lion_king_wrong.png")
@@ -32,7 +35,7 @@ const LION_KING_VICTORY_FRAMES = [
 	LION_KING_VICTORY_FUNNY_ICON
 ]
 const SAVE_PATH := "user://color_queens_save.json"
-const SAVE_VERSION := 6
+const SAVE_VERSION := 7
 const INITIAL_HINT_COUNT := 3
 const INITIAL_HEART_COUNT := 3
 const INITIAL_CROWN_FIND_COUNT := 3
@@ -130,6 +133,7 @@ var home_heart_label: Label
 var home_star_label: Label
 var home_start_button: Button
 var level_select_button: Button
+var settings_button: Button
 var home_chest_label: Label
 var board
 var level_picker: OptionButton
@@ -173,6 +177,10 @@ var tutorial_hand_label: Label
 var dialog_controller
 var help_content: Control
 var level_select_content: Control
+var settings_content: Control
+var language_picker: OptionButton
+var localization
+var selected_language := ""
 var pending_coin_tool := ""
 var pending_coin_price := 0
 var pending_rewarded_coin_grant := 0
@@ -199,8 +207,14 @@ func _ready() -> void:
 		_show_fatal_error("没有找到可用关卡")
 		return
 	_load_save()
+	localization = LocalizationControllerScript.new()
+	localization.initialize(selected_language)
+	selected_language = localization.current_locale
+	localization.locale_changed.connect(_on_locale_changed)
+	_configure_font_fallbacks()
 	LevelDirectorScript.record_retention_if_needed(director_progress, _today_string(), int(Time.get_unix_time_from_system()))
 	_build_ui()
+	_apply_layout_direction()
 	current_level_index = clampi(current_level_index, 0, levels.size() - 1)
 	var resume_schedule := _schedule_for_current_level()
 	current_level_index = int(resume_schedule.get("levelIndex", current_level_index))
@@ -212,6 +226,11 @@ func _ready() -> void:
 		_show_tutorial_resume_dialog()
 	else:
 		_start_tutorial_step(0)
+
+
+func _configure_font_fallbacks() -> void:
+	if not UI_FONT.fallbacks.has(ARABIC_FONT):
+		UI_FONT.fallbacks.append(ARABIC_FONT)
 
 
 func _build_ui() -> void:
@@ -236,6 +255,7 @@ func _build_ui() -> void:
 	_build_dialog_controller()
 	_build_help_dialog()
 	_build_level_select_dialog()
+	_build_settings_dialog()
 
 
 func _build_home_screen() -> Control:
@@ -613,6 +633,11 @@ func _build_top_bar() -> Control:
 	help_button.tooltip_text = "查看消除规则"
 	help_button.pressed.connect(_on_help)
 	row.add_child(help_button)
+
+	settings_button = _small_button("⚙", Vector2(46, 46), 22)
+	settings_button.tooltip_text = "设置"
+	settings_button.pressed.connect(_on_settings)
+	row.add_child(settings_button)
 
 	level_select_button = _small_button("选关")
 	level_select_button.tooltip_text = "选择关卡"
@@ -1082,6 +1107,53 @@ func _build_level_select_dialog() -> void:
 	_refresh_level_select_picker()
 
 
+func _build_settings_dialog() -> void:
+	var margin := MarginContainer.new()
+	margin.name = "SettingsContent"
+	margin.custom_minimum_size = Vector2(368, 126)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	settings_content = margin
+
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 10)
+	margin.add_child(column)
+
+	var description := Label.new()
+	description.text = "选择界面和游戏提示使用的语言。"
+	description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	description.add_theme_color_override("font_color", MUTED)
+	description.add_theme_font_size_override("font_size", 14)
+	column.add_child(description)
+
+	var language_row := HBoxContainer.new()
+	language_row.custom_minimum_size.y = 52
+	language_row.add_theme_constant_override("separation", 12)
+	column.add_child(language_row)
+
+	var language_label := Label.new()
+	language_label.text = "游戏语言"
+	language_label.custom_minimum_size.x = 104
+	language_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	language_label.add_theme_color_override("font_color", INK)
+	language_label.add_theme_font_size_override("font_size", 16)
+	language_row.add_child(language_label)
+
+	language_picker = OptionButton.new()
+	language_picker.name = "LanguagePicker"
+	language_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	language_picker.custom_minimum_size.y = 48
+	language_picker.focus_mode = Control.FOCUS_ALL
+	language_picker.add_theme_font_size_override("font_size", 16)
+	language_picker.add_theme_color_override("font_color", INK)
+	language_picker.add_theme_stylebox_override("normal", _button_style(Color("#F1F4F7"), 12))
+	language_row.add_child(language_picker)
+	_refresh_language_picker()
+	dialog_controller.register_content("settings", settings_content)
+
+
 func _schedule_for_current_level() -> Dictionary:
 	_sync_director_completed_levels()
 	if not active_schedule.is_empty():
@@ -1229,8 +1301,8 @@ func _play_opening_king_intro(cells: Array) -> void:
 	var token := opening_king_animation_token
 	var total_count := int(current_level.get("targetCount", cells.size()))
 	var base_progress := maxi(0, _piece_positions().size() - cells.size())
-	opening_king_title.text = "本关需要找到 %d 个皇冠" % total_count
-	opening_king_count_label.text = "开局提供 %d 个提示皇冠" % cells.size()
+	opening_king_title.text = _t("本关需要找到 %d 个皇冠", [total_count])
+	opening_king_count_label.text = _t("开局提供 %d 个提示皇冠", [cells.size()])
 	opening_king_source_count_label.text = "×%d" % cells.size()
 	if progress_bar:
 		progress_bar.value = base_progress
@@ -1308,19 +1380,25 @@ func _cancel_opening_king_intro(keep_pending: bool = false) -> void:
 
 func _level_coach_text() -> String:
 	var king_info := str(current_level.get("kingInfo", "")).strip_edges()
-	var prefix := "难度挑战： " if bool(active_schedule.get("isMilestoneChallenge", false)) else ""
+	var prefix := _t("难度挑战： ") if bool(active_schedule.get("isMilestoneChallenge", false)) else ""
 	if king_info != "":
-		return prefix + king_info
+		return prefix + _runtime_text(
+			king_info,
+			"请观察棋盘中保持明亮的格子，并根据行、列、颜色区域和相邻规则继续推理。"
+		)
 	var display := int(active_schedule.get("displayLevel", player_level_number))
 	if str(active_schedule.get("mode", "")) == "fixed" and display <= 9 and not active_king_positions.is_empty():
-		return prefix + "国王提示：开局已展示一个皇冠，请围绕它继续推理。"
-	return prefix + str(current_level.get("tutorial", "放置全部皇冠，满足行、列、颜色区域和相邻规则。"))
+		return prefix + _t("国王提示：开局已展示一个皇冠，请围绕它继续推理。")
+	return prefix + _runtime_text(
+		str(current_level.get("tutorial", "放置全部皇冠，满足行、列、颜色区域和相邻规则。")),
+		"请观察棋盘中保持明亮的格子，并根据行、列、颜色区域和相邻规则继续推理。"
+	)
 
 
 func _display_level_title() -> String:
 	if bool(active_schedule.get("isMilestoneChallenge", false)):
-		return "关卡 %d · 难度挑战" % player_level_number
-	return "关卡 %d" % player_level_number
+		return _t("关卡 %d · 难度挑战", [player_level_number])
+	return _t("关卡 %d", [player_level_number])
 
 
 func _update_active_king_positions() -> void:
@@ -1571,7 +1649,8 @@ func _show_coin_shortage_dialog(tool: String, price: int) -> void:
 	elif tool == CoinEconomyScript.TOOL_REVIVE:
 		tool_name = "保留棋盘复活"
 	var shortage := maxi(0, price - coin_count)
-	var message := "%s需要 %d 金币。\n当前持有 %d，还差 %d。\n\n可购买金币，或主动观看一次激励广告补足本次需求。" % [tool_name, price, coin_count, shortage]
+	tool_name = _t(tool_name)
+	var message := _t("%s需要 %d 金币。\n当前持有 %d，还差 %d。\n\n可购买金币，或主动观看一次激励广告补足本次需求。", [tool_name, price, coin_count, shortage])
 	dialog_controller.show_dialog(
 		"coin_shortage",
 		"金币不足",
@@ -1580,7 +1659,7 @@ func _show_coin_shortage_dialog(tool: String, price: int) -> void:
 		[
 			{"id": "later", "text": "稍后再说", "variant": "secondary"},
 			{"id": "purchase", "text": "购买金币", "variant": "weak"},
-			{"id": "rewarded", "text": "观看广告 +%d" % pending_rewarded_coin_grant, "variant": "primary"}
+			{"id": "rewarded", "text": _t("观看广告 +%d", [pending_rewarded_coin_grant]), "variant": "primary"}
 		],
 		UITokensScript.DIALOG_STANDARD_WIDTH,
 		false
@@ -1608,7 +1687,10 @@ func _use_hint() -> void:
 	var target: Vector2i = hint["target"]
 	if target.x >= 0:
 		board.play_guide_feedback(target.y, target.x)
-	coach_label.text = str(hint["message"])
+	coach_label.text = _runtime_text(
+		str(hint["message"]),
+		"请观察棋盘中保持明亮的格子，并根据行、列、颜色区域和相邻规则继续推理。"
+	)
 	coach_label.add_theme_color_override("font_color", Color("#23845C"))
 	_update_coin_label()
 	_update_hint_button()
@@ -2655,8 +2737,11 @@ func _start_tutorial_step(index: int) -> void:
 		cell_states[int(coordinate[0])][int(coordinate[1])] = "piece"
 	if _tutorial_kind() == "tools":
 		_set_tutorial_button_demo_state(0)
-	level_label.text = str(current_level.get("title", "新手教程"))
-	coach_label.text = str(current_level["tutorial"])
+	level_label.text = _runtime_text(str(current_level.get("title", "新手教程")))
+	coach_label.text = _runtime_text(
+		str(current_level["tutorial"]),
+		"请观察棋盘中保持明亮的格子，并根据行、列、颜色区域和相邻规则继续推理。"
+	)
 	coach_label.add_theme_color_override("font_color", Color("#31506D"))
 	coach_label.add_theme_font_size_override("font_size", COACH_TUTORIAL_SIZE)
 	if progress_bar:
@@ -3143,7 +3228,7 @@ func _tutorial_single_map_valid_exclusion_cells() -> Array[Vector2i]:
 func _show_direct_tutorial_crown_clue(message: String) -> void:
 	tutorial_hint_target = _next_tutorial_solution_cell()
 	tutorial_interaction_stage = TUTORIAL_PHASE_HINT_PLACE
-	coach_label.text = message
+	coach_label.text = _runtime_text(message)
 	coach_label.add_theme_color_override("font_color", Color("#31506D"))
 	coach_label.add_theme_font_size_override("font_size", COACH_TUTORIAL_SIZE)
 	_set_tutorial_guides()
@@ -3180,7 +3265,7 @@ func _validate_tutorial_step(row: int, col: int) -> void:
 				_hide_tutorial_hand()
 				_complete_tutorial_step("这个颜色区域只能有一个皇冠")
 			else:
-				coach_label.text = "这个颜色区域已经找到皇冠，还剩 %d 个格子可以标记为 X。" % [3 - blocked_count]
+				coach_label.text = _runtime_text("这个颜色区域已经找到皇冠，还剩 %d 个格子可以标记为 X。" % [3 - blocked_count])
 		"row_col":
 			var blocked_count := _tutorial_blocked_row_col_count(_tutorial_target())
 			if progress_bar:
@@ -3191,7 +3276,7 @@ func _validate_tutorial_step(row: int, col: int) -> void:
 				_hide_tutorial_hand()
 				_complete_tutorial_step("皇冠所在的行和列都已排除")
 			else:
-				coach_label.text = "同行同列不能再有皇冠，还剩 %d 个格要排除。" % [6 - blocked_count]
+				coach_label.text = _runtime_text("同行同列不能再有皇冠，还剩 %d 个格要排除。" % [6 - blocked_count])
 		"adjacent":
 			var blocked_count := _tutorial_blocked_adjacent_count(_tutorial_target())
 			if progress_bar:
@@ -3202,7 +3287,7 @@ func _validate_tutorial_step(row: int, col: int) -> void:
 				_hide_tutorial_hand()
 				_complete_tutorial_step("皇冠的周围全部被排除")
 			else:
-				coach_label.text = "继续把皇冠周围的格子点成 X，还剩 %d 个。" % [8 - blocked_count]
+				coach_label.text = _runtime_text("继续把皇冠周围的格子点成 X，还剩 %d 个。" % [8 - blocked_count])
 		"adjacent_row_col":
 			var blocked_count := _tutorial_blocked_adjacent_row_col_count(_tutorial_target())
 			if progress_bar:
@@ -3215,7 +3300,7 @@ func _validate_tutorial_step(row: int, col: int) -> void:
 			elif _tutorial_blocked_adjacent_count(_tutorial_target()) >= 8:
 				coach_label.text = "周围一圈已排除。现在继续排除同行同列剩下的格子。"
 			else:
-				coach_label.text = "先把皇冠周围一圈点成 X，还剩 %d 个。" % [8 - _tutorial_blocked_adjacent_count(_tutorial_target())]
+				coach_label.text = _runtime_text("先把皇冠周围一圈点成 X，还剩 %d 个。" % [8 - _tutorial_blocked_adjacent_count(_tutorial_target())])
 		"tools":
 			_show_toast("这一关请先学习提示按钮")
 
@@ -3872,7 +3957,7 @@ func _complete_level() -> void:
 func _prepare_success_result_page(reward: int = 0) -> void:
 	result_overlay_mode = "success"
 	completion_title.text = "太棒了！"
-	reward_label.text = "第 %d 关 已完成" % player_level_number
+	reward_label.text = _t("第 %d 关 已完成", [player_level_number])
 	if result_icon_label:
 		result_icon_label.hide()
 	if result_piece_icon:
@@ -3894,7 +3979,7 @@ func _prepare_failure_result_page() -> void:
 	result_overlay_mode = "failure"
 	_stop_result_lion_animation()
 	completion_title.text = "挑战失败"
-	reward_label.text = "第 %d 关 未完成" % player_level_number
+	reward_label.text = _t("第 %d 关 未完成", [player_level_number])
 	if result_icon_label:
 		result_icon_label.text = "♥"
 		result_icon_label.add_theme_color_override("font_color", Color("#F25D72"))
@@ -3908,7 +3993,7 @@ func _prepare_failure_result_page() -> void:
 	if result_tip_label:
 		result_tip_label.text = "复活会保留当前棋盘，并恢复 1 颗红心"
 	if completion_next_button:
-		completion_next_button.text = "金币复活  -%d" % _current_tool_price(CoinEconomyScript.TOOL_REVIVE)
+		completion_next_button.text = _t("金币复活  -%d", [_current_tool_price(CoinEconomyScript.TOOL_REVIVE)])
 	if completion_replay_button:
 		completion_replay_button.text = "重新挑战"
 		completion_replay_button.show()
@@ -4086,9 +4171,21 @@ func _on_coin_plus() -> void:
 
 
 func _on_settings() -> void:
-	immediate_errors = not immediate_errors
-	_validate_and_update(false)
-	_show_toast("即时纠错：%s" % ("开启" if immediate_errors else "关闭"))
+	if not dialog_controller or not language_picker:
+		return
+	_refresh_language_picker()
+	dialog_controller.show_dialog(
+		"settings",
+		"语言设置",
+		"",
+		"settings",
+		[
+			{"id": "cancel", "text": "取消", "variant": "secondary"},
+			{"id": "apply", "text": "应用", "variant": "primary"}
+		],
+		UITokensScript.DIALOG_STANDARD_WIDTH,
+		true
+	)
 
 
 func _on_help() -> void:
@@ -4140,11 +4237,62 @@ func _on_dialog_action_selected(dialog_id: String, action_id: String) -> void:
 				_show_toast("激励广告入口占位：SDK 回调成功后发放 %d 金币" % pending_rewarded_coin_grant)
 			elif action_id == "purchase":
 				_show_toast("金币购买入口占位：接入支付后开放")
+		"settings":
+			if action_id == "apply":
+				_apply_selected_language()
 
 
 func _on_dialog_cancelled(dialog_id: String) -> void:
 	if dialog_id == "tutorial_resume":
 		_start_tutorial_step(0)
+
+
+func _refresh_language_picker() -> void:
+	if not language_picker or not localization:
+		return
+	language_picker.clear()
+	for option in localization.language_options():
+		var option_index := language_picker.item_count
+		language_picker.add_item(str(option["name"]))
+		language_picker.set_item_metadata(option_index, str(option["code"]))
+	language_picker.select(localization.locale_index(selected_language))
+
+
+func _apply_selected_language() -> void:
+	if not language_picker or language_picker.selected < 0:
+		return
+	var locale := str(language_picker.get_item_metadata(language_picker.selected))
+	localization.set_locale(locale)
+	selected_language = localization.current_locale
+	_save_game()
+
+
+func _on_locale_changed(locale: String) -> void:
+	selected_language = locale
+	_apply_layout_direction()
+	_refresh_localized_ui()
+
+
+func _apply_layout_direction() -> void:
+	layout_direction = Control.LAYOUT_DIRECTION_RTL if localization and localization.is_rtl() else Control.LAYOUT_DIRECTION_LTR
+
+
+func _refresh_localized_ui() -> void:
+	_update_home()
+	_update_hint_button()
+	_update_crown_find_button()
+	_refresh_level_select_picker()
+	if in_tutorial:
+		level_label.text = _t("新手教程")
+		_update_tutorial_action_bar()
+	elif not current_level.is_empty():
+		level_label.text = _display_level_title()
+		coach_label.text = _level_coach_text()
+	if completion_overlay and completion_overlay.visible:
+		if result_overlay_mode == "success":
+			_prepare_success_result_page()
+		elif result_overlay_mode == "failure":
+			_prepare_failure_result_page()
 
 
 func _open_level_select() -> void:
@@ -4174,7 +4322,7 @@ func _refresh_level_select_picker() -> void:
 	for index in range(levels.size()):
 		var level: Dictionary = levels[index]
 		var completed_mark := "✓ " if completed_levels.has(int(level["levelId"])) else ""
-		level_select_picker.add_item("%s关卡 %d · %s" % [completed_mark, int(level["levelId"]), str(level.get("difficulty", "normal"))], index)
+		level_select_picker.add_item("%s%s" % [completed_mark, _t("关卡 %d · %s", [int(level["levelId"]), _t(str(level.get("difficulty", "normal")))])], index)
 	if levels.size() > 0:
 		level_select_picker.select(clampi(current_level_index, 0, levels.size() - 1))
 
@@ -4190,7 +4338,7 @@ func _confirm_level_select() -> void:
 	_load_level(selected_index)
 	_show_game()
 	_save_game()
-	_show_toast("已进入关卡 %d" % int(current_level["levelId"]))
+	_show_toast(_t("已进入关卡 %d", [int(current_level["levelId"])]))
 
 
 func _open_level_editor() -> void:
@@ -4281,6 +4429,7 @@ func _load_save() -> void:
 	run_hint_count = int(data.get("runHintCount", 0))
 	run_coin_exchange_count = maxi(0, int(data.get("runCoinExchangeCount", 0)))
 	immediate_errors = bool(data.get("immediateErrors", true))
+	selected_language = str(data.get("selectedLanguage", ""))
 	tutorial_completed = bool(data.get("tutorialCompleted", false))
 	tutorial_started = bool(data.get("tutorialStarted", false))
 	tutorial_step_index = clampi(int(data.get("tutorialStepIndex", 0)), 0, TUTORIAL_LEVELS.size() - 1)
@@ -4309,6 +4458,7 @@ func _save_game() -> void:
 		"selectedTheme": "crown",
 		"hintCount": hint_count,
 		"immediateErrors": immediate_errors,
+		"selectedLanguage": selected_language,
 		"isCompleted": is_completed,
 		"isFailed": is_failed,
 		"cellStates": cell_states,
@@ -4422,10 +4572,10 @@ func _update_hint_button() -> void:
 		return
 	if hint_count > 0:
 		if hint_button_label:
-			hint_button_label.text = "提示 ×%d" % hint_count
+			hint_button_label.text = _t("提示 ×%d", [hint_count])
 	else:
 		if hint_button_label:
-			hint_button_label.text = "提示 -%d" % _current_tool_price(CoinEconomyScript.TOOL_HINT)
+			hint_button_label.text = _t("提示 -%d", [_current_tool_price(CoinEconomyScript.TOOL_HINT)])
 	_refresh_tool_button_visual(hint_button)
 
 
@@ -4440,7 +4590,7 @@ func _update_crown_find_button() -> void:
 		return
 	var has_target := not current_level.is_empty() and _next_findable_solution_cell().x >= 0
 	if crown_find_button_label:
-		crown_find_button_label.text = "直找 ×%d" % crown_find_count if crown_find_count > 0 else "直找 -%d" % _current_tool_price(CoinEconomyScript.TOOL_CROWN_FIND)
+		crown_find_button_label.text = _t("直找 ×%d", [crown_find_count]) if crown_find_count > 0 else _t("直找 -%d", [_current_tool_price(CoinEconomyScript.TOOL_CROWN_FIND)])
 	crown_find_button.disabled = is_completed or is_failed or not has_target
 	_refresh_tool_button_visual(crown_find_button)
 
@@ -4543,7 +4693,7 @@ func _update_home() -> void:
 		home_star_label.text = "★  %d" % completed_levels.size()
 	if home_start_button:
 		if tutorial_completed:
-			home_start_button.text = "开始第 %d 关" % player_level_number
+			home_start_button.text = _t("开始第 %d 关", [player_level_number])
 		elif tutorial_started:
 			home_start_button.text = "继续新手教程"
 		else:
@@ -4552,7 +4702,7 @@ func _update_home() -> void:
 
 
 func _show_toast(message: String) -> void:
-	toast_label.text = message
+	toast_label.text = _runtime_text(message)
 	if toast_tween and toast_tween.is_valid():
 		toast_tween.kill()
 	toast_tween = create_tween()
@@ -4562,7 +4712,7 @@ func _show_toast(message: String) -> void:
 
 
 func _show_tutorial_center_popup(message: String) -> void:
-	tutorial_center_popup.text = message
+	tutorial_center_popup.text = _runtime_text(message)
 	if tutorial_center_tween and tutorial_center_tween.is_valid():
 		tutorial_center_tween.kill()
 	tutorial_center_popup.modulate.a = 0.0
@@ -4774,6 +4924,18 @@ func _action_button(text: String, color: Color = CARD) -> Button:
 	button.add_theme_stylebox_override("pressed", _button_style(color.darkened(0.05), 20))
 	button.add_theme_stylebox_override("disabled", _button_style(Color("#EEECE8"), 20))
 	return button
+
+
+func _t(source: String, values: Array = []) -> String:
+	if not localization:
+		return source % values if not values.is_empty() else source
+	return localization.text(source, values)
+
+
+func _runtime_text(source: String, generic_source: String = "请跟随高亮提示继续操作。") -> String:
+	if not localization:
+		return source
+	return localization.runtime_text(source, generic_source)
 
 
 func _button_style(color: Color, radius: int) -> StyleBoxFlat:

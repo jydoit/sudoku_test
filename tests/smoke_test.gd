@@ -28,6 +28,19 @@ func _run() -> void:
 	root.add_child(game)
 	await process_frame
 	await process_frame
+	assert(game.localization != null, "Main UI should use the shared localization controller")
+	assert(game.LocalizationControllerScript.locale_for_system("zh_CN") == "zh", "System Chinese locales should map to Chinese")
+	assert(game.LocalizationControllerScript.locale_for_system("ar_SA") == "ar", "System Arabic locales should map to Arabic")
+	assert(game.LocalizationControllerScript.locale_for_system("fr_FR") == "fr", "System French locales should map to French")
+	assert(game.LocalizationControllerScript.locale_for_system("la") == "la", "System Latin locales should map to Latin")
+	assert(game.LocalizationControllerScript.locale_for_system("de_DE") == "en", "Unsupported system locales should fall back to English")
+	assert(game.ARABIC_FONT != null and game.ARABIC_FONT.has_char("ع".unicode_at(0)), "Bundled Arabic fallback font must contain Arabic glyphs")
+	assert(game.UI_FONT.fallbacks.has(game.ARABIC_FONT), "The shared UI font should register the Arabic fallback")
+	game.localization.set_locale("en")
+	assert(game.localization.runtime_text("尚未收录的动态中文") == "Follow the highlighted guidance to continue.", "Unknown runtime Chinese must not leak into non-Chinese locales")
+	game.localization.set_locale("zh")
+	assert(game.localization.runtime_text("尚未收录的动态中文") == "尚未收录的动态中文", "Chinese runtime copy should stay intact in the Chinese locale")
+	await process_frame
 
 	assert(game.levels.size() >= 50, "MVP should include 50 default levels")
 	assert(game.home_screen != null, "Home screen should exist")
@@ -80,6 +93,7 @@ func _run() -> void:
 	assert(game.top_home_button.custom_minimum_size.x >= 52.0, "The level home control should use an enlarged touch target")
 	assert(game.help_button != null and game.help_button.get_parent() == game.top_home_button.get_parent(), "Help should share the level top navigation row")
 	assert(game.help_button.custom_minimum_size.x >= 46.0, "Help should use a mobile-friendly touch target")
+	assert(game.settings_button != null and game.settings_button.get_parent() == game.top_home_button.get_parent(), "Settings should share the level top navigation row")
 	assert(game.dialog_controller != null, "All modal dialogs should use the shared dialog controller")
 	var dialog_card: PanelContainer = game.dialog_controller.find_child("DialogCard", true, false)
 	var dialog_style := dialog_card.get_theme_stylebox("panel") as StyleBoxFlat
@@ -95,6 +109,25 @@ func _run() -> void:
 	assert(help_close_button != null, "Help dialog should expose the standard primary action")
 	help_close_button.pressed.emit()
 	assert(not game.dialog_controller.visible, "A shared dialog action should close the modal layer")
+	game._on_settings()
+	assert(game.dialog_controller.is_dialog_open("settings"), "Settings should open through the shared dialog controller")
+	assert(game.language_picker.item_count == 5, "Language settings should list all supported languages")
+	game.language_picker.select(game.localization.locale_index("ar"))
+	var apply_language_button: Button = game.dialog_controller.find_child("DialogAction_apply", true, false)
+	assert(apply_language_button != null, "Language settings should expose a standard apply action")
+	apply_language_button.pressed.emit()
+	await process_frame
+	assert(game.selected_language == "ar" and game.layout_direction == Control.LAYOUT_DIRECTION_RTL, "Arabic should apply RTL layout")
+	assert(game.localization.text("设置") == "الإعدادات", "Arabic settings copy should come from the localization controller")
+	game.localization.set_locale("fr")
+	await process_frame
+	assert(game.localization.text("设置") == "Paramètres", "French copy should come from the localization controller")
+	game.localization.set_locale("la")
+	await process_frame
+	assert(game.localization.text("设置") == "Configurationes", "Latin copy should come from the localization controller")
+	game.localization.set_locale("zh")
+	await process_frame
+	assert(game.layout_direction == Control.LAYOUT_DIRECTION_LTR, "Chinese should restore LTR layout")
 	assert(game.level_heart_label.get_parent() == game.top_home_button.get_parent(), "Level hearts should share the top navigation row with coins")
 	assert(game.level_heart_label.get_parent() != game.clear_button.get_parent(), "Level hearts should no longer occupy a bottom tool slot")
 	assert(game.clear_button.get_parent() == game.crown_find_button.get_parent() and game.clear_button.get_parent() == game.hint_button.get_parent(), "Clear, crown find and hint should share the bottom tool bar")

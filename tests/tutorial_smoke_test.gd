@@ -22,6 +22,8 @@ func _run() -> void:
 	await process_frame
 	await create_timer(0.5).timeout
 	await process_frame
+	game.localization.set_locale("zh")
+	await process_frame
 
 	assert(not game.tutorial_completed, "Fresh save should require tutorial")
 	assert(game.in_tutorial, "Fresh install should enter tutorial immediately")
