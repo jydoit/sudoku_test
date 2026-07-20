@@ -16,6 +16,12 @@ func _run() -> void:
 	if had_save:
 		previous_save = FileAccess.get_file_as_string(SAVE_PATH)
 
+	var custom_font_path := str(ProjectSettings.get_setting("gui/theme/custom_font", ""))
+	assert(custom_font_path == "res://assets/fonts/NotoSansSC-Regular.ttf", "Project must configure the bundled CJK font")
+	var custom_font: Font = load(custom_font_path)
+	assert(custom_font != null, "Bundled UI font must load successfully")
+	assert(custom_font.has_char("中".unicode_at(0)), "Bundled UI font must contain Chinese glyphs")
+
 	var packed: PackedScene = load("res://scenes/main.tscn")
 	assert(packed != null, "Main scene must load")
 	var game = packed.instantiate()
