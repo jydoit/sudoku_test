@@ -72,11 +72,29 @@ func _run() -> void:
 	assert(game._heart_limit_for_display_level(31) == 1, "Display level 31 onward should use one heart")
 	game.tutorial_completed = true
 	game.tutorial_started = false
-	if game.tutorial_resume_dialog:
-		game.tutorial_resume_dialog.hide()
+	if game.dialog_controller:
+		game.dialog_controller.hide_dialog(true)
 	game._load_level(0)
 	game._show_game()
 	await process_frame
+	assert(game.top_home_button.custom_minimum_size.x >= 52.0, "The level home control should use an enlarged touch target")
+	assert(game.help_button != null and game.help_button.get_parent() == game.top_home_button.get_parent(), "Help should share the level top navigation row")
+	assert(game.help_button.custom_minimum_size.x >= 46.0, "Help should use a mobile-friendly touch target")
+	assert(game.dialog_controller != null, "All modal dialogs should use the shared dialog controller")
+	var dialog_card: PanelContainer = game.dialog_controller.find_child("DialogCard", true, false)
+	var dialog_style := dialog_card.get_theme_stylebox("panel") as StyleBoxFlat
+	assert(dialog_style.bg_color == UITokensScript.DIALOG_SURFACE, "Dialog cards should use the shared warm surface token")
+	assert(dialog_style.border_color == UITokensScript.DIALOG_BORDER and dialog_style.border_width_left == UITokensScript.DIALOG_BORDER_WIDTH, "Dialog cards should use the shared border style")
+	var help_content: Control = game.dialog_controller.content("help_rules")
+	assert(help_content != null and help_content.name == "HelpContent", "Help dialog should provide custom visual rule content")
+	for illustration_name in ["AdjacentRuleIllustration", "RowColumnRuleIllustration", "RegionRuleIllustration"]:
+		assert(help_content.find_child(illustration_name, true, false) != null, "Help dialog should show all three rule illustrations")
+	game._on_help()
+	assert(game.dialog_controller.is_dialog_open("help"), "Help button should open the elimination rules dialog")
+	var help_close_button: Button = game.dialog_controller.find_child("DialogAction_close", true, false)
+	assert(help_close_button != null, "Help dialog should expose the standard primary action")
+	help_close_button.pressed.emit()
+	assert(not game.dialog_controller.visible, "A shared dialog action should close the modal layer")
 	assert(game.level_heart_label.get_parent() == game.top_home_button.get_parent(), "Level hearts should share the top navigation row with coins")
 	assert(game.level_heart_label.get_parent() != game.clear_button.get_parent(), "Level hearts should no longer occupy a bottom tool slot")
 	assert(game.clear_button.get_parent() == game.crown_find_button.get_parent() and game.clear_button.get_parent() == game.hint_button.get_parent(), "Clear, crown find and hint should share the bottom tool bar")
@@ -115,10 +133,12 @@ func _run() -> void:
 	game._show_game()
 	assert(game.level_select_button != null, "Level screen should expose level selection")
 	game._open_level_select()
-	assert(game.level_select_dialog.visible, "Level selection dialog should open")
+	assert(game.dialog_controller.is_dialog_open("level_select"), "Level selection dialog should open through the shared controller")
 	assert(game.level_select_picker.get_item_count() == game.levels.size(), "Level selection should list all levels")
 	game.level_select_picker.select(1)
-	game._confirm_level_select()
+	var enter_level_button: Button = game.dialog_controller.find_child("DialogAction_enter", true, false)
+	assert(enter_level_button != null, "Level selection should expose the standard primary action")
+	enter_level_button.pressed.emit()
 	assert(int(game.current_level["levelId"]) == int(game.levels[1]["levelId"]), "Level selection should enter the selected level")
 	await process_frame
 	assert(game.board != null and game.board.size.x >= 400.0, "Board must render at a mobile-friendly size")
@@ -260,9 +280,11 @@ func _run() -> void:
 	var wrong_cells := _first_non_solution_cells(game, game.INITIAL_HEART_COUNT)
 	var wrong_cell: Vector2i = wrong_cells[0]
 	var hearts_before_wrong: int = game.heart_count
+	var crown_find_count_before_wrong: int = game.crown_find_count
 	game._on_cell_double_pressed(wrong_cell.y, wrong_cell.x)
 	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Double tap on a non-answer cell should mark a red X")
 	assert(game.heart_count == hearts_before_wrong - 1, "Wrong crown attempts should consume one heart")
+	assert(game.crown_find_count == crown_find_count_before_wrong, "Wrong crown attempts must not consume crown-find uses")
 	assert(game.level_heart_slots[game.heart_count].get_theme_color("font_color") == game.HEART_EMPTY_COLOR, "A lost heart should turn gray")
 	assert(game.level_heart_slots[game.heart_count].scale.is_equal_approx(Vector2.ONE), "A lost heart should stop at its normal scale")
 	assert(game.level_heart_tweens[game.heart_count] == null, "A lost heart should stop pulsing")
@@ -341,10 +363,12 @@ func _run() -> void:
 	game.coin_count = 0
 	game._use_crown_find()
 	assert(game._piece_positions().size() == pieces_before_shortage, "Insufficient coins must not place a crown")
-	assert(game.coin_shortage_dialog.visible, "Insufficient coins should offer voluntary purchase and rewarded-ad routes")
+	assert(game.dialog_controller.is_dialog_open("coin_shortage"), "Insufficient coins should offer voluntary purchase and rewarded-ad routes")
 	assert(game.pending_coin_tool == CoinEconomyScript.TOOL_CROWN_FIND, "Coin shortage dialog should retain the requested tool")
 	assert(game.pending_rewarded_coin_grant > 0 and game.pending_rewarded_coin_grant <= game.pending_coin_price, "Rewarded-ad grant should cover the shortage without exceeding the requested tool price")
-	game.coin_shortage_dialog.hide()
+	var shortage_later_button: Button = game.dialog_controller.find_child("DialogAction_later", true, false)
+	assert(shortage_later_button != null, "Coin shortage should expose all actions through the shared controller")
+	shortage_later_button.pressed.emit()
 	var locked_hints_before_clear := _count_state(game.cell_states, "hint")
 	var mark_before_hint_clear := _first_empty_non_king_cell(game)
 	game.cell_states[mark_before_hint_clear.y][mark_before_hint_clear.x] = "blocked"
