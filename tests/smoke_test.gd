@@ -28,6 +28,12 @@ func _run() -> void:
 	assert(game.game_screen != null, "Game screen should exist")
 	assert(game.progress_bar != null and game.progress_label != null, "Level screen should show crown progress")
 	assert(game.COIN_ICON != null, "Coin balance should use the generated coin texture")
+	assert(game.LION_KING_ICON != null, "Core game pieces should use the lion king texture")
+	assert(game.LION_KING_WRONG_ICON != null, "Wrong placements should use the worried lion texture")
+	assert(game.LION_KING_VICTORY_ICON != null, "Completion should use the standing lion texture")
+	assert(game.LION_KING_VICTORY_FRAMES.size() == 9, "Completion lion should provide wave and expression animation frames")
+	assert(game.board.PIECE_TEXTURE == game.LION_KING_ICON, "Board pieces and UI should share the same lion king texture")
+	assert(game.board.WRONG_PIECE_TEXTURE == game.LION_KING_WRONG_ICON, "Wrong board pieces and UI should share the worried lion texture")
 	assert(game.coin_label.get_parent().get_node_or_null("CoinIcon") != null, "Level coin balance should render the coin icon beside its value")
 	assert(game.opening_king_overlay != null, "Level screen should provide an opening king overlay")
 	assert(game.INK == UITokensScript.INK, "Main UI should use the shared ink token")
@@ -64,6 +70,23 @@ func _run() -> void:
 		game.tutorial_resume_dialog.hide()
 	game._load_level(0)
 	game._show_game()
+	await process_frame
+	assert(game.level_heart_label.get_parent() == game.top_home_button.get_parent(), "Level hearts should share the top navigation row with coins")
+	assert(game.level_heart_label.get_parent() != game.clear_button.get_parent(), "Level hearts should no longer occupy a bottom tool slot")
+	assert(game.clear_button.get_parent() == game.crown_find_button.get_parent() and game.clear_button.get_parent() == game.hint_button.get_parent(), "Clear, crown find and hint should share the bottom tool bar")
+	assert(game.level_heart_slots.size() == game.INITIAL_HEART_COUNT, "The top heart badge should keep independent heart slots")
+	assert(game.level_heart_tweens.size() == game.INITIAL_HEART_COUNT, "Every visible full heart should own a pulse state")
+	for heart_index in range(game.level_heart_slots.size()):
+		var heart_slot: Label = game.level_heart_slots[heart_index]
+		assert(heart_slot.custom_minimum_size.x >= 32.0 and heart_slot.custom_minimum_size.y >= 38.0, "Heart slots should not be compressed")
+		assert(game.level_heart_tweens[heart_index] != null, "Every remaining heart should pulse")
+	for tool_button in [game.clear_button, game.crown_find_button, game.hint_button]:
+		var tool_icon: Control = tool_button.find_child("ToolIcon", true, false)
+		var tool_label: Label = tool_button.find_child("ToolLabel", true, false)
+		assert(tool_icon != null and tool_label != null, "Every tool should expose a large icon and caption")
+		assert(tool_icon.custom_minimum_size.x >= 48.0 and tool_icon.custom_minimum_size.y >= 48.0, "Tool icons should use the enlarged visual size")
+		assert(tool_icon.position.y < tool_label.position.y, "Tool icons should render above their captions")
+	assert(game.clear_button_label.text == "清除 · 免费", "Clear should visibly communicate that it is free")
 	var completed_start_level_id := int(game.current_level["levelId"])
 	game.completed_levels = [completed_start_level_id]
 	game.director_progress = {"completedLevelIds": [completed_start_level_id], "recentRuns": [], "statsByArm": {}}
@@ -233,6 +256,10 @@ func _run() -> void:
 	game._on_cell_double_pressed(wrong_cell.y, wrong_cell.x)
 	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Double tap on a non-answer cell should mark a red X")
 	assert(game.heart_count == hearts_before_wrong - 1, "Wrong crown attempts should consume one heart")
+	assert(game.level_heart_slots[game.heart_count].get_theme_color("font_color") == game.HEART_EMPTY_COLOR, "A lost heart should turn gray")
+	assert(game.level_heart_slots[game.heart_count].scale.is_equal_approx(Vector2.ONE), "A lost heart should stop at its normal scale")
+	assert(game.level_heart_tweens[game.heart_count] == null, "A lost heart should stop pulsing")
+	assert(game.level_heart_tweens[0] != null, "Remaining hearts should keep pulsing")
 	assert(not game.board.error_cells.has(wrong_cell), "Wrong crown attempts should not be treated as rule-conflict crowns")
 	assert(not game.is_failed, "A single wrong crown attempt should not fail the level while hearts remain")
 	game._on_cell_pressed(wrong_cell.y, wrong_cell.x)
@@ -267,11 +294,19 @@ func _run() -> void:
 	var clearable_cell: Vector2i = _first_empty_non_king_cell(game)
 	game.cell_states[clearable_cell.y][clearable_cell.x] = "blocked"
 	game.board.set_states(game.cell_states)
+	game._validate_and_update(false)
+	assert(not game.clear_button.disabled, "Clear should enable when normal marks exist")
+	var coins_before_clear: int = game.coin_count
+	var exchanges_before_clear: int = game.run_coin_exchange_count
+	var spent_before_clear := int(game.economy_progress.get("totalCoinSpent", 0))
 	game._clear_board()
 	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Clear must keep locked wrong red X marks")
 	assert(game.cell_states[clearable_cell.y][clearable_cell.x] == "empty", "Clear must remove normal X marks")
 	assert(game._piece_positions().size() == 1, "Clear must keep the fixed opening king")
 	assert(game.cell_states[int(king_position[0])][int(king_position[1])] == "king", "Clear must not remove the fixed king")
+	assert(game.coin_count == coins_before_clear and game.run_coin_exchange_count == exchanges_before_clear, "Clear must not spend coins or record a tool exchange")
+	assert(int(game.economy_progress.get("totalCoinSpent", 0)) == spent_before_clear, "Clear must not enter the coin-spend ledger")
+	assert(game.clear_button.disabled, "Clear should disable after all normal marks are removed")
 	game.resume_level_id = int(game.current_level["levelId"])
 	game.resume_completed = false
 	game.resume_states = game.cell_states.duplicate(true)
@@ -291,7 +326,7 @@ func _run() -> void:
 		game._use_crown_find()
 	assert(game.crown_find_count == 0, "Crown find count should stop at zero")
 	assert(not game.crown_find_button.disabled, "Crown find should remain available for coins after free uses are exhausted")
-	assert(str(game.crown_find_button.text).contains("-"), "Crown find should display its current coin price")
+	assert(str(game.crown_find_button_label.text).contains("-"), "Crown find should display its current coin price")
 	var pieces_before_shortage: int = game._piece_positions().size()
 	game.coin_count = 0
 	game._use_crown_find()
@@ -300,15 +335,17 @@ func _run() -> void:
 	assert(game.pending_coin_tool == CoinEconomyScript.TOOL_CROWN_FIND, "Coin shortage dialog should retain the requested tool")
 	assert(game.pending_rewarded_coin_grant > 0 and game.pending_rewarded_coin_grant <= game.pending_coin_price, "Rewarded-ad grant should cover the shortage without exceeding the requested tool price")
 	game.coin_shortage_dialog.hide()
+	var locked_hints_before_clear := _count_state(game.cell_states, "hint")
 	game._clear_board()
 	assert(game.crown_find_count == 0, "Clearing the board should not restore crown find uses")
+	assert(_count_state(game.cell_states, "hint") == locked_hints_before_clear, "Clear must preserve locked crown-find results")
 
 	game.hint_count = 3
 	game._update_hint_button()
 	var coins_before: int = game.coin_count
 	var hints_before: int = game.hint_count
 	game._use_hint()
-	assert(game._piece_positions().size() == 1, "Hint should teach without placing a new piece")
+	assert(game._piece_positions().size() == 1 + locked_hints_before_clear, "Hint should teach without placing a new piece")
 	assert(game.board.guide_cells.size() >= 1, "Hint must highlight the best next reasoning step")
 	var guide_target := Vector2i(-1, -1)
 	for guide_cell in game.board.guide_cells.keys():
@@ -347,7 +384,13 @@ func _run() -> void:
 	assert(game.coin_count == completion_coins_before + expected_completion_reward, "Completion should grant the dynamic coin reward")
 	assert(int(game.economy_progress["totalCoinEarned"]) >= expected_completion_reward, "Economy progress should retain earned-coin totals")
 
-	await create_timer(0.8).timeout
+	await create_timer(1.2).timeout
+	assert(not game.result_reward_label.visible, "Success result should not show an unused crown reward")
+	assert(game.result_piece_icon.texture in game.LION_KING_VICTORY_FRAMES, "Success result should animate with the lion wave frames")
+	assert(game.result_lion_wave_tween != null, "Success result should run the lion wave animation")
+	assert(game.result_lion_animation_name in ["wave", "tongue", "funny"], "Success result should randomly choose a supported lion animation")
+	assert(game.result_piece_icon.scale.is_equal_approx(Vector2.ONE), "Success lion should keep a fixed body scale")
+	assert(is_zero_approx(game.result_piece_icon.rotation), "Success lion should keep a fixed body position without rotation")
 	game.queue_free()
 	await process_frame
 	_restore_save(had_save, previous_save)

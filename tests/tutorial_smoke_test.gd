@@ -32,7 +32,7 @@ func _run() -> void:
 	assert(game.tutorial_skip_button.visible, "Tutorial should allow skipping")
 	assert(game.tutorial_skip_button.text == "跳过", "Tutorial skip button should use full copy")
 	assert(game.undo_button == null, "Tutorial should not expose undo")
-	assert(game.clear_button == null, "Tutorial should not expose clear")
+	assert(game.clear_button != null and not game.clear_button.visible, "Tutorial should keep the formal clear tool hidden")
 	assert(game.hint_button.visible, "Tutorial should keep hint available")
 	assert(game.hint_button.disabled, "Hint should wait until the clue step")
 	assert(game.coach_label.text == "每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。", "Tutorial should start with the first color-region crown clue")

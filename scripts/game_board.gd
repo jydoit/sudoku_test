@@ -8,6 +8,8 @@ signal cell_dragged(row: int, col: int)
 signal cell_drag_ended()
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
+const PIECE_TEXTURE = preload("res://assets/ui/lion_king.png")
+const WRONG_PIECE_TEXTURE = preload("res://assets/ui/lion_king_wrong.png")
 const BOARD_INK := UITokensScript.INK
 const EMPTY_MARK := "empty"
 const PIECE_MARK := "piece"
@@ -24,7 +26,6 @@ var cell_states: Array = []
 var error_cells: Dictionary = {}
 var guide_cells: Dictionary = {}
 var region_colors: Array = []
-var piece_symbol := "♛"
 var pulse_cell := Vector2i(-1, -1)
 var pulse_strength := 0.0
 var guide_pulse_cell := Vector2i(-1, -1)
@@ -444,16 +445,15 @@ func _guide_kind(cell_key: Vector2i) -> String:
 func _draw_piece(rect: Rect2, cell_size: float, is_hint: bool, _is_king: bool = false, king_reveal_scale: float = 0.0, cell_pulse_strength: float = 0.0) -> void:
 	if is_hint:
 		draw_circle(rect.get_center(), cell_size * 0.35, Color(1.0, 0.84, 0.35, 0.34))
-	var font := ThemeDB.fallback_font
-	var font_ratio := minf(
+	var texture_ratio := minf(
 		UITokensScript.CROWN_MAX_FONT_RATIO,
 		UITokensScript.CROWN_BASE_FONT_RATIO
 		+ cell_pulse_strength * UITokensScript.CROWN_FEEDBACK_FONT_DELTA
 		+ king_reveal_scale * UITokensScript.OPENING_CROWN_FONT_DELTA
 	)
-	var font_size := int(cell_size * font_ratio)
-	var baseline := rect.position.y + rect.size.y * 0.69
-	draw_string(font, Vector2(rect.position.x, baseline), piece_symbol, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, font_size, BOARD_INK)
+	var texture_size := cell_size * texture_ratio
+	var texture_rect := Rect2(rect.get_center() - Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size)
+	draw_texture_rect(PIECE_TEXTURE, texture_rect, false)
 
 
 func _draw_blocked(rect: Rect2, cell_size: float) -> void:
@@ -472,19 +472,19 @@ func _draw_blocked(rect: Rect2, cell_size: float) -> void:
 
 
 func _draw_wrong(rect: Rect2, cell_size: float) -> void:
-	var center := rect.get_center()
-	var radius := cell_size * UITokensScript.WRONG_X_RADIUS_RATIO
-	var width := maxf(4.0, cell_size * UITokensScript.WRONG_X_WIDTH_RATIO)
-	var halo_width := width + maxf(2.5, cell_size * 0.030)
-	var first_start := center - Vector2(radius, radius)
-	var first_end := center + Vector2(radius, radius)
-	var second_start := center + Vector2(radius, -radius)
-	var second_end := center + Vector2(-radius, radius)
-	draw_circle(center, cell_size * UITokensScript.WRONG_X_BACKDROP_RADIUS_RATIO, UITokensScript.WRONG_X_BACKDROP_COLOR)
-	draw_line(first_start, first_end, UITokensScript.WRONG_X_HALO_COLOR, halo_width, true)
-	draw_line(second_start, second_end, UITokensScript.WRONG_X_HALO_COLOR, halo_width, true)
-	draw_line(first_start, first_end, UITokensScript.WRONG_X_COLOR, width, true)
-	draw_line(second_start, second_end, UITokensScript.WRONG_X_COLOR, width, true)
+	var texture_size := cell_size * UITokensScript.CROWN_MAX_FONT_RATIO
+	var texture_rect := Rect2(rect.get_center() - Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size)
+	draw_texture_rect(WRONG_PIECE_TEXTURE, texture_rect, false)
+
+	var badge_center := rect.position + rect.size * Vector2(0.78, 0.78)
+	var badge_radius := cell_size * 0.135
+	var x_radius := badge_radius * 0.48
+	var x_width := maxf(2.4, cell_size * 0.038)
+	draw_circle(badge_center, badge_radius, UITokensScript.WRONG_X_BACKDROP_COLOR)
+	draw_line(badge_center - Vector2(x_radius, x_radius), badge_center + Vector2(x_radius, x_radius), UITokensScript.WRONG_X_HALO_COLOR, x_width + 2.0, true)
+	draw_line(badge_center + Vector2(x_radius, -x_radius), badge_center + Vector2(-x_radius, x_radius), UITokensScript.WRONG_X_HALO_COLOR, x_width + 2.0, true)
+	draw_line(badge_center - Vector2(x_radius, x_radius), badge_center + Vector2(x_radius, x_radius), UITokensScript.WRONG_X_COLOR, x_width, true)
+	draw_line(badge_center + Vector2(x_radius, -x_radius), badge_center + Vector2(-x_radius, x_radius), UITokensScript.WRONG_X_COLOR, x_width, true)
 
 
 func _board_geometry() -> Dictionary:
