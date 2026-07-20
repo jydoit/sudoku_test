@@ -81,6 +81,7 @@ func _run() -> void:
 	assert(game.level_heart_label.get_parent() != game.clear_button.get_parent(), "Level hearts should no longer occupy a bottom tool slot")
 	assert(game.clear_button.get_parent() == game.crown_find_button.get_parent() and game.clear_button.get_parent() == game.hint_button.get_parent(), "Clear, crown find and hint should share the bottom tool bar")
 	assert(game.level_heart_slots.size() == game.INITIAL_HEART_COUNT, "The top heart badge should keep independent heart slots")
+	assert(game.HEART_PULSE_STAGGER_SECONDS == 0.0, "Remaining hearts should pulse together without stagger")
 	assert(game.level_heart_tweens.size() == game.INITIAL_HEART_COUNT, "Every visible full heart should own a pulse state")
 	for heart_index in range(game.level_heart_slots.size()):
 		var heart_slot: Label = game.level_heart_slots[heart_index]
@@ -292,27 +293,30 @@ func _run() -> void:
 	game._replay_level()
 	assert(not game.is_failed, "Retrying should clear the failed state")
 	assert(game.heart_count == game.current_heart_limit, "Retrying should restore the heart limit for the current display level")
-	game.cell_states[wrong_cell.y][wrong_cell.x] = "wrong"
-	game.board.set_states(game.cell_states)
-	game._on_cell_pressed(wrong_cell.y, wrong_cell.x)
-	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Single tap must keep locked wrong red X marks")
-	game.cell_states[wrong_cell.y][wrong_cell.x] = "wrong"
+	game._on_cell_double_pressed(wrong_cell.y, wrong_cell.x)
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "A wrong crown should be present before clearing")
+	assert(not game.clear_button.disabled, "Clear should enable when only a wrong crown mark is removable")
+	var hearts_before_clear: int = game.heart_count
+	var clearable_piece: Array = _first_editable_solution_cell(game)
+	game.cell_states[int(clearable_piece[0])][int(clearable_piece[1])] = "piece"
 	var clearable_cell: Vector2i = _first_empty_non_king_cell(game)
 	game.cell_states[clearable_cell.y][clearable_cell.x] = "blocked"
 	game.board.set_states(game.cell_states)
 	game._validate_and_update(false)
-	assert(not game.clear_button.disabled, "Clear should enable when normal marks exist")
+	assert(not game.clear_button.disabled, "Clear should enable when removable marks exist")
 	var coins_before_clear: int = game.coin_count
 	var exchanges_before_clear: int = game.run_coin_exchange_count
 	var spent_before_clear := int(game.economy_progress.get("totalCoinSpent", 0))
 	game._clear_board()
-	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Clear must keep locked wrong red X marks")
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "empty", "Clear must remove wrong crown marks")
 	assert(game.cell_states[clearable_cell.y][clearable_cell.x] == "empty", "Clear must remove normal X marks")
+	assert(game.cell_states[int(clearable_piece[0])][int(clearable_piece[1])] == "empty", "Clear must remove normal crowns")
 	assert(game._piece_positions().size() == 1, "Clear must keep the fixed opening king")
 	assert(game.cell_states[int(king_position[0])][int(king_position[1])] == "king", "Clear must not remove the fixed king")
+	assert(game.heart_count == hearts_before_clear, "Clearing wrong marks must not refund consumed hearts")
 	assert(game.coin_count == coins_before_clear and game.run_coin_exchange_count == exchanges_before_clear, "Clear must not spend coins or record a tool exchange")
 	assert(int(game.economy_progress.get("totalCoinSpent", 0)) == spent_before_clear, "Clear must not enter the coin-spend ledger")
-	assert(game.clear_button.disabled, "Clear should disable after all normal marks are removed")
+	assert(game.clear_button.disabled, "Clear should disable after all removable marks are removed")
 	game.resume_level_id = int(game.current_level["levelId"])
 	game.resume_completed = false
 	game.resume_states = game.cell_states.duplicate(true)
@@ -342,8 +346,13 @@ func _run() -> void:
 	assert(game.pending_rewarded_coin_grant > 0 and game.pending_rewarded_coin_grant <= game.pending_coin_price, "Rewarded-ad grant should cover the shortage without exceeding the requested tool price")
 	game.coin_shortage_dialog.hide()
 	var locked_hints_before_clear := _count_state(game.cell_states, "hint")
+	var mark_before_hint_clear := _first_empty_non_king_cell(game)
+	game.cell_states[mark_before_hint_clear.y][mark_before_hint_clear.x] = "blocked"
+	game.board.set_states(game.cell_states)
+	game._validate_and_update(false)
 	game._clear_board()
 	assert(game.crown_find_count == 0, "Clearing the board should not restore crown find uses")
+	assert(game.cell_states[mark_before_hint_clear.y][mark_before_hint_clear.x] == "empty", "Clear should execute when a normal mark exists beside crown-find results")
 	assert(_count_state(game.cell_states, "hint") == locked_hints_before_clear, "Clear must preserve locked crown-find results")
 
 	game.hint_count = 3

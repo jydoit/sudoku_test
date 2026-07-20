@@ -41,6 +41,7 @@ const CARD := UITokensScript.SURFACE_CARD
 const GREEN := UITokensScript.SUCCESS_GREEN
 const HEART_ACTIVE_COLOR := Color("#F25D72")
 const HEART_EMPTY_COLOR := Color("#C8CDD5")
+const HEART_PULSE_STAGGER_SECONDS := 0.0
 const COACH_TUTORIAL_SIZE := 19
 const COACH_NORMAL_SIZE := 16
 const TUTORIAL_PHASE_PLACE := 0
@@ -1461,7 +1462,7 @@ func _clear_board() -> void:
 	for row in range(cell_states.size()):
 		for col in range(cell_states[row].size()):
 			var state := str(cell_states[row][col])
-			if state == "wrong" or state == "hint":
+			if state == "hint":
 				locked_marks[Vector2i(col, row)] = state
 	cell_states = _blank_states(int(current_level["rows"]), int(current_level["cols"]))
 	_apply_king_positions_to_state()
@@ -1474,7 +1475,7 @@ func _clear_board() -> void:
 	_validate_and_update(false)
 	run_move_count += 1
 	_save_game()
-	_show_toast("棋盘已清空，可撤销恢复")
+	_show_toast("已清除普通标记和错误标记，提示皇冠已保留")
 
 
 func _current_tool_price(tool: String) -> int:
@@ -2558,7 +2559,7 @@ func _clearable_marks_empty() -> bool:
 	for row in range(cell_states.size()):
 		for col in range(cell_states[row].size()):
 			var state: String = cell_states[row][col]
-			if state == "blocked" or state == "piece":
+			if state == "blocked" or state == "piece" or state == "wrong":
 				return false
 	return true
 
@@ -4125,7 +4126,9 @@ func _update_heart_label() -> void:
 			if heart.visible and is_full and not in_tutorial:
 				pulse_tween = heart.create_tween().set_loops()
 				pulse_tween.set_trans(Tween.TRANS_SINE)
-				pulse_tween.tween_interval(float(index) * 0.08)
+				var initial_delay := float(index) * HEART_PULSE_STAGGER_SECONDS
+				if initial_delay > 0.0:
+					pulse_tween.tween_interval(initial_delay)
 				pulse_tween.tween_property(heart, "scale", Vector2(1.13, 1.13), 0.12).set_ease(Tween.EASE_OUT)
 				pulse_tween.tween_property(heart, "scale", Vector2.ONE, 0.13).set_ease(Tween.EASE_IN)
 				pulse_tween.tween_property(heart, "scale", Vector2(1.08, 1.08), 0.10).set_ease(Tween.EASE_OUT)
