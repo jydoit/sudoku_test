@@ -22,17 +22,25 @@ func _run() -> void:
 	await process_frame
 	await create_timer(0.5).timeout
 	await process_frame
+	game.localization.set_locale("zh")
+	await process_frame
 
 	assert(not game.tutorial_completed, "Fresh save should require tutorial")
 	assert(game.in_tutorial, "Fresh install should enter tutorial immediately")
 	assert(game.tutorial_step_index == 0, "Tutorial should start at the single onboarding map")
 	assert(int(game.current_level["rows"]) == 5 and int(game.current_level["cols"]) == 5, "Tutorial should use one larger 5x5 map")
 	assert(str(game.current_level["kind"]) == "single_map", "Tutorial should run as one guided map")
-	assert(not game.top_home_button.visible, "Tutorial should hide the home button")
+	assert(game.top_home_button.visible, "Tutorial should keep the formal level home control")
+	assert(game.help_button.visible, "Tutorial should keep the formal level help control")
+	assert(game.level_heart_label.visible, "Tutorial should keep the formal level heart badge")
+	assert(not game.level_select_button.visible, "Tutorial should replace level selection with the skip action")
 	assert(game.tutorial_skip_button.visible, "Tutorial should allow skipping")
 	assert(game.tutorial_skip_button.text == "跳过", "Tutorial skip button should use full copy")
 	assert(game.undo_button == null, "Tutorial should not expose undo")
-	assert(game.clear_button == null, "Tutorial should not expose clear")
+	assert(game.level_label.text == "新手教程", "Tutorial should use the same visible title row as formal levels")
+	assert(game.coach_panel.visible, "Tutorial should keep its required instructional text card")
+	assert(game.clear_button != null and game.clear_button.visible and game.clear_button.disabled, "Tutorial should keep the formal clear tool visible but locked during guided steps")
+	assert(game.crown_find_button.visible and game.crown_find_button.disabled, "Tutorial should keep crown find visible until its guided step")
 	assert(game.hint_button.visible, "Tutorial should keep hint available")
 	assert(game.hint_button.disabled, "Hint should wait until the clue step")
 	assert(game.coach_label.text == "每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。", "Tutorial should start with the first color-region crown clue")
@@ -71,16 +79,26 @@ func _run() -> void:
 	assert(game.cell_states[0][1] == "piece", "Double tap should place the hinted crown")
 
 	await _complete_current_exclusions(game)
-	assert(game.tutorial_interaction_stage == game.TUTORIAL_PHASE_HINT_PLACE, "Tutorial should directly reveal later crown clues")
-	assert(game.coach_label.text == "每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。", "Later clue should skip hint-button teaching")
-	assert(game.hint_button.disabled, "Hint button should not be guided after the first hint teaching")
-	assert(game.board.tutorial_focus_cell == Vector2i(4, 1), "Direct clue should focus the next crown")
-	game._on_cell_double_pressed(1, 4)
+	assert(game.tutorial_interaction_stage == game.TUTORIAL_PHASE_CROWN_FIND, "Tutorial should teach crown find after the normal hint")
+	assert(game.coach_label.text == "点击皇冠直找，直接找到一个皇冠。教程中不会消耗使用次数。", "Crown-find step should explain its direct locked result")
+	assert(not game.crown_find_button.disabled, "Crown find should unlock only for its guided step")
+	await create_timer(0.25).timeout
 	await process_frame
+	assert(game.tutorial_hand_control == game.crown_find_button, "Tutorial should point to the crown-find button")
+	var crown_find_count_before: int = game.crown_find_count
+	game._use_crown_find()
+	await process_frame
+	assert(game.cell_states[1][4] == "hint", "Crown find should directly place a locked tutorial crown")
+	assert(game.crown_find_count == crown_find_count_before, "Tutorial crown find must not consume formal free uses")
+	assert(game.tutorial_crown_find_taught, "Tutorial should remember that crown find has been taught")
+	assert(game.tutorial_interaction_stage == game.TUTORIAL_PHASE_ROW_COL, "Crown find should continue with the remaining rule exclusions")
+	assert(game.coach_label.text == "皇冠直找已直接找到并锁定皇冠，周围位置已经排除。继续排除同行同列。", "Crown find should explain the locked result and next remaining rule")
 
 	await _complete_current_exclusions(game)
-	assert(game.tutorial_interaction_stage == game.TUTORIAL_PHASE_HINT_PLACE, "Tutorial should keep skipping hint-button teaching")
-	assert(game.board.tutorial_focus_cell == Vector2i(3, 4), "Direct clue should focus the following crown")
+	assert(game.tutorial_interaction_stage == game.TUTORIAL_PHASE_HINT_PLACE, "Tutorial should directly reveal later crown clues after tool teaching")
+	assert(game.coach_label.text == "每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。", "Later clue should skip repeated tool teaching")
+	assert(game.hint_button.disabled and game.crown_find_button.disabled, "Tutorial tools should lock again after their teaching steps")
+	assert(game.board.tutorial_focus_cell == Vector2i(3, 4), "Direct clue should focus the next manual crown")
 	game._on_cell_double_pressed(4, 3)
 	await process_frame
 
@@ -129,7 +147,9 @@ func _complete_current_exclusions(game) -> void:
 	while game.tutorial_interaction_stage == game.TUTORIAL_PHASE_ADJACENT or game.tutorial_interaction_stage == game.TUTORIAL_PHASE_ROW_COL:
 		if game.tutorial_interaction_stage == game.TUTORIAL_PHASE_ROW_COL:
 			assert(game._tutorial_hand_cell_action() == "single", "Row/column phase should demonstrate tapping, not sliding")
-			assert(game.coach_label.text == "每行、每列都只能有一个皇冠。这个皇冠所在的行和列，其他格都可以标记 X。", "Row/column phase should use concise exclusion copy")
+			var row_col_copy_valid: bool = game.coach_label.text == "每行、每列都只能有一个皇冠。这个皇冠所在的行和列，其他格都可以标记 X。"
+			row_col_copy_valid = row_col_copy_valid or game.coach_label.text == "皇冠直找已直接找到并锁定皇冠，周围位置已经排除。继续排除同行同列。"
+			assert(row_col_copy_valid, "Row/column phase should use concise exclusion copy")
 		else:
 			assert(game._tutorial_hand_cell_action() == "slide", "Adjacent phase should demonstrate sliding")
 		var target: Vector2i = game._next_tutorial_single_map_exclusion_cell()

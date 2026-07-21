@@ -1,6 +1,8 @@
 extends SceneTree
 
 const LevelDirectorScript = preload("res://scripts/level_director.gd")
+const CoinEconomyScript = preload("res://scripts/coin_economy.gd")
+const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const SAVE_PATH := "user://color_queens_save.json"
 
 
@@ -14,28 +16,168 @@ func _run() -> void:
 	if had_save:
 		previous_save = FileAccess.get_file_as_string(SAVE_PATH)
 
+	var custom_font_path := str(ProjectSettings.get_setting("gui/theme/custom_font", ""))
+	assert(custom_font_path == "res://assets/fonts/NotoSansSC-Regular.ttf", "Project must configure the bundled CJK font")
+	var custom_font: Font = load(custom_font_path)
+	assert(custom_font != null, "Bundled UI font must load successfully")
+	assert(custom_font.has_char("中".unicode_at(0)), "Bundled UI font must contain Chinese glyphs")
+
 	var packed: PackedScene = load("res://scenes/main.tscn")
 	assert(packed != null, "Main scene must load")
 	var game = packed.instantiate()
 	root.add_child(game)
 	await process_frame
 	await process_frame
+	assert(game.localization != null, "Main UI should use the shared localization controller")
+	assert(game.LocalizationControllerScript.locale_for_system("zh_CN") == "zh", "System Chinese locales should map to Chinese")
+	assert(game.LocalizationControllerScript.locale_for_system("ar_SA") == "ar", "System Arabic locales should map to Arabic")
+	assert(game.LocalizationControllerScript.locale_for_system("fr_FR") == "fr", "System French locales should map to French")
+	assert(game.LocalizationControllerScript.locale_for_system("la") == "la", "System Latin locales should map to Latin")
+	assert(game.LocalizationControllerScript.locale_for_system("de_DE") == "en", "Unsupported system locales should fall back to English")
+	assert(game.ARABIC_FONT != null and game.ARABIC_FONT.has_char("ع".unicode_at(0)), "Bundled Arabic fallback font must contain Arabic glyphs")
+	assert(game.UI_FONT.fallbacks.has(game.ARABIC_FONT), "The shared UI font should register the Arabic fallback")
+	game.localization.set_locale("en")
+	assert(game.localization.runtime_text("尚未收录的动态中文") == "Follow the highlighted guidance to continue.", "Unknown runtime Chinese must not leak into non-Chinese locales")
+	game.localization.set_locale("zh")
+	assert(game.localization.runtime_text("尚未收录的动态中文") == "尚未收录的动态中文", "Chinese runtime copy should stay intact in the Chinese locale")
+	await process_frame
 
 	assert(game.levels.size() >= 50, "MVP should include 50 default levels")
 	assert(game.home_screen != null, "Home screen should exist")
 	assert(game.game_screen != null, "Game screen should exist")
+	assert(game.progress_bar != null and game.progress_label != null, "Level screen should show crown progress")
+	assert(game.COIN_ICON != null, "Coin balance should use the generated coin texture")
+	assert(game.LION_KING_ICON != null, "Core game pieces should use the lion king texture")
+	assert(game.LION_KING_WRONG_ICON != null, "Wrong placements should use the worried lion texture")
+	assert(game.LION_KING_VICTORY_ICON != null, "Completion should use the standing lion texture")
+	assert(game.LION_KING_VICTORY_FRAMES.size() == 9, "Completion lion should provide wave and expression animation frames")
+	assert(game.board.PIECE_TEXTURE == game.LION_KING_ICON, "Board pieces and UI should share the same lion king texture")
+	assert(game.board.WRONG_PIECE_TEXTURE == game.LION_KING_WRONG_ICON, "Wrong board pieces and UI should share the worried lion texture")
+	assert(game.coin_label.get_parent().get_node_or_null("CoinIcon") != null, "Level coin balance should render the coin icon beside its value")
+	assert(game.opening_king_overlay != null, "Level screen should provide an opening king overlay")
+	assert(game.INK == UITokensScript.INK, "Main UI should use the shared ink token")
+	assert(game.REGION_COLORS == UITokensScript.REGION_COLORS, "Main UI should use the shared region palette")
+	assert(game.board.BOARD_INK == UITokensScript.INK, "Board symbols should use the shared ink token")
+	assert(UITokensScript.BOARD_BORDER.a == 1.0, "Board borders should use a precomposed color with stable visual opacity")
+	assert(is_equal_approx(UITokensScript.ATTENTION_MASK_COLOR.a, 0.70), "Hint masks should use the approved 70 percent opacity")
+	assert(UITokensScript.board_border_width(5) == 4.0, "5x5 board border should follow the UI guide")
+	assert(UITokensScript.board_border_width(7) == 3.0, "7x7 board border should follow the UI guide")
+	assert(UITokensScript.board_border_width(9) == 2.0, "9x9 board border should follow the UI guide")
+	assert(UITokensScript.CROWN_MAX_FONT_RATIO <= 0.72, "Opening crown scale should stay inside its cell")
+	assert(CoinEconomyScript.size_base_reward(5) < CoinEconomyScript.size_base_reward(9), "Larger boards should grant a larger base coin reward")
+	assert(CoinEconomyScript.level_base_reward(5, 1) < CoinEconomyScript.level_base_reward(5, 0), "Opening king levels should grant fewer coins")
+	var clean_reward := CoinEconomyScript.completion_reward(5, 0, 0)
+	var mistake_floor_reward := CoinEconomyScript.completion_reward(5, 0, 9)
+	assert(mistake_floor_reward == int(round(float(clean_reward) * 0.5)), "Mistake deductions should stop at half of the level base reward")
+	var economy_test_progress := CoinEconomyScript.default_progress()
+	var economy_base := CoinEconomyScript.level_base_reward(5, 0)
+	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_HINT, 5, 0) == economy_base, "Logic hint should cost one level base")
+	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_REVIVE, 5, 0) == economy_base * 2, "Revive should cost two level bases")
+	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_CROWN_FIND, 5, 0) == economy_base * 3, "Crown find should cost three level bases")
+	assert(CoinEconomyScript.rewarded_ad_coin_grant(economy_base * 3, 0, 5, 0) == economy_base * 3, "A rewarded ad should cover a full tool shortage")
+	assert(CoinEconomyScript.rewarded_ad_coin_grant(economy_base * 3, economy_base * 3 - 1, 5, 0) == economy_base, "A rewarded ad should grant at least one level base without over-funding the wallet")
+	for completion_index in range(3):
+		CoinEconomyScript.record_completion(economy_test_progress, completion_index + 1, 5, 0, 0, economy_base, 0)
+	var discounted_hint_price := CoinEconomyScript.tool_price(CoinEconomyScript.TOOL_HINT, 5, 0, economy_test_progress, 0)
+	assert(discounted_hint_price < economy_base, "Three completions without a coin exchange should discount the next tool price")
+	assert(CoinEconomyScript.tool_price(CoinEconomyScript.TOOL_HINT, 5, 0, economy_test_progress, 3) == economy_base, "Repeated exchanges should restore the standard tool price")
+	assert(game._heart_limit_for_display_level(10) == 3, "The first ten display levels should keep three hearts")
+	assert(game._heart_limit_for_display_level(11) == 2 and game._heart_limit_for_display_level(30) == 2, "Display levels 11-30 should use two hearts")
+	assert(game._heart_limit_for_display_level(31) == 1, "Display level 31 onward should use one heart")
 	game.tutorial_completed = true
 	game.tutorial_started = false
-	if game.tutorial_resume_dialog:
-		game.tutorial_resume_dialog.hide()
+	if game.dialog_controller:
+		game.dialog_controller.hide_dialog(true)
+	game._load_level(0)
+	game._show_game()
+	await process_frame
+	await process_frame
+	assert(game.top_home_button.custom_minimum_size.x >= 52.0, "The level home control should use an enlarged touch target")
+	assert(game.coach_panel != null and not game.coach_panel.visible, "Formal levels should remove the coach text interval from the layout")
+	assert(game.board.size.y >= 600.0, "The board layout should receive the space released by the hidden coach interval")
+	var expanded_board_rect: Rect2 = game.board._board_geometry()["rect"]
+	assert(expanded_board_rect.size.x >= 510.0 and expanded_board_rect.size.y >= 510.0, "The formal board should use the tightened horizontal and internal spacing")
+	assert(game.help_button != null and game.help_button.get_parent() == game.top_home_button.get_parent(), "Help should share the level top navigation row")
+	assert(game.help_button.custom_minimum_size.x >= 46.0, "Help should use a mobile-friendly touch target")
+	assert(game.settings_button != null and game.settings_button.get_parent() == game.top_home_button.get_parent(), "Settings should share the level top navigation row")
+	assert(game.dialog_controller != null, "All modal dialogs should use the shared dialog controller")
+	var dialog_card: PanelContainer = game.dialog_controller.find_child("DialogCard", true, false)
+	var dialog_style := dialog_card.get_theme_stylebox("panel") as StyleBoxFlat
+	assert(dialog_style.bg_color == UITokensScript.DIALOG_SURFACE, "Dialog cards should use the shared warm surface token")
+	assert(dialog_style.border_color == UITokensScript.DIALOG_BORDER and dialog_style.border_width_left == UITokensScript.DIALOG_BORDER_WIDTH, "Dialog cards should use the shared border style")
+	var help_content: Control = game.dialog_controller.content("help_rules")
+	assert(help_content != null and help_content.name == "HelpContent", "Help dialog should provide custom visual rule content")
+	for illustration_name in ["AdjacentRuleIllustration", "RowColumnRuleIllustration", "RegionRuleIllustration"]:
+		assert(help_content.find_child(illustration_name, true, false) != null, "Help dialog should show all three rule illustrations")
+	game._on_help()
+	assert(game.dialog_controller.is_dialog_open("help"), "Help button should open the elimination rules dialog")
+	var help_close_button: Button = game.dialog_controller.find_child("DialogAction_close", true, false)
+	assert(help_close_button != null, "Help dialog should expose the standard primary action")
+	help_close_button.pressed.emit()
+	assert(not game.dialog_controller.visible, "A shared dialog action should close the modal layer")
+	game._on_settings()
+	assert(game.dialog_controller.is_dialog_open("settings"), "Settings should open through the shared dialog controller")
+	assert(game.language_picker.item_count == 5, "Language settings should list all supported languages")
+	game.language_picker.select(game.localization.locale_index("ar"))
+	var apply_language_button: Button = game.dialog_controller.find_child("DialogAction_apply", true, false)
+	assert(apply_language_button != null, "Language settings should expose a standard apply action")
+	apply_language_button.pressed.emit()
+	await process_frame
+	assert(game.selected_language == "ar" and game.layout_direction == Control.LAYOUT_DIRECTION_RTL, "Arabic should apply RTL layout")
+	assert(game.localization.text("设置") == "الإعدادات", "Arabic settings copy should come from the localization controller")
+	game.localization.set_locale("fr")
+	await process_frame
+	assert(game.localization.text("设置") == "Paramètres", "French copy should come from the localization controller")
+	game.localization.set_locale("la")
+	await process_frame
+	assert(game.localization.text("设置") == "Configurationes", "Latin copy should come from the localization controller")
+	game.localization.set_locale("zh")
+	await process_frame
+	assert(game.layout_direction == Control.LAYOUT_DIRECTION_LTR, "Chinese should restore LTR layout")
+	assert(game.level_heart_label.get_parent() == game.top_home_button.get_parent(), "Level hearts should share the top navigation row with coins")
+	assert(game.level_heart_label.get_parent() != game.clear_button.get_parent(), "Level hearts should no longer occupy a bottom tool slot")
+	assert(game.clear_button.get_parent() == game.crown_find_button.get_parent() and game.clear_button.get_parent() == game.hint_button.get_parent(), "Clear, crown find and hint should share the bottom tool bar")
+	assert(game.level_heart_slots.size() == game.INITIAL_HEART_COUNT, "The top heart badge should keep independent heart slots")
+	assert(game.HEART_PULSE_STAGGER_SECONDS == 0.0, "Remaining hearts should pulse together without stagger")
+	assert(game.level_heart_tweens.size() == game.INITIAL_HEART_COUNT, "Every visible full heart should own a pulse state")
+	for heart_index in range(game.level_heart_slots.size()):
+		var heart_slot: Label = game.level_heart_slots[heart_index]
+		assert(heart_slot.custom_minimum_size.x >= 32.0 and heart_slot.custom_minimum_size.y >= 38.0, "Heart slots should not be compressed")
+		assert(game.level_heart_tweens[heart_index] != null, "Every remaining heart should pulse")
+	for tool_button in [game.clear_button, game.crown_find_button, game.hint_button]:
+		var tool_icon: Control = tool_button.find_child("ToolIcon", true, false)
+		var tool_label: Label = tool_button.find_child("ToolLabel", true, false)
+		assert(tool_icon != null and tool_label != null, "Every tool should expose a large icon and caption")
+		assert(tool_icon.custom_minimum_size.x >= 48.0 and tool_icon.custom_minimum_size.y >= 48.0, "Tool icons should use the enlarged visual size")
+		assert(tool_icon.position.y < tool_label.position.y, "Tool icons should render above their captions")
+	assert(game.clear_button_label.text == "清除 · 免费", "Clear should visibly communicate that it is free")
+	var completed_start_level_id := int(game.current_level["levelId"])
+	game.completed_levels = [completed_start_level_id]
+	game.director_progress = {"completedLevelIds": [completed_start_level_id], "recentRuns": [], "statsByArm": {}}
+	game.is_completed = true
+	game._show_home()
+	game._start_current_flow()
+	assert(game.game_screen.visible, "Starting from home after a completed saved level should enter the game")
+	assert(game.player_level_number == 2, "Starting from home after a completed saved level should advance to the next display level")
+	assert(not game.is_completed, "The auto-advanced level should be playable")
+	assert(game.opening_king_overlay.visible, "A level with opening kings should show the count overlay")
+	assert(game.board.hidden_king_cells.size() == game.active_king_positions.size(), "Opening kings should stay hidden until their flight animation lands")
+	game._cancel_opening_king_intro()
+	var resumed_editable_cell := _first_empty_non_king_cell(game)
+	game._on_cell_pressed(resumed_editable_cell.y, resumed_editable_cell.x)
+	assert(game.cell_states[resumed_editable_cell.y][resumed_editable_cell.x] == "blocked", "The auto-advanced level should accept normal input")
+	game.completed_levels.clear()
+	game.director_progress.clear()
 	game._load_level(0)
 	game._show_game()
 	assert(game.level_select_button != null, "Level screen should expose level selection")
 	game._open_level_select()
-	assert(game.level_select_dialog.visible, "Level selection dialog should open")
+	assert(game.dialog_controller.is_dialog_open("level_select"), "Level selection dialog should open through the shared controller")
 	assert(game.level_select_picker.get_item_count() == game.levels.size(), "Level selection should list all levels")
 	game.level_select_picker.select(1)
-	game._confirm_level_select()
+	var enter_level_button: Button = game.dialog_controller.find_child("DialogAction_enter", true, false)
+	assert(enter_level_button != null, "Level selection should expose the standard primary action")
+	enter_level_button.pressed.emit()
 	assert(int(game.current_level["levelId"]) == int(game.levels[1]["levelId"]), "Level selection should enter the selected level")
 	await process_frame
 	assert(game.board != null and game.board.size.x >= 400.0, "Board must render at a mobile-friendly size")
@@ -143,14 +285,14 @@ func _run() -> void:
 	game.heart_count = 3
 	var display_four_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 4, {})
 	game._load_level(int(display_four_schedule["levelIndex"]), false, display_four_schedule)
-	assert(str(game.coach_label.text).begins_with("国王提示："), "Display level 4 should keep king guidance even when the raw level lacks kingInfo")
+	assert(not game.coach_panel.visible, "Opening-king levels should not show a coach text card")
 	assert(game.active_king_positions.size() == 1, "Display level 4 should reveal one fixed opening king")
 	var display_ten_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 10, {})
 	game._load_level(int(display_ten_schedule["levelIndex"]), false, display_ten_schedule)
 	assert(game.active_king_positions.is_empty(), "Display level 10 should not reveal an opening king")
 	assert(game._piece_positions().is_empty(), "Display level 10 should start without prefilled crowns")
 	game._load_level(0)
-	assert(str(game.coach_label.text).begins_with("国王提示："), "Level 1 should display king guidance in the coach area")
+	assert(not game.coach_panel.visible, "Formal levels should keep king guidance visual-only")
 	var king_position: Array = game.current_level["kingPosition"]
 	assert(game.cell_states[int(king_position[0])][int(king_position[1])] == "king", "Level 1 should show a fixed king at the opening position")
 	assert(game._piece_positions().size() == 1, "Opening king should count as an existing piece")
@@ -177,9 +319,15 @@ func _run() -> void:
 	var wrong_cells := _first_non_solution_cells(game, game.INITIAL_HEART_COUNT)
 	var wrong_cell: Vector2i = wrong_cells[0]
 	var hearts_before_wrong: int = game.heart_count
+	var crown_find_count_before_wrong: int = game.crown_find_count
 	game._on_cell_double_pressed(wrong_cell.y, wrong_cell.x)
 	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Double tap on a non-answer cell should mark a red X")
 	assert(game.heart_count == hearts_before_wrong - 1, "Wrong crown attempts should consume one heart")
+	assert(game.crown_find_count == crown_find_count_before_wrong, "Wrong crown attempts must not consume crown-find uses")
+	assert(game.level_heart_slots[game.heart_count].get_theme_color("font_color") == game.HEART_EMPTY_COLOR, "A lost heart should turn gray")
+	assert(game.level_heart_slots[game.heart_count].scale.is_equal_approx(Vector2.ONE), "A lost heart should stop at its normal scale")
+	assert(game.level_heart_tweens[game.heart_count] == null, "A lost heart should stop pulsing")
+	assert(game.level_heart_tweens[0] != null, "Remaining hearts should keep pulsing")
 	assert(not game.board.error_cells.has(wrong_cell), "Wrong crown attempts should not be treated as rule-conflict crowns")
 	assert(not game.is_failed, "A single wrong crown attempt should not fail the level while hearts remain")
 	game._on_cell_pressed(wrong_cell.y, wrong_cell.x)
@@ -192,24 +340,44 @@ func _run() -> void:
 		game._on_cell_double_pressed(next_wrong.y, next_wrong.x)
 	assert(game.is_failed, "The level should fail when hearts reach zero")
 	assert(game.completion_overlay.visible, "Failing the level should show the result overlay")
-	assert(game.completion_next_button.text == "重新挑战", "Failure primary action should retry the level")
-	assert(game.completion_replay_button.text == "返回首页", "Failure secondary action should return home")
+	var revive_price: int = game._current_tool_price(CoinEconomyScript.TOOL_REVIVE)
+	assert(game.completion_next_button.text == "金币复活  -%d" % revive_price, "Failure primary action should expose the current revive price")
+	assert(game.completion_replay_button.text == "重新挑战", "Failure secondary action should restart without preserving the board")
+	var wrong_marks_before_revive := _count_state(game.cell_states, "wrong")
+	game.coin_count = revive_price
+	game._completion_primary_pressed()
+	assert(not game.is_failed, "Coin revive should return the current run to a playable state")
+	assert(game.heart_count == 1, "Coin revive should restore one heart")
+	assert(_count_state(game.cell_states, "wrong") == wrong_marks_before_revive, "Coin revive should preserve the current board")
+	assert(game.coin_count == 0, "Coin revive should reconcile its displayed price")
+	assert(not game.completion_overlay.visible, "Coin revive should close the failure page")
 	game._replay_level()
 	assert(not game.is_failed, "Retrying should clear the failed state")
-	assert(game.heart_count == game.INITIAL_HEART_COUNT, "Retrying should restore three hearts")
-	game.cell_states[wrong_cell.y][wrong_cell.x] = "wrong"
-	game.board.set_states(game.cell_states)
-	game._on_cell_pressed(wrong_cell.y, wrong_cell.x)
-	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Single tap must keep locked wrong red X marks")
-	game.cell_states[wrong_cell.y][wrong_cell.x] = "wrong"
+	assert(game.heart_count == game.current_heart_limit, "Retrying should restore the heart limit for the current display level")
+	game._on_cell_double_pressed(wrong_cell.y, wrong_cell.x)
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "A wrong crown should be present before clearing")
+	assert(not game.clear_button.disabled, "Clear should enable when only a wrong crown mark is removable")
+	var hearts_before_clear: int = game.heart_count
+	var clearable_piece: Array = _first_editable_solution_cell(game)
+	game.cell_states[int(clearable_piece[0])][int(clearable_piece[1])] = "piece"
 	var clearable_cell: Vector2i = _first_empty_non_king_cell(game)
 	game.cell_states[clearable_cell.y][clearable_cell.x] = "blocked"
 	game.board.set_states(game.cell_states)
+	game._validate_and_update(false)
+	assert(not game.clear_button.disabled, "Clear should enable when removable marks exist")
+	var coins_before_clear: int = game.coin_count
+	var exchanges_before_clear: int = game.run_coin_exchange_count
+	var spent_before_clear := int(game.economy_progress.get("totalCoinSpent", 0))
 	game._clear_board()
-	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Clear must keep locked wrong red X marks")
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "empty", "Clear must remove wrong crown marks")
 	assert(game.cell_states[clearable_cell.y][clearable_cell.x] == "empty", "Clear must remove normal X marks")
+	assert(game.cell_states[int(clearable_piece[0])][int(clearable_piece[1])] == "empty", "Clear must remove normal crowns")
 	assert(game._piece_positions().size() == 1, "Clear must keep the fixed opening king")
 	assert(game.cell_states[int(king_position[0])][int(king_position[1])] == "king", "Clear must not remove the fixed king")
+	assert(game.heart_count == hearts_before_clear, "Clearing wrong marks must not refund consumed hearts")
+	assert(game.coin_count == coins_before_clear and game.run_coin_exchange_count == exchanges_before_clear, "Clear must not spend coins or record a tool exchange")
+	assert(int(game.economy_progress.get("totalCoinSpent", 0)) == spent_before_clear, "Clear must not enter the coin-spend ledger")
+	assert(game.clear_button.disabled, "Clear should disable after all removable marks are removed")
 	game.resume_level_id = int(game.current_level["levelId"])
 	game.resume_completed = false
 	game.resume_states = game.cell_states.duplicate(true)
@@ -228,22 +396,44 @@ func _run() -> void:
 	while game.crown_find_count > 0:
 		game._use_crown_find()
 	assert(game.crown_find_count == 0, "Crown find count should stop at zero")
-	assert(game.crown_find_button.disabled, "Crown find button should disable when uses are exhausted")
+	assert(not game.crown_find_button.disabled, "Crown find should remain available for coins after free uses are exhausted")
+	assert(str(game.crown_find_button_label.text).contains("-"), "Crown find should display its current coin price")
+	var pieces_before_shortage: int = game._piece_positions().size()
+	game.coin_count = 0
+	game._use_crown_find()
+	assert(game._piece_positions().size() == pieces_before_shortage, "Insufficient coins must not place a crown")
+	assert(game.dialog_controller.is_dialog_open("coin_shortage"), "Insufficient coins should offer voluntary purchase and rewarded-ad routes")
+	assert(game.pending_coin_tool == CoinEconomyScript.TOOL_CROWN_FIND, "Coin shortage dialog should retain the requested tool")
+	assert(game.pending_rewarded_coin_grant > 0 and game.pending_rewarded_coin_grant <= game.pending_coin_price, "Rewarded-ad grant should cover the shortage without exceeding the requested tool price")
+	var shortage_later_button: Button = game.dialog_controller.find_child("DialogAction_later", true, false)
+	assert(shortage_later_button != null, "Coin shortage should expose all actions through the shared controller")
+	shortage_later_button.pressed.emit()
+	var locked_hints_before_clear := _count_state(game.cell_states, "hint")
+	var mark_before_hint_clear := _first_empty_non_king_cell(game)
+	game.cell_states[mark_before_hint_clear.y][mark_before_hint_clear.x] = "blocked"
+	game.board.set_states(game.cell_states)
+	game._validate_and_update(false)
 	game._clear_board()
 	assert(game.crown_find_count == 0, "Clearing the board should not restore crown find uses")
+	assert(game.cell_states[mark_before_hint_clear.y][mark_before_hint_clear.x] == "empty", "Clear should execute when a normal mark exists beside crown-find results")
+	assert(_count_state(game.cell_states, "hint") == locked_hints_before_clear, "Clear must preserve locked crown-find results")
 
 	game.hint_count = 3
 	game._update_hint_button()
 	var coins_before: int = game.coin_count
 	var hints_before: int = game.hint_count
 	game._use_hint()
-	assert(game._piece_positions().size() == 1, "Hint should teach without placing a new piece")
+	assert(game._piece_positions().size() == 1 + locked_hints_before_clear, "Hint should teach without placing a new piece")
 	assert(game.board.guide_cells.size() >= 1, "Hint must highlight the best next reasoning step")
+	assert(game.board.guide_pulse_cells.size() >= 1 and game.board.guide_pulse_tween != null, "Hint primary cells should receive one soft halo animation")
 	var guide_target := Vector2i(-1, -1)
 	for guide_cell in game.board.guide_cells.keys():
-		if game.board._guide_cell_is_actionable(guide_cell):
+		assert(game.board._guide_kind(guide_cell) == "exclude_empty", "Formal hint ranges should contain X targets only")
+		assert(game.cell_states[guide_cell.y][guide_cell.x] == "empty", "Formal hint targets should be empty before interaction")
+		assert(not game._is_solution_cell(guide_cell.y, guide_cell.x), "Formal hint targets must never be crown solution cells")
+		assert(game.board._guide_cell_is_actionable(guide_cell), "Every visible formal hint target should be actionable")
+		if guide_target.x < 0 and game.board._guide_cell_is_actionable(guide_cell):
 			guide_target = guide_cell
-			break
 	assert(guide_target.x >= 0 and game.board._interaction_allowed_for_cell(guide_target), "Actionable hint target cells should remain interactive")
 	for guide_cell in game.board.guide_cells.keys():
 		assert(game.board._cell_is_attention_target(guide_cell), "All hint guide cells should remain visually unmasked")
@@ -259,16 +449,49 @@ func _run() -> void:
 		if masked_cell.x >= 0:
 			break
 	assert(masked_cell.x >= 0 and not game.board._interaction_allowed_for_cell(masked_cell), "Cells outside the hint range should be masked and non-interactive")
-	assert(str(game.coach_label.text).length() >= 20, "Hint must explain why this step is useful now")
+	assert(not game.coach_panel.visible, "Hints should use board visuals without showing explanatory text")
 	assert(game.hint_count == hints_before - 1, "Hint must consume one available use")
 	assert(game.coin_count == coins_before, "Free hint uses must not charge coins")
+	game._on_cell_pressed(guide_target.y, guide_target.x)
+	assert(game.cell_states[guide_target.y][guide_target.x] == "blocked", "Clicking a formal hint target should draw an X")
+
+	var crown_only_states: Array = game._blank_states(int(game.current_level["rows"]), int(game.current_level["cols"]))
+	var solution_cells: Array[Vector2i] = []
+	for coordinate in game.current_level["solution"]:
+		solution_cells.append(Vector2i(int(coordinate[1]), int(coordinate[0])))
+	for row in range(int(game.current_level["rows"])):
+		for col in range(int(game.current_level["cols"])):
+			if not solution_cells.has(Vector2i(col, row)):
+				crown_only_states[row][col] = "blocked"
+	game.cell_states = crown_only_states
+	game._apply_king_positions_to_state()
+	game.board.set_states(game.cell_states)
+	game.board.set_guides({})
+	assert(game._build_best_next_hint().is_empty(), "A board with only crown candidates should not produce a formal hint")
+	var no_x_hint_count: int = game.hint_count
+	game._use_hint()
+	assert(game.hint_count == no_x_hint_count, "Hint uses should not be consumed when no non-crown X target exists")
 
 	game._load_level(0)
+	var completion_coins_before: int = game.coin_count
+	var expected_completion_reward := CoinEconomyScript.completion_reward(
+		int(game.current_level["rows"]),
+		game.active_king_positions.size(),
+		0
+	)
 	for coordinate in game.current_level["solution"]:
 		game._on_cell_double_pressed(int(coordinate[0]), int(coordinate[1]))
 	assert(game.is_completed, "A valid solution must complete the level")
+	assert(game.coin_count == completion_coins_before + expected_completion_reward, "Completion should grant the dynamic coin reward")
+	assert(int(game.economy_progress["totalCoinEarned"]) >= expected_completion_reward, "Economy progress should retain earned-coin totals")
 
-	await create_timer(0.8).timeout
+	await create_timer(1.2).timeout
+	assert(not game.result_reward_label.visible, "Success result should not show an unused crown reward")
+	assert(game.result_piece_icon.texture in game.LION_KING_VICTORY_FRAMES, "Success result should animate with the lion wave frames")
+	assert(game.result_lion_wave_tween != null, "Success result should run the lion wave animation")
+	assert(game.result_lion_animation_name in ["wave", "tongue", "funny"], "Success result should randomly choose a supported lion animation")
+	assert(game.result_piece_icon.scale.is_equal_approx(Vector2.ONE), "Success lion should keep a fixed body scale")
+	assert(is_zero_approx(game.result_piece_icon.rotation), "Success lion should keep a fixed body position without rotation")
 	game.queue_free()
 	await process_frame
 	_restore_save(had_save, previous_save)
