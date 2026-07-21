@@ -431,10 +431,10 @@ func _cell_has_visible_mark(cell: Vector2i) -> bool:
 
 
 func _guide_cell_is_actionable(cell: Vector2i) -> bool:
-	if not guide_cells.has(cell):
-		return false
-	var kind := _guide_kind(cell)
-	return kind == "place" or kind == "exclude" or kind == "exclude_empty"
+	# Every cell included in a hint is part of the actionable focus area.
+	# `unit` and `candidate` are also intentionally clickable; only cells
+	# covered by the dimmed mask are blocked from input.
+	return guide_cells.has(cell)
 
 
 func _guide_kind(cell_key: Vector2i) -> String:

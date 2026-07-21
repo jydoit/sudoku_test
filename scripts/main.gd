@@ -9,6 +9,7 @@ const ToolIconScript = preload("res://scripts/tool_icon.gd")
 const RuleIllustrationScript = preload("res://scripts/rule_illustration.gd")
 const DialogControllerScript = preload("res://scripts/dialog_controller.gd")
 const LocalizationControllerScript = preload("res://scripts/localization_controller.gd")
+const AudioControllerScript = preload("res://scripts/audio_controller.gd")
 const UI_FONT: Font = preload("res://assets/fonts/NotoSansSC-Regular.ttf")
 const ARABIC_FONT: Font = preload("res://assets/fonts/NotoSansArabic-Regular.ttf")
 const COIN_ICON = preload("res://assets/ui/coin.png")
@@ -180,6 +181,7 @@ var level_select_content: Control
 var settings_content: Control
 var language_picker: OptionButton
 var localization
+var audio_controller
 var selected_language := ""
 var pending_coin_tool := ""
 var pending_coin_price := 0
@@ -211,6 +213,8 @@ func _ready() -> void:
 	localization.initialize(selected_language)
 	selected_language = localization.current_locale
 	localization.locale_changed.connect(_on_locale_changed)
+	audio_controller = AudioControllerScript.new()
+	add_child(audio_controller)
 	_configure_font_fallbacks()
 	LevelDirectorScript.record_retention_if_needed(director_progress, _today_string(), int(Time.get_unix_time_from_system()))
 	_build_ui()
@@ -1457,10 +1461,13 @@ func _on_cell_pressed(row: int, col: int) -> void:
 	_push_history()
 	if state == "empty":
 		cell_states[row][col] = "blocked"
+		audio_controller.play_mark()
 	elif state == "blocked":
 		cell_states[row][col] = "empty"
+		audio_controller.play_erase()
 	elif state == "piece":
 		cell_states[row][col] = "blocked"
+		audio_controller.play_mark()
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
 	run_move_count += 1
@@ -1486,10 +1493,12 @@ func _on_cell_double_pressed(row: int, col: int) -> void:
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
 	if is_answer:
+		audio_controller.play_correct()
 		_validate_and_update(true)
 		coach_label.text = "已放置皇冠。继续用行、列、颜色区域和相邻规则检查其它位置。"
 		coach_label.add_theme_color_override("font_color", Color("#72552B"))
 	else:
+		audio_controller.play_wrong()
 		var crown_find_count_before_wrong := crown_find_count
 		_validate_and_update(false)
 		coach_label.text = "这个位置不是皇冠，已标记为 X。"
@@ -1565,6 +1574,10 @@ func _apply_drag_cell(row: int, col: int) -> void:
 		_push_history()
 	drag_changed = true
 	cell_states[row][col] = next_state
+	if next_state == "blocked":
+		audio_controller.play_mark()
+	else:
+		audio_controller.play_erase()
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
 
@@ -1578,6 +1591,7 @@ func _undo() -> void:
 	board.set_states(cell_states)
 	_validate_and_update(false)
 	run_move_count += 1
+	audio_controller.play_erase()
 	_save_game()
 
 
@@ -1604,6 +1618,7 @@ func _clear_board() -> void:
 	board.set_guides({})
 	_validate_and_update(false)
 	run_move_count += 1
+	audio_controller.play_clear()
 	_save_game()
 	_show_toast("已清除普通标记和错误标记，提示皇冠已保留")
 
@@ -1695,6 +1710,7 @@ func _use_hint() -> void:
 	_update_coin_label()
 	_update_hint_button()
 	run_hint_count += 1
+	audio_controller.play_hint()
 	_save_game()
 	_show_toast("已给出当前最优先的一步判断")
 
@@ -1721,6 +1737,7 @@ func _use_crown_find() -> void:
 	if uses_free_count:
 		crown_find_count -= 1
 	cell_states[target.y][target.x] = "hint"
+	audio_controller.play_correct()
 	board.set_states(cell_states)
 	board.play_cell_feedback(target.y, target.x)
 	_validate_and_update(true)
@@ -2932,6 +2949,7 @@ func _on_tutorial_cell_double_pressed(row: int, col: int) -> void:
 		_show_toast("先点击底部提示按钮")
 		return
 	cell_states[row][col] = "piece"
+	audio_controller.play_correct()
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
 	if kind == "tools":
@@ -2973,6 +2991,7 @@ func _on_tutorial_color_cell_pressed(row: int, col: int, crown: Vector2i) -> voi
 		return
 	if cell_states[row][col] != "blocked":
 		cell_states[row][col] = "blocked"
+		audio_controller.play_mark()
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
 	_validate_tutorial_step(row, col)
@@ -2990,6 +3009,7 @@ func _on_tutorial_row_col_cell_pressed(row: int, col: int, crown: Vector2i) -> v
 		return
 	if cell_states[row][col] != "blocked":
 		cell_states[row][col] = "blocked"
+		audio_controller.play_mark()
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
 	_validate_tutorial_step(row, col)
@@ -3007,6 +3027,7 @@ func _on_tutorial_adjacent_cell_pressed(row: int, col: int, crown: Vector2i) -> 
 		return
 	if cell_states[row][col] != "blocked":
 		cell_states[row][col] = "blocked"
+		audio_controller.play_mark()
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
 	_validate_tutorial_step(row, col)
@@ -3025,6 +3046,7 @@ func _on_tutorial_adjacent_row_col_cell_pressed(row: int, col: int, crown: Vecto
 		return
 	if cell_states[row][col] != "blocked":
 		cell_states[row][col] = "blocked"
+		audio_controller.play_mark()
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
 	_validate_tutorial_step(row, col)
@@ -3082,6 +3104,7 @@ func _on_tutorial_single_map_double_pressed(row: int, col: int) -> void:
 		return
 	_push_tutorial_history()
 	cell_states[row][col] = "piece"
+	audio_controller.play_correct()
 	tutorial_active_crown = target
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
@@ -3129,6 +3152,7 @@ func _on_tutorial_single_map_exclusion(row: int, col: int, from_drag: bool) -> v
 	if cell_states[row][col] == "empty":
 		_push_tutorial_history()
 		cell_states[row][col] = "blocked"
+		audio_controller.play_mark()
 	else:
 		_focus_tutorial_cell(expected, 0.12)
 		return
@@ -3675,6 +3699,7 @@ func _use_tutorial_undo() -> void:
 		tutorial_hint_button_taught = bool(snapshot.get("hintButtonTaught", tutorial_hint_button_taught))
 		tutorial_crown_find_taught = bool(snapshot.get("crownFindTaught", tutorial_crown_find_taught))
 		board.set_states(cell_states)
+		audio_controller.play_erase()
 		_update_tutorial_progress()
 		_set_tutorial_guides()
 		_update_tutorial_action_bar()
@@ -3712,6 +3737,7 @@ func _use_tutorial_clear() -> void:
 		return
 	tutorial_button_stage = 2
 	cell_states = _blank_states(int(current_level["rows"]), int(current_level["cols"]))
+	audio_controller.play_clear()
 	_refresh_tutorial_button_demo()
 	_show_toast("清除：所有尝试标记已清空。")
 	_update_tutorial_action_bar()
@@ -3734,6 +3760,7 @@ func _use_tutorial_crown_find() -> void:
 	tutorial_crown_find_taught = true
 	tutorial_active_crown = target
 	cell_states[target.y][target.x] = "hint"
+	audio_controller.play_correct()
 	tutorial_solution_index += 1
 	board.set_states(cell_states)
 	board.play_cell_feedback(target.y, target.x)
@@ -3773,6 +3800,7 @@ func _use_tutorial_hint() -> void:
 			_focus_current_single_map_tutorial_target(0.12)
 			return
 		tutorial_hint_button_taught = true
+		audio_controller.play_hint()
 		_show_direct_tutorial_crown_clue("每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。")
 		_save_game()
 		return
@@ -3783,6 +3811,7 @@ func _use_tutorial_hint() -> void:
 		_show_toast("先学习撤销和清除，再使用提示")
 		return
 	var target := _tutorial_target()
+	audio_controller.play_hint()
 	cell_states = _blank_states(int(current_level["rows"]), int(current_level["cols"]))
 	board.set_states(cell_states)
 	board.set_guides({
@@ -3867,6 +3896,7 @@ func _show_tutorial_challenge_ready() -> void:
 func _complete_tutorial_step(message: String) -> void:
 	is_completed = true
 	board.play_victory()
+	audio_controller.play_victory()
 	_save_game()
 	if _tutorial_kind() == "adjacent":
 		_show_tutorial_center_popup("皇冠的周围全部被排除")
@@ -3945,6 +3975,7 @@ func _complete_level() -> void:
 	_update_coin_label()
 	_update_home()
 	board.play_victory()
+	audio_controller.play_victory()
 	_save_game()
 	await get_tree().create_timer(0.55).timeout
 	_prepare_success_result_page(reward)
@@ -4528,6 +4559,7 @@ func _heart_limit_for_display_level(display_level: int) -> int:
 func _consume_heart_for_wrong_crown() -> void:
 	if heart_count > 0:
 		heart_count -= 1
+		audio_controller.play_heart_lost()
 	_update_heart_label()
 	_update_home()
 	if heart_count <= 0:
