@@ -90,7 +90,12 @@ func _run() -> void:
 	game._load_level(0)
 	game._show_game()
 	await process_frame
+	await process_frame
 	assert(game.top_home_button.custom_minimum_size.x >= 52.0, "The level home control should use an enlarged touch target")
+	assert(game.coach_panel != null and not game.coach_panel.visible, "Formal levels should remove the coach text interval from the layout")
+	assert(game.board.size.y >= 600.0, "The board layout should receive the space released by the hidden coach interval")
+	var expanded_board_rect: Rect2 = game.board._board_geometry()["rect"]
+	assert(expanded_board_rect.size.x >= 510.0 and expanded_board_rect.size.y >= 510.0, "The formal board should use the tightened horizontal and internal spacing")
 	assert(game.help_button != null and game.help_button.get_parent() == game.top_home_button.get_parent(), "Help should share the level top navigation row")
 	assert(game.help_button.custom_minimum_size.x >= 46.0, "Help should use a mobile-friendly touch target")
 	assert(game.settings_button != null and game.settings_button.get_parent() == game.top_home_button.get_parent(), "Settings should share the level top navigation row")
@@ -279,14 +284,14 @@ func _run() -> void:
 	game.heart_count = 3
 	var display_four_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 4, {})
 	game._load_level(int(display_four_schedule["levelIndex"]), false, display_four_schedule)
-	assert(str(game.coach_label.text).begins_with("国王提示："), "Display level 4 should keep king guidance even when the raw level lacks kingInfo")
+	assert(not game.coach_panel.visible, "Opening-king levels should not show a coach text card")
 	assert(game.active_king_positions.size() == 1, "Display level 4 should reveal one fixed opening king")
 	var display_ten_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 10, {})
 	game._load_level(int(display_ten_schedule["levelIndex"]), false, display_ten_schedule)
 	assert(game.active_king_positions.is_empty(), "Display level 10 should not reveal an opening king")
 	assert(game._piece_positions().is_empty(), "Display level 10 should start without prefilled crowns")
 	game._load_level(0)
-	assert(str(game.coach_label.text).begins_with("国王提示："), "Level 1 should display king guidance in the coach area")
+	assert(not game.coach_panel.visible, "Formal levels should keep king guidance visual-only")
 	var king_position: Array = game.current_level["kingPosition"]
 	assert(game.cell_states[int(king_position[0])][int(king_position[1])] == "king", "Level 1 should show a fixed king at the opening position")
 	assert(game._piece_positions().size() == 1, "Opening king should count as an existing piece")
@@ -439,7 +444,7 @@ func _run() -> void:
 		if masked_cell.x >= 0:
 			break
 	assert(masked_cell.x >= 0 and not game.board._interaction_allowed_for_cell(masked_cell), "Cells outside the hint range should be masked and non-interactive")
-	assert(str(game.coach_label.text).length() >= 20, "Hint must explain why this step is useful now")
+	assert(not game.coach_panel.visible, "Hints should use board visuals without showing explanatory text")
 	assert(game.hint_count == hints_before - 1, "Hint must consume one available use")
 	assert(game.coin_count == coins_before, "Free hint uses must not charge coins")
 

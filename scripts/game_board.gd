@@ -18,6 +18,7 @@ const HINT_MARK := "hint"
 const KING_MARK := "king"
 const WRONG_MARK := "wrong"
 const REGION_BORDER_COLOR := UITokensScript.BOARD_BORDER
+const BOARD_LAYOUT_INSET := 10.0
 
 var rows := 6
 var cols := 6
@@ -489,7 +490,10 @@ func _draw_wrong(rect: Rect2, cell_size: float) -> void:
 
 func _board_geometry() -> Dictionary:
 	var max_dimension: int = maxi(1, maxi(rows, cols))
-	var usable_size := Vector2(maxf(1.0, floor(size.x - 18.0)), maxf(1.0, floor(size.y - 18.0)))
+	var usable_size := Vector2(
+		maxf(1.0, floor(size.x - BOARD_LAYOUT_INSET)),
+		maxf(1.0, floor(size.y - BOARD_LAYOUT_INSET))
+	)
 	var board_size: float = floor(minf(usable_size.x, usable_size.y))
 	var cell_size: float = maxf(1.0, floor(board_size / float(max_dimension)))
 	var actual_size := Vector2(cols * cell_size, rows * cell_size)

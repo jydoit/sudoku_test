@@ -38,6 +38,7 @@ func _run() -> void:
 	assert(game.tutorial_skip_button.text == "跳过", "Tutorial skip button should use full copy")
 	assert(game.undo_button == null, "Tutorial should not expose undo")
 	assert(game.level_label.text == "新手教程", "Tutorial should use the same visible title row as formal levels")
+	assert(game.coach_panel.visible, "Tutorial should keep its required instructional text card")
 	assert(game.clear_button != null and game.clear_button.visible and game.clear_button.disabled, "Tutorial should keep the formal clear tool visible but locked during guided steps")
 	assert(game.crown_find_button.visible and game.crown_find_button.disabled, "Tutorial should keep crown find visible until its guided step")
 	assert(game.hint_button.visible, "Tutorial should keep hint available")

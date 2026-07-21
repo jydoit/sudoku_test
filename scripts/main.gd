@@ -148,6 +148,7 @@ var level_heart_slots: Array[Label] = []
 var level_heart_tweens: Array = []
 var progress_bar: ProgressBar
 var progress_label: Label
+var coach_panel: PanelContainer
 var coach_label: Label
 var opening_king_overlay: ColorRect
 var opening_king_panel: PanelContainer
@@ -568,8 +569,8 @@ func _build_home_nav() -> Control:
 func _build_game_screen() -> Control:
 	var safe_margin := MarginContainer.new()
 	safe_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	safe_margin.add_theme_constant_override("margin_left", 12)
-	safe_margin.add_theme_constant_override("margin_right", 12)
+	safe_margin.add_theme_constant_override("margin_left", 6)
+	safe_margin.add_theme_constant_override("margin_right", 6)
 	safe_margin.add_theme_constant_override("margin_top", 16)
 	safe_margin.add_theme_constant_override("margin_bottom", 12)
 
@@ -598,14 +599,14 @@ func _build_game_screen() -> Control:
 
 func _build_top_bar() -> Control:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size.y = 68
+	panel.custom_minimum_size.y = 72
 	panel.add_theme_stylebox_override("panel", _card_style(CARD, 18, true))
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 8)
 	margin.add_theme_constant_override("margin_right", 8)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
 	panel.add_child(margin)
 
 	var row := HBoxContainer.new()
@@ -745,9 +746,10 @@ func _build_opening_king_overlay() -> void:
 
 
 func _build_coach() -> Control:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.y = 78
-	panel.add_theme_stylebox_override("panel", _button_style(Color("#FFF0C9"), 16))
+	coach_panel = PanelContainer.new()
+	coach_panel.name = "TutorialCoachPanel"
+	coach_panel.custom_minimum_size.y = 78
+	coach_panel.add_theme_stylebox_override("panel", _button_style(Color("#FFF0C9"), 16))
 
 	coach_label = Label.new()
 	coach_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -755,8 +757,9 @@ func _build_coach() -> Control:
 	coach_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	coach_label.add_theme_color_override("font_color", Color("#72552B"))
 	coach_label.add_theme_font_size_override("font_size", 13)
-	panel.add_child(coach_label)
-	return panel
+	coach_panel.add_child(coach_label)
+	coach_panel.hide()
+	return coach_panel
 
 
 func _build_action_bar() -> Control:
@@ -1183,6 +1186,8 @@ func _sync_director_completed_levels() -> void:
 func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = {}) -> void:
 	_cancel_opening_king_intro()
 	in_tutorial = false
+	if coach_panel:
+		coach_panel.hide()
 	_hide_tutorial_hand()
 	if tutorial_skip_button:
 		tutorial_skip_button.hide()
@@ -1702,17 +1707,11 @@ func _use_hint() -> void:
 	var target: Vector2i = hint["target"]
 	if target.x >= 0:
 		board.play_guide_feedback(target.y, target.x)
-	coach_label.text = _runtime_text(
-		str(hint["message"]),
-		"请观察棋盘中保持明亮的格子，并根据行、列、颜色区域和相邻规则继续推理。"
-	)
-	coach_label.add_theme_color_override("font_color", Color("#23845C"))
 	_update_coin_label()
 	_update_hint_button()
 	run_hint_count += 1
 	audio_controller.play_hint()
 	_save_game()
-	_show_toast("已给出当前最优先的一步判断")
 
 
 func _use_crown_find() -> void:
@@ -2733,6 +2732,8 @@ func _start_tutorial_step(index: int) -> void:
 	if dialog_controller and dialog_controller.visible:
 		dialog_controller.hide_dialog(true)
 	in_tutorial = true
+	if coach_panel:
+		coach_panel.show()
 	tutorial_started = true
 	tutorial_step_index = clampi(index, 0, TUTORIAL_LEVELS.size() - 1)
 	tutorial_interaction_stage = TUTORIAL_PHASE_PLACE
