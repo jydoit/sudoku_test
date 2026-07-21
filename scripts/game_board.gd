@@ -32,6 +32,7 @@ var pulse_strength := 0.0
 var guide_pulse_cell := Vector2i(-1, -1)
 var guide_pulse_cells: Dictionary = {}
 var guide_pulse_strength := 0.0
+var guide_pulse_tween: Tween
 var king_reveal_cells: Dictionary = {}
 var hidden_king_cells: Dictionary = {}
 var king_reveal_strength := 0.0
@@ -80,9 +81,7 @@ func set_errors(errors: Dictionary) -> void:
 
 func set_guides(guides: Dictionary) -> void:
 	guide_cells = guides
-	guide_pulse_cell = Vector2i(-1, -1)
-	guide_pulse_cells.clear()
-	guide_pulse_strength = 0.0
+	_reset_guide_feedback()
 	queue_redraw()
 
 
@@ -101,17 +100,22 @@ func play_cell_feedback(row: int, col: int) -> void:
 
 
 func play_guide_feedback(row: int, col: int) -> void:
-	guide_pulse_cell = Vector2i(-1, -1)
-	guide_pulse_cells.clear()
-	guide_pulse_strength = 0.0
-	queue_redraw()
+	_reset_guide_feedback()
+	guide_pulse_cell = Vector2i(col, row)
+	for raw_cell in guide_cells.keys():
+		if raw_cell is Vector2i and _guide_kind_is_primary(_guide_kind(raw_cell)):
+			guide_pulse_cells[raw_cell] = true
+	if guide_pulse_cells.is_empty() and guide_cells.has(guide_pulse_cell):
+		guide_pulse_cells[guide_pulse_cell] = true
+	_play_guide_feedback_tween()
 
 
 func play_guide_feedback_for_cells(cells: Array) -> void:
-	guide_pulse_cell = Vector2i(-1, -1)
-	guide_pulse_cells.clear()
-	guide_pulse_strength = 0.0
-	queue_redraw()
+	_reset_guide_feedback()
+	for cell in cells:
+		if cell is Vector2i and guide_cells.has(cell):
+			guide_pulse_cells[cell] = true
+	_play_guide_feedback_tween()
 
 
 func play_king_reveal(cells: Array) -> void:
@@ -168,12 +172,30 @@ func cell_global_center(row: int, col: int) -> Vector2:
 
 
 func _play_guide_feedback_tween() -> void:
-	var tween := create_tween()
-	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tween.tween_method(_set_guide_pulse, 0.0, 1.0, 0.22)
-	tween.tween_method(_set_guide_pulse, 1.0, 0.18, 0.30)
-	tween.tween_method(_set_guide_pulse, 0.18, 1.0, 0.22)
-	tween.tween_method(_set_guide_pulse, 1.0, 0.0, 0.36)
+	if guide_pulse_cells.is_empty():
+		queue_redraw()
+		return
+	guide_pulse_tween = create_tween()
+	guide_pulse_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	guide_pulse_tween.tween_method(_set_guide_pulse, 0.0, 1.0, 0.18)
+	guide_pulse_tween.set_ease(Tween.EASE_IN_OUT)
+	guide_pulse_tween.tween_method(_set_guide_pulse, 1.0, 0.0, 0.48)
+	guide_pulse_tween.finished.connect(func() -> void:
+		guide_pulse_tween = null
+		guide_pulse_cells.clear()
+		guide_pulse_cell = Vector2i(-1, -1)
+		guide_pulse_strength = 0.0
+		queue_redraw()
+	)
+
+
+func _reset_guide_feedback() -> void:
+	if guide_pulse_tween and guide_pulse_tween.is_valid():
+		guide_pulse_tween.kill()
+	guide_pulse_tween = null
+	guide_pulse_cell = Vector2i(-1, -1)
+	guide_pulse_cells.clear()
+	guide_pulse_strength = 0.0
 
 
 func play_victory() -> void:
@@ -400,20 +422,58 @@ func _draw_region_borders(origin: Vector2, cell_size: float) -> void:
 func _draw_attention_mask(origin: Vector2, cell_size: float) -> void:
 	if guide_cells.is_empty() and not tutorial_mask_enabled:
 		return
+	var board_rect := Rect2(origin, Vector2(float(cols) * cell_size, float(rows) * cell_size))
+	draw_rect(board_rect, UITokensScript.ATTENTION_MASK_COLOR, true)
+	_draw_guide_halos(origin, cell_size)
 	for row in range(rows):
 		for col in range(cols):
 			var cell_key := Vector2i(col, row)
 			if _cell_is_attention_target(cell_key):
-				continue
-			var rect := _cell_rect(row, col, origin, cell_size)
-			var mask_box := StyleBoxFlat.new()
-			mask_box.bg_color = Color(0.82, 0.84, 0.88, 0.58)
-			var corner_radius := _cell_corner_radius(cell_size)
-			mask_box.corner_radius_top_left = corner_radius
-			mask_box.corner_radius_top_right = corner_radius
-			mask_box.corner_radius_bottom_left = corner_radius
-			mask_box.corner_radius_bottom_right = corner_radius
-			draw_style_box(mask_box, rect)
+				_draw_cell(row, col, origin, cell_size)
+
+
+func _draw_guide_halos(origin: Vector2, cell_size: float) -> void:
+	if guide_pulse_strength <= 0.0 or guide_pulse_cells.is_empty():
+		return
+	for raw_cell in guide_pulse_cells.keys():
+		if not raw_cell is Vector2i:
+			continue
+		var cell: Vector2i = raw_cell
+		if cell.y < 0 or cell.y >= rows or cell.x < 0 or cell.x >= cols:
+			continue
+		var rect := _cell_rect(cell.y, cell.x, origin, cell_size)
+		var corner_radius := _cell_corner_radius(cell_size)
+		var outer_halo := StyleBoxFlat.new()
+		outer_halo.bg_color = Color(1.0, 0.82, 0.34, 0.025 * guide_pulse_strength)
+		outer_halo.shadow_color = Color(
+			UITokensScript.ATTENTION_HALO_COLOR.r,
+			UITokensScript.ATTENTION_HALO_COLOR.g,
+			UITokensScript.ATTENTION_HALO_COLOR.b,
+			UITokensScript.ATTENTION_HALO_COLOR.a * guide_pulse_strength
+		)
+		outer_halo.shadow_size = maxi(2, int(round(cell_size * (0.045 + 0.035 * guide_pulse_strength))))
+		outer_halo.shadow_offset = Vector2.ZERO
+		outer_halo.corner_radius_top_left = corner_radius
+		outer_halo.corner_radius_top_right = corner_radius
+		outer_halo.corner_radius_bottom_left = corner_radius
+		outer_halo.corner_radius_bottom_right = corner_radius
+		draw_style_box(outer_halo, rect)
+
+		var inner_halo := StyleBoxFlat.new()
+		inner_halo.bg_color = Color(1.0, 1.0, 1.0, 0.018 * guide_pulse_strength)
+		inner_halo.shadow_color = Color(
+			UITokensScript.ATTENTION_HALO_INNER_COLOR.r,
+			UITokensScript.ATTENTION_HALO_INNER_COLOR.g,
+			UITokensScript.ATTENTION_HALO_INNER_COLOR.b,
+			UITokensScript.ATTENTION_HALO_INNER_COLOR.a * guide_pulse_strength
+		)
+		inner_halo.shadow_size = maxi(1, int(round(cell_size * 0.035)))
+		inner_halo.shadow_offset = Vector2.ZERO
+		inner_halo.corner_radius_top_left = corner_radius
+		inner_halo.corner_radius_top_right = corner_radius
+		inner_halo.corner_radius_bottom_left = corner_radius
+		inner_halo.corner_radius_bottom_right = corner_radius
+		draw_style_box(inner_halo, rect)
 
 
 func _cell_is_attention_target(cell: Vector2i) -> bool:
@@ -441,6 +501,10 @@ func _guide_cell_is_actionable(cell: Vector2i) -> bool:
 func _guide_kind(cell_key: Vector2i) -> String:
 	var value = guide_cells.get(cell_key, "place")
 	return str(value)
+
+
+func _guide_kind_is_primary(kind: String) -> bool:
+	return kind == "place" or kind == "exclude" or kind == "exclude_empty"
 
 
 func _draw_piece(rect: Rect2, cell_size: float, is_hint: bool, _is_king: bool = false, king_reveal_scale: float = 0.0, cell_pulse_strength: float = 0.0) -> void:

@@ -1707,6 +1707,8 @@ func _use_hint() -> void:
 	var target: Vector2i = hint["target"]
 	if target.x >= 0:
 		board.play_guide_feedback(target.y, target.x)
+	else:
+		board.play_guide_feedback_for_cells(guides.keys())
 	_update_coin_label()
 	_update_hint_button()
 	run_hint_count += 1
@@ -1807,27 +1809,48 @@ func _piece_conflicts_at(cell: Vector2i) -> bool:
 
 
 func _build_best_next_hint() -> Dictionary:
-	var unit_hint := _best_single_candidate_hint()
-	if not unit_hint.is_empty():
-		return unit_hint
+	var hint := _formal_x_hint(_best_locked_candidate_hint())
+	if not hint.is_empty():
+		return hint
+	hint = _formal_x_hint(_best_subset_lock_hint())
+	if not hint.is_empty():
+		return hint
+	hint = _formal_x_hint(_best_lookahead_exclusion_hint())
+	if not hint.is_empty():
+		return hint
+	hint = _formal_x_hint(_best_exclusion_hint())
+	if not hint.is_empty():
+		return hint
+	return {}
 
-	var lock_hint := _best_locked_candidate_hint()
-	if not lock_hint.is_empty():
-		return lock_hint
 
-	var subset_hint := _best_subset_lock_hint()
-	if not subset_hint.is_empty():
-		return subset_hint
-
-	var lookahead_hint := _best_lookahead_exclusion_hint()
-	if not lookahead_hint.is_empty():
-		return lookahead_hint
-
-	var exclusion_hint := _best_exclusion_hint()
-	if not exclusion_hint.is_empty():
-		return exclusion_hint
-
-	return _best_candidate_focus_hint()
+func _formal_x_hint(source_hint: Dictionary) -> Dictionary:
+	if source_hint.is_empty():
+		return {}
+	var source_guides: Dictionary = source_hint.get("guides", {})
+	var x_guides := {}
+	for raw_cell in source_guides.keys():
+		if not raw_cell is Vector2i:
+			continue
+		var cell: Vector2i = raw_cell
+		var kind := str(source_guides[cell])
+		if kind != "exclude" and kind != "exclude_empty":
+			continue
+		if cell.y < 0 or cell.y >= cell_states.size() or cell.x < 0 or cell.x >= cell_states[cell.y].size():
+			continue
+		if cell_states[cell.y][cell.x] != "empty" or _is_solution_cell(cell.y, cell.x):
+			continue
+		x_guides[cell] = "exclude_empty"
+	if x_guides.is_empty():
+		return {}
+	var target: Vector2i = source_hint.get("target", Vector2i(-1, -1))
+	if not x_guides.has(target):
+		target = x_guides.keys()[0]
+	return {
+		"target": target,
+		"guides": x_guides,
+		"message": str(source_hint.get("message", ""))
+	}
 
 
 func _best_single_candidate_hint() -> Dictionary:

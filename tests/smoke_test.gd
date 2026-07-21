@@ -59,6 +59,7 @@ func _run() -> void:
 	assert(game.REGION_COLORS == UITokensScript.REGION_COLORS, "Main UI should use the shared region palette")
 	assert(game.board.BOARD_INK == UITokensScript.INK, "Board symbols should use the shared ink token")
 	assert(UITokensScript.BOARD_BORDER.a == 1.0, "Board borders should use a precomposed color with stable visual opacity")
+	assert(is_equal_approx(UITokensScript.ATTENTION_MASK_COLOR.a, 0.70), "Hint masks should use the approved 70 percent opacity")
 	assert(UITokensScript.board_border_width(5) == 4.0, "5x5 board border should follow the UI guide")
 	assert(UITokensScript.board_border_width(7) == 3.0, "7x7 board border should follow the UI guide")
 	assert(UITokensScript.board_border_width(9) == 2.0, "9x9 board border should follow the UI guide")
@@ -424,11 +425,15 @@ func _run() -> void:
 	game._use_hint()
 	assert(game._piece_positions().size() == 1 + locked_hints_before_clear, "Hint should teach without placing a new piece")
 	assert(game.board.guide_cells.size() >= 1, "Hint must highlight the best next reasoning step")
+	assert(game.board.guide_pulse_cells.size() >= 1 and game.board.guide_pulse_tween != null, "Hint primary cells should receive one soft halo animation")
 	var guide_target := Vector2i(-1, -1)
 	for guide_cell in game.board.guide_cells.keys():
-		if game.board._guide_cell_is_actionable(guide_cell):
+		assert(game.board._guide_kind(guide_cell) == "exclude_empty", "Formal hint ranges should contain X targets only")
+		assert(game.cell_states[guide_cell.y][guide_cell.x] == "empty", "Formal hint targets should be empty before interaction")
+		assert(not game._is_solution_cell(guide_cell.y, guide_cell.x), "Formal hint targets must never be crown solution cells")
+		assert(game.board._guide_cell_is_actionable(guide_cell), "Every visible formal hint target should be actionable")
+		if guide_target.x < 0 and game.board._guide_cell_is_actionable(guide_cell):
 			guide_target = guide_cell
-			break
 	assert(guide_target.x >= 0 and game.board._interaction_allowed_for_cell(guide_target), "Actionable hint target cells should remain interactive")
 	for guide_cell in game.board.guide_cells.keys():
 		assert(game.board._cell_is_attention_target(guide_cell), "All hint guide cells should remain visually unmasked")
@@ -447,6 +452,25 @@ func _run() -> void:
 	assert(not game.coach_panel.visible, "Hints should use board visuals without showing explanatory text")
 	assert(game.hint_count == hints_before - 1, "Hint must consume one available use")
 	assert(game.coin_count == coins_before, "Free hint uses must not charge coins")
+	game._on_cell_pressed(guide_target.y, guide_target.x)
+	assert(game.cell_states[guide_target.y][guide_target.x] == "blocked", "Clicking a formal hint target should draw an X")
+
+	var crown_only_states: Array = game._blank_states(int(game.current_level["rows"]), int(game.current_level["cols"]))
+	var solution_cells: Array[Vector2i] = []
+	for coordinate in game.current_level["solution"]:
+		solution_cells.append(Vector2i(int(coordinate[1]), int(coordinate[0])))
+	for row in range(int(game.current_level["rows"])):
+		for col in range(int(game.current_level["cols"])):
+			if not solution_cells.has(Vector2i(col, row)):
+				crown_only_states[row][col] = "blocked"
+	game.cell_states = crown_only_states
+	game._apply_king_positions_to_state()
+	game.board.set_states(game.cell_states)
+	game.board.set_guides({})
+	assert(game._build_best_next_hint().is_empty(), "A board with only crown candidates should not produce a formal hint")
+	var no_x_hint_count: int = game.hint_count
+	game._use_hint()
+	assert(game.hint_count == no_x_hint_count, "Hint uses should not be consumed when no non-crown X target exists")
 
 	game._load_level(0)
 	var completion_coins_before: int = game.coin_count

@@ -61,6 +61,9 @@ const SAME_REGION_GAP_MIX := 0.22
 const CELL_GAP_RATIO := 0.033
 const CELL_GAP_MIN := 2.0
 const CELL_CORNER_RATIO := 0.065
+const ATTENTION_MASK_COLOR := Color(0.68, 0.72, 0.78, 0.70)
+const ATTENTION_HALO_COLOR := Color(1.0, 0.82, 0.34, 0.30)
+const ATTENTION_HALO_INNER_COLOR := Color(1.0, 1.0, 1.0, 0.24)
 
 const BLOCKED_X_COLOR := Color("#26334A", 0.78)
 const BLOCKED_X_HALO_COLOR := Color(1.0, 1.0, 1.0, 0.28)
