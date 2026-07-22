@@ -10,6 +10,8 @@ const RuleIllustrationScript = preload("res://scripts/rule_illustration.gd")
 const DialogControllerScript = preload("res://scripts/dialog_controller.gd")
 const LocalizationControllerScript = preload("res://scripts/localization_controller.gd")
 const AudioControllerScript = preload("res://scripts/audio_controller.gd")
+const CompositeLevelScript = preload("res://scripts/composite_level.gd")
+const AssemblyViewScript = preload("res://scripts/assembly_view.gd")
 const UI_FONT: Font = preload("res://assets/fonts/NotoSansSC-Regular.ttf")
 const ARABIC_FONT: Font = preload("res://assets/fonts/NotoSansArabic-Regular.ttf")
 const COIN_ICON = preload("res://assets/ui/coin.png")
@@ -36,7 +38,7 @@ const LION_KING_VICTORY_FRAMES = [
 	LION_KING_VICTORY_FUNNY_ICON
 ]
 const SAVE_PATH := "user://color_queens_save.json"
-const SAVE_VERSION := 8
+const SAVE_VERSION := 10
 const INITIAL_HINT_COUNT := 3
 const INITIAL_HEART_COUNT := 3
 const INITIAL_CROWN_FIND_COUNT := 3
@@ -112,6 +114,17 @@ var resume_states: Array = []
 var resume_completed := false
 var resume_failed := false
 var formal_progress_snapshot: Dictionary = {}
+var home_composite_progress_snapshot: Dictionary = {}
+var home_composite_entry_active := false
+var resume_composite_state: Dictionary = {}
+var composite_mode := false
+var composite_phase := "crown"
+var composite_data: Dictionary = {}
+var composite_placements: Dictionary = {}
+var composite_final_layout: Dictionary = {}
+var composite_tutorial_seen := false
+var composite_intro_running := false
+var composite_intro_marks_seen := false
 var tutorial_completed := false
 var tutorial_started := false
 var tutorial_step_index := 0
@@ -134,6 +147,7 @@ var home_coin_label: Label
 var home_heart_label: Label
 var home_star_label: Label
 var home_start_button: Button
+var home_composite_button: Button
 var level_select_button: Button
 var settings_button: Button
 var home_chest_label: Label
@@ -149,6 +163,10 @@ var level_heart_slots: Array[Label] = []
 var level_heart_tweens: Array = []
 var progress_bar: ProgressBar
 var progress_label: Label
+var progress_row: Control
+var action_bar: Control
+var assembly_stage_label: Label
+var assembly_view
 var coach_panel: PanelContainer
 var coach_label: Label
 var opening_king_overlay: ColorRect
@@ -179,6 +197,7 @@ var tutorial_center_popup: Label
 var tutorial_hand_label: Label
 var dialog_controller
 var help_content: Control
+var help_tabs: TabContainer
 var level_select_content: Control
 var settings_content: Control
 var language_picker: OptionButton
@@ -412,20 +431,25 @@ func _build_home_side_buttons() -> Control:
 func _build_home_primary_buttons() -> Control:
 	var column := VBoxContainer.new()
 	column.set_anchor(SIDE_LEFT, 0.0)
-	column.set_anchor(SIDE_TOP, 0.70)
+	column.set_anchor(SIDE_TOP, 0.63)
 	column.set_anchor(SIDE_RIGHT, 1.0)
-	column.set_anchor(SIDE_BOTTOM, 0.84)
+	column.set_anchor(SIDE_BOTTOM, 0.94)
 	column.offset_left = 36
 	column.offset_right = -36
-	column.add_theme_constant_override("separation", 12)
+	column.add_theme_constant_override("separation", 10)
 
 	home_start_button = _royal_home_button("开始关卡", Color("#3E8DFF"))
-	home_start_button.custom_minimum_size.y = 74
+	home_start_button.custom_minimum_size.y = 70
 	home_start_button.pressed.connect(_start_current_flow)
 	column.add_child(home_start_button)
 
+	home_composite_button = _royal_home_button("拼块玩法", Color("#635BDB"))
+	home_composite_button.custom_minimum_size.y = 64
+	home_composite_button.pressed.connect(_start_home_composite_flow)
+	column.add_child(home_composite_button)
+
 	var newbie := _royal_home_button("新人流程", CARD)
-	newbie.custom_minimum_size.y = 66
+	newbie.custom_minimum_size.y = 60
 	newbie.add_theme_color_override("font_color", Color("#287BFF"))
 	newbie.add_theme_color_override("font_shadow_color", Color(1.0, 1.0, 1.0, 0.0))
 	newbie.add_theme_stylebox_override("hover", _card_style(Color("#F6FAFF"), 22, true))
@@ -568,6 +592,9 @@ func _build_home_nav() -> Control:
 
 
 func _build_game_screen() -> Control:
+	var root := Control.new()
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
 	var safe_margin := MarginContainer.new()
 	safe_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	safe_margin.add_theme_constant_override("margin_left", 6)
@@ -581,7 +608,8 @@ func _build_game_screen() -> Control:
 
 	content.add_child(_build_top_bar())
 	content.add_child(_build_level_header())
-	content.add_child(_build_progress_row())
+	progress_row = _build_progress_row()
+	content.add_child(progress_row)
 	content.add_child(_build_coach())
 
 	board = GameBoardScript.new()
@@ -594,8 +622,19 @@ func _build_game_screen() -> Control:
 	board.cell_drag_ended.connect(_on_cell_drag_ended)
 	content.add_child(board)
 
-	content.add_child(_build_action_bar())
-	return safe_margin
+	action_bar = _build_action_bar()
+	content.add_child(action_bar)
+	root.add_child(safe_margin)
+
+	assembly_view = AssemblyViewScript.new()
+	assembly_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	assembly_view.z_index = 4
+	assembly_view.placement_requested.connect(_on_assembly_placement_requested)
+	assembly_view.return_requested.connect(_on_assembly_return_requested)
+	assembly_view.intro_finished.connect(_on_composite_intro_finished)
+	root.add_child(assembly_view)
+	assembly_view.bind_targets(board, action_bar)
+	return root
 
 
 func _build_top_bar() -> Control:
@@ -661,6 +700,18 @@ func _build_level_header() -> Control:
 	level_label.add_theme_font_size_override("font_size", 27)
 	level_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(level_label)
+
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(spacer)
+
+	assembly_stage_label = Label.new()
+	assembly_stage_label.text = "先拼好颜色区域"
+	assembly_stage_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	assembly_stage_label.add_theme_color_override("font_color", Color("#536179"))
+	assembly_stage_label.add_theme_font_size_override("font_size", 15)
+	assembly_stage_label.hide()
+	row.add_child(assembly_stage_label)
 
 	return row
 
@@ -1010,15 +1061,19 @@ func _build_dialog_controller() -> void:
 
 
 func _build_help_dialog() -> void:
+	help_tabs = TabContainer.new()
+	help_tabs.name = "HelpContent"
+	help_tabs.custom_minimum_size = Vector2(408, 470)
+	help_content = help_tabs
 
 	var margin := MarginContainer.new()
-	margin.name = "HelpContent"
+	margin.name = "消除规则"
 	margin.custom_minimum_size = Vector2(408, 438)
 	margin.add_theme_constant_override("margin_left", 10)
 	margin.add_theme_constant_override("margin_right", 10)
 	margin.add_theme_constant_override("margin_top", 8)
 	margin.add_theme_constant_override("margin_bottom", 8)
-	help_content = margin
+	help_tabs.add_child(margin)
 
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 8)
@@ -1049,7 +1104,79 @@ func _build_help_dialog() -> void:
 		"每种颜色一个皇冠",
 		"一个颜色区域只能有一个皇冠，其余同色格标记 X。"
 	))
+
+	var assembly_scroll := ScrollContainer.new()
+	assembly_scroll.name = "拼块玩法"
+	assembly_scroll.custom_minimum_size = Vector2(408, 438)
+	help_tabs.add_child(assembly_scroll)
+	var assembly_margin := MarginContainer.new()
+	assembly_margin.add_theme_constant_override("margin_left", 10)
+	assembly_margin.add_theme_constant_override("margin_right", 10)
+	assembly_margin.add_theme_constant_override("margin_top", 8)
+	assembly_margin.add_theme_constant_override("margin_bottom", 8)
+	assembly_scroll.add_child(assembly_margin)
+	var assembly_column := VBoxContainer.new()
+	assembly_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	assembly_column.add_theme_constant_override("separation", 8)
+	assembly_margin.add_child(assembly_column)
+	var assembly_intro := Label.new()
+	assembly_intro.text = "先补完整个颜色区域，再开始找皇冠。"
+	assembly_intro.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	assembly_intro.add_theme_color_override("font_color", INK)
+	assembly_intro.add_theme_font_size_override("font_size", 16)
+	assembly_column.add_child(assembly_intro)
+	assembly_column.add_child(_build_assembly_help_step("1", "向上拖出彩色方块", "底部托盘可以左右滑动，查看尚未放置的方块。"))
+	assembly_column.add_child(_build_assembly_help_step("2", "完整对齐空白凹槽", "方块不能越界或重叠，同一种颜色最终必须连在一起。"))
+	assembly_column.add_child(_build_assembly_help_step("3", "可以随时拿回重放", "把棋盘上的立体方块向下拖回托盘，再尝试其它位置。"))
+	assembly_column.add_child(_build_assembly_help_step("4", "拼完自动进入找皇冠", "立体方块会压平为正常颜色棋盘，并恢复清除、直找和提示。"))
+	var replay_button := Button.new()
+	replay_button.name = "ReplayAssemblyIntro"
+	replay_button.text = "重播演示"
+	replay_button.custom_minimum_size.y = 48
+	replay_button.add_theme_font_size_override("font_size", 16)
+	replay_button.add_theme_stylebox_override("normal", _button_style(UITokensScript.SOFT_BLUE, 14))
+	replay_button.pressed.connect(_replay_composite_intro_from_help)
+	assembly_column.add_child(replay_button)
 	dialog_controller.register_content("help_rules", help_content)
+
+
+func _build_assembly_help_step(number: String, title_text: String, body_text: String) -> Control:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size.y = 78
+	panel.add_theme_stylebox_override("panel", _dialog_content_style())
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	panel.add_child(margin)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	margin.add_child(row)
+	var badge := Label.new()
+	badge.text = number
+	badge.custom_minimum_size = Vector2(34, 34)
+	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge.add_theme_color_override("font_color", Color.WHITE)
+	badge.add_theme_font_size_override("font_size", 17)
+	badge.add_theme_stylebox_override("normal", _button_style(UITokensScript.PRIMARY_BLUE, 17))
+	row.add_child(badge)
+	var copy := VBoxContainer.new()
+	copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(copy)
+	var title := Label.new()
+	title.text = title_text
+	title.add_theme_color_override("font_color", INK)
+	title.add_theme_font_size_override("font_size", 16)
+	copy.add_child(title)
+	var body := Label.new()
+	body.text = body_text
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_theme_color_override("font_color", MUTED)
+	body.add_theme_font_size_override("font_size", 13)
+	copy.add_child(body)
+	return panel
 
 
 func _build_help_rule(kind: String, illustration_name: String, title_text: String, body_text: String) -> Control:
@@ -1200,7 +1327,8 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 	current_level_index = int(active_schedule.get("levelIndex", index))
 	current_level_index = clampi(current_level_index, 0, levels.size() - 1)
 	player_level_number = maxi(1, int(active_schedule.get("displayLevel", player_level_number)))
-	current_level = levels[current_level_index]
+	current_level = levels[current_level_index].duplicate(true)
+	_prepare_composite_level(allow_resume)
 	is_completed = false
 	is_failed = false
 	active_hint_step.clear()
@@ -1256,7 +1384,9 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 		progress_bar.max_value = int(current_level["targetCount"])
 	board.set_level(current_level, cell_states, REGION_COLORS)
 	_validate_and_update(false)
-	_request_opening_king_reveal()
+	_apply_composite_phase_ui()
+	if not _is_assembly_phase():
+		_request_opening_king_reveal()
 	_update_home()
 	if is_completed:
 		_prepare_success_result_page()
@@ -1265,6 +1395,203 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 	elif is_failed:
 		_prepare_failure_result_page()
 		completion_overlay.show()
+		_save_game()
+
+
+func _prepare_composite_level(allow_resume: bool) -> void:
+	composite_mode = false
+	composite_phase = "crown"
+	composite_data.clear()
+	composite_placements.clear()
+	composite_final_layout.clear()
+	var level_id := int(current_level.get("levelId", -1))
+	var saved_matches := allow_resume and int(resume_composite_state.get("levelId", -2)) == level_id
+	var saved_phase := str(resume_composite_state.get("phase", "")) if saved_matches else ""
+	if saved_matches and (saved_phase == "crown" or saved_phase == "transition"):
+		var final_regions = resume_composite_state.get("finalRegions", [])
+		var final_solution = resume_composite_state.get("finalSolution", [])
+		if _composite_final_level_is_valid(final_regions, final_solution):
+			composite_mode = true
+			composite_phase = "crown"
+			current_level["regions"] = final_regions.duplicate(true)
+			current_level["solution"] = final_solution.duplicate(true)
+			composite_final_layout = {
+				"signature": str(resume_composite_state.get("layoutSignature", "")),
+				"regions": final_regions.duplicate(true),
+				"solution": final_solution.duplicate(true)
+			}
+			return
+
+	if not bool(active_schedule.get("assemblyEnabled", false)) or int(current_level.get("rows", 0)) < 6:
+		return
+	var seed := int(resume_composite_state.get("seed", 0)) if saved_matches else 0
+	if seed == 0:
+		seed = int(current_level.get("levelId", 1)) * 1000003 + player_level_number * 9176 + 20260722
+	if saved_matches:
+		composite_data = CompositeLevelScript.build(current_level, seed)
+	else:
+		var fallback_composite: Dictionary = {}
+		for seed_offset in range(12):
+			var candidate_composite: Dictionary = CompositeLevelScript.build(current_level, seed + seed_offset)
+			if candidate_composite.is_empty():
+				continue
+			if fallback_composite.is_empty():
+				fallback_composite = candidate_composite
+			if candidate_composite["validLayouts"].size() >= 2:
+				composite_data = candidate_composite
+				break
+		if composite_data.is_empty():
+			composite_data = fallback_composite
+	if composite_data.is_empty():
+		active_schedule["assemblyEnabled"] = false
+		return
+	composite_mode = true
+	composite_phase = "assembly"
+	active_schedule["kingPositions"] = []
+	if saved_matches and saved_phase == "assembly":
+		composite_placements = CompositeLevelScript.sanitize_placements(composite_data, resume_composite_state.get("placements", {}))
+	else:
+		composite_placements = CompositeLevelScript.empty_placements()
+
+
+func _composite_final_level_is_valid(regions, solution) -> bool:
+	if not regions is Array or not solution is Array:
+		return false
+	var rows := int(current_level.get("rows", 0))
+	var cols := int(current_level.get("cols", 0))
+	if regions.size() != rows or solution.size() != int(current_level.get("targetCount", rows)):
+		return false
+	for row in regions:
+		if not row is Array or row.size() != cols:
+			return false
+	return true
+
+
+func _is_assembly_phase() -> bool:
+	return composite_mode and composite_phase == "assembly"
+
+
+func _assembly_allowed_origins() -> Dictionary:
+	var result := {}
+	if composite_data.is_empty():
+		return result
+	for piece in composite_data.get("pieces", []):
+		var piece_id := int(piece.get("pieceId", -1))
+		result[str(piece_id)] = CompositeLevelScript.allowed_origins(composite_data, composite_placements, piece_id)
+	return result
+
+
+func _apply_composite_phase_ui() -> void:
+	if not assembly_view or not board or not action_bar or not progress_row:
+		return
+	if _is_assembly_phase():
+		progress_row.hide()
+		if assembly_stage_label:
+			assembly_stage_label.show()
+		board.modulate.a = 0.0
+		board.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		for button in [clear_button, crown_find_button, hint_button]:
+			if button:
+				button.disabled = true
+				button.hide()
+		assembly_view.configure(composite_data, composite_placements, REGION_COLORS, _assembly_allowed_origins())
+	else:
+		progress_row.show()
+		if assembly_stage_label:
+			assembly_stage_label.hide()
+		board.modulate.a = 1.0
+		board.mouse_filter = Control.MOUSE_FILTER_STOP
+		assembly_view.deactivate()
+		for button in [clear_button, crown_find_button, hint_button]:
+			if button:
+				button.show()
+		if clear_button:
+			clear_button.disabled = _clearable_marks_empty()
+		_update_crown_find_button()
+		_update_hint_button()
+
+
+func _on_assembly_placement_requested(piece_id: int, origin: Array) -> void:
+	if not _is_assembly_phase() or origin.size() < 2:
+		return
+	var allowed: Array = CompositeLevelScript.allowed_origins(composite_data, composite_placements, piece_id)
+	var accepted := false
+	for candidate in allowed:
+		if int(candidate[0]) == int(origin[0]) and int(candidate[1]) == int(origin[1]):
+			accepted = true
+			break
+	if not accepted:
+		return
+	composite_placements[str(piece_id)] = [int(origin[0]), int(origin[1])]
+	assembly_view.update_state(composite_placements, _assembly_allowed_origins())
+	_save_game()
+	var layout := CompositeLevelScript.matching_layout(composite_data, composite_placements)
+	if not layout.is_empty():
+		_complete_composite_assembly(layout)
+
+
+func _on_assembly_return_requested(piece_id: int) -> void:
+	if not _is_assembly_phase():
+		return
+	composite_placements.erase(str(piece_id))
+	assembly_view.update_state(composite_placements, _assembly_allowed_origins())
+	_save_game()
+
+
+func _complete_composite_assembly(layout: Dictionary) -> void:
+	if not _is_assembly_phase() or layout.is_empty():
+		return
+	composite_final_layout = layout.duplicate(true)
+	composite_phase = "transition"
+	_save_game()
+	await assembly_view.play_flatten_transition()
+	if composite_final_layout.is_empty():
+		return
+	current_level["regions"] = composite_final_layout["regions"].duplicate(true)
+	current_level["solution"] = composite_final_layout["solution"].duplicate(true)
+	active_schedule["assemblyLayoutSignature"] = str(composite_final_layout.get("signature", ""))
+	active_king_positions.clear()
+	cell_states = _blank_states(int(current_level["rows"]), int(current_level["cols"]))
+	board.set_level(current_level, cell_states, REGION_COLORS)
+	composite_phase = "crown"
+	_apply_composite_phase_ui()
+	_validate_and_update(false)
+	_save_game()
+
+
+func _composite_save_state() -> Dictionary:
+	if not composite_mode or current_level.is_empty():
+		return {}
+	var result := {
+		"levelId": int(current_level.get("levelId", -1)),
+		"phase": composite_phase,
+		"seed": int(composite_data.get("seed", resume_composite_state.get("seed", 0))),
+		"placements": composite_placements.duplicate(true)
+	}
+	if not composite_final_layout.is_empty():
+		result["layoutSignature"] = str(composite_final_layout.get("signature", ""))
+		result["finalRegions"] = composite_final_layout.get("regions", []).duplicate(true)
+		result["finalSolution"] = composite_final_layout.get("solution", []).duplicate(true)
+	elif composite_phase == "crown":
+		result["layoutSignature"] = str(active_schedule.get("assemblyLayoutSignature", ""))
+		result["finalRegions"] = current_level.get("regions", []).duplicate(true)
+		result["finalSolution"] = current_level.get("solution", []).duplicate(true)
+	return result
+
+
+func _maybe_play_composite_intro() -> void:
+	if not _is_assembly_phase() or composite_tutorial_seen or composite_intro_running or not game_screen.visible:
+		return
+	composite_intro_running = true
+	composite_intro_marks_seen = true
+	assembly_view.play_intro()
+
+
+func _on_composite_intro_finished() -> void:
+	composite_intro_running = false
+	if composite_intro_marks_seen:
+		composite_tutorial_seen = true
+		composite_intro_marks_seen = false
 		_save_game()
 
 
@@ -1453,6 +1780,8 @@ func _is_piece_state(state: String) -> bool:
 
 
 func _on_cell_pressed(row: int, col: int) -> void:
+	if _is_assembly_phase():
+		return
 	if in_tutorial:
 		_on_tutorial_cell_pressed(row, col)
 		return
@@ -1482,6 +1811,8 @@ func _on_cell_pressed(row: int, col: int) -> void:
 
 
 func _on_cell_double_pressed(row: int, col: int) -> void:
+	if _is_assembly_phase():
+		return
 	if in_tutorial:
 		_on_tutorial_cell_double_pressed(row, col)
 		return
@@ -1516,6 +1847,8 @@ func _on_cell_double_pressed(row: int, col: int) -> void:
 
 
 func _on_cell_drag_started(row: int, col: int) -> void:
+	if _is_assembly_phase():
+		return
 	if in_tutorial:
 		_on_tutorial_drag_started(row, col)
 		return
@@ -1539,6 +1872,8 @@ func _on_cell_drag_started(row: int, col: int) -> void:
 
 
 func _on_cell_dragged(row: int, col: int) -> void:
+	if _is_assembly_phase():
+		return
 	if in_tutorial:
 		_on_tutorial_dragged(row, col)
 		return
@@ -1548,6 +1883,8 @@ func _on_cell_dragged(row: int, col: int) -> void:
 
 
 func _on_cell_drag_ended() -> void:
+	if _is_assembly_phase():
+		return
 	if in_tutorial:
 		_on_tutorial_drag_ended()
 		return
@@ -1602,6 +1939,8 @@ func _undo() -> void:
 
 
 func _clear_board() -> void:
+	if _is_assembly_phase():
+		return
 	if in_tutorial:
 		_use_tutorial_clear()
 		return
@@ -1688,6 +2027,8 @@ func _show_coin_shortage_dialog(tool: String, price: int) -> void:
 
 
 func _use_hint() -> void:
+	if _is_assembly_phase():
+		return
 	if in_tutorial:
 		_use_tutorial_hint()
 		return
@@ -1718,6 +2059,8 @@ func _use_hint() -> void:
 
 
 func _use_crown_find() -> void:
+	if _is_assembly_phase():
+		return
 	if in_tutorial:
 		_use_tutorial_crown_find()
 		return
@@ -3988,6 +4331,17 @@ func _complete_level() -> void:
 	if is_completed or is_failed:
 		return
 	is_completed = true
+	if home_composite_entry_active:
+		board.play_victory()
+		audio_controller.play_victory()
+		_save_game()
+		await get_tree().create_timer(0.55).timeout
+		_prepare_success_result_page()
+		completion_overlay.show()
+		completion_overlay.modulate.a = 0.0
+		var entry_tween := create_tween()
+		entry_tween.tween_property(completion_overlay, "modulate:a", 1.0, 0.2)
+		return
 	var level_id := int(current_level["levelId"])
 	if not completed_levels.has(level_id):
 		completed_levels.append(level_id)
@@ -4020,7 +4374,7 @@ func _complete_level() -> void:
 func _prepare_success_result_page(reward: int = 0) -> void:
 	result_overlay_mode = "success"
 	completion_title.text = "太棒了！"
-	reward_label.text = _t("第 %d 关 已完成", [player_level_number])
+	reward_label.text = "拼块挑战 已完成" if home_composite_entry_active else _t("第 %d 关 已完成", [player_level_number])
 	if result_icon_label:
 		result_icon_label.hide()
 	if result_piece_icon:
@@ -4029,9 +4383,9 @@ func _prepare_success_result_page(reward: int = 0) -> void:
 	if result_reward_label:
 		result_reward_label.hide()
 	if result_tip_label:
-		result_tip_label.text = "金币 +%d" % reward if reward > 0 else "本关已完成，继续挑战"
+		result_tip_label.text = "主线进度保持不变" if home_composite_entry_active else ("金币 +%d" % reward if reward > 0 else "本关已完成，继续挑战")
 	if completion_next_button:
-		completion_next_button.text = "下一关"
+		completion_next_button.text = "再玩一次" if home_composite_entry_active else "下一关"
 	if completion_replay_button:
 		completion_replay_button.text = "主菜单"
 		completion_replay_button.show()
@@ -4042,7 +4396,7 @@ func _prepare_failure_result_page() -> void:
 	result_overlay_mode = "failure"
 	_stop_result_lion_animation()
 	completion_title.text = "挑战失败"
-	reward_label.text = _t("第 %d 关 未完成", [player_level_number])
+	reward_label.text = "拼块挑战 未完成" if home_composite_entry_active else _t("第 %d 关 未完成", [player_level_number])
 	if result_icon_label:
 		result_icon_label.text = "♥"
 		result_icon_label.add_theme_color_override("font_color", Color("#F25D72"))
@@ -4054,11 +4408,11 @@ func _prepare_failure_result_page() -> void:
 		result_reward_label.text = "红心已用完"
 		result_reward_label.show()
 	if result_tip_label:
-		result_tip_label.text = "复活会保留当前棋盘，并恢复 1 颗红心"
+		result_tip_label.text = "可以重新挑战，或返回首页继续主线" if home_composite_entry_active else "复活会保留当前棋盘，并恢复 1 颗红心"
 	if completion_next_button:
-		completion_next_button.text = _t("金币复活  -%d", [_current_tool_price(CoinEconomyScript.TOOL_REVIVE)])
+		completion_next_button.text = "重新挑战" if home_composite_entry_active else _t("金币复活  -%d", [_current_tool_price(CoinEconomyScript.TOOL_REVIVE)])
 	if completion_replay_button:
-		completion_replay_button.text = "重新挑战"
+		completion_replay_button.text = "主菜单" if home_composite_entry_active else "重新挑战"
 		completion_replay_button.show()
 
 
@@ -4179,6 +4533,11 @@ func _next_level() -> void:
 
 
 func _completion_primary_pressed() -> void:
+	if home_composite_entry_active:
+		completion_overlay.hide()
+		_replay_level()
+		_show_game()
+		return
 	match result_overlay_mode:
 		"tutorial":
 			_next_level()
@@ -4189,6 +4548,10 @@ func _completion_primary_pressed() -> void:
 
 
 func _completion_secondary_pressed() -> void:
+	if home_composite_entry_active:
+		completion_overlay.hide()
+		_show_home()
+		return
 	if result_overlay_mode == "failure":
 		completion_overlay.hide()
 		_replay_level()
@@ -4254,15 +4617,27 @@ func _on_settings() -> void:
 func _on_help() -> void:
 	if not dialog_controller:
 		return
+	if help_tabs:
+		help_tabs.current_tab = 1 if _is_assembly_phase() else 0
 	dialog_controller.show_dialog(
 		"help",
-		"消除规则",
+		"玩法帮助" if _is_assembly_phase() else "消除规则",
 		"",
 		"help_rules",
 		[{"id": "close", "text": "知道了", "variant": "primary"}],
 		UITokensScript.DIALOG_RICH_WIDTH,
 		true
 	)
+
+
+func _replay_composite_intro_from_help() -> void:
+	if not _is_assembly_phase() or not assembly_view:
+		_show_toast("进入拼块阶段后可以重播演示")
+		return
+	dialog_controller.hide_dialog(true)
+	composite_intro_marks_seen = false
+	composite_intro_running = true
+	assembly_view.play_intro()
 
 
 func _show_tutorial_resume_dialog() -> void:
@@ -4498,6 +4873,12 @@ func _load_save() -> void:
 	tutorial_step_index = clampi(int(data.get("tutorialStepIndex", 0)), 0, TUTORIAL_LEVELS.size() - 1)
 	var loaded_formal_snapshot = data.get("formalProgressSnapshot", {})
 	formal_progress_snapshot = loaded_formal_snapshot.duplicate(true) if loaded_formal_snapshot is Dictionary else {}
+	home_composite_entry_active = bool(data.get("homeCompositeEntryActive", false))
+	var loaded_home_composite_snapshot = data.get("homeCompositeProgressSnapshot", {})
+	home_composite_progress_snapshot = loaded_home_composite_snapshot.duplicate(true) if loaded_home_composite_snapshot is Dictionary else {}
+	var loaded_composite_state = data.get("compositeState", {})
+	resume_composite_state = loaded_composite_state.duplicate(true) if loaded_composite_state is Dictionary else {}
+	composite_tutorial_seen = bool(data.get("compositeTutorialSeen", false))
 
 
 func _capture_formal_progress_snapshot() -> bool:
@@ -4509,15 +4890,21 @@ func _capture_formal_progress_snapshot() -> bool:
 		"playerLevelNumber": player_level_number,
 		"activeSchedule": active_schedule.duplicate(true),
 		"directorProgress": director_progress.duplicate(true),
+		"economyProgress": economy_progress.duplicate(true),
 		"completedLevels": completed_levels.duplicate(),
 		"cellStates": cell_states.duplicate(true),
 		"isCompleted": is_completed,
 		"isFailed": is_failed,
+		"coinCount": coin_count,
 		"heartCount": heart_count,
+		"hintCount": hint_count,
+		"crownFindCount": crown_find_count,
 		"runStartedUnix": run_started_unix,
 		"runMoveCount": run_move_count,
 		"runHintCount": run_hint_count,
-		"runCoinExchangeCount": run_coin_exchange_count
+		"runCoinExchangeCount": run_coin_exchange_count,
+		"compositeState": _composite_save_state(),
+		"compositeTutorialSeen": composite_tutorial_seen
 	}
 	return true
 
@@ -4549,6 +4936,9 @@ func _restore_formal_progress_snapshot() -> bool:
 	var snapshot_progress = snapshot.get("directorProgress", {})
 	director_progress = snapshot_progress.duplicate(true) if snapshot_progress is Dictionary else {}
 	LevelDirectorScript.normalize_progress(director_progress)
+	var snapshot_economy = snapshot.get("economyProgress", {})
+	economy_progress = snapshot_economy.duplicate(true) if snapshot_economy is Dictionary else CoinEconomyScript.default_progress()
+	CoinEconomyScript.normalize_progress(economy_progress)
 	completed_levels.assign(snapshot.get("completedLevels", []))
 	for index in range(completed_levels.size()):
 		completed_levels[index] = int(completed_levels[index])
@@ -4556,14 +4946,39 @@ func _restore_formal_progress_snapshot() -> bool:
 	resume_states = snapshot["cellStates"].duplicate(true)
 	resume_completed = bool(snapshot.get("isCompleted", false))
 	resume_failed = bool(snapshot.get("isFailed", false))
+	coin_count = int(snapshot.get("coinCount", coin_count))
 	heart_count = maxi(0, int(snapshot.get("heartCount", INITIAL_HEART_COUNT)))
+	hint_count = maxi(0, int(snapshot.get("hintCount", hint_count)))
+	crown_find_count = clampi(int(snapshot.get("crownFindCount", crown_find_count)), 0, INITIAL_CROWN_FIND_COUNT)
 	run_started_unix = int(snapshot.get("runStartedUnix", 0))
 	run_move_count = maxi(0, int(snapshot.get("runMoveCount", 0)))
 	run_hint_count = maxi(0, int(snapshot.get("runHintCount", 0)))
 	run_coin_exchange_count = maxi(0, int(snapshot.get("runCoinExchangeCount", 0)))
+	var snapshot_composite = snapshot.get("compositeState", {})
+	resume_composite_state = snapshot_composite.duplicate(true) if snapshot_composite is Dictionary else {}
+	composite_tutorial_seen = bool(snapshot.get("compositeTutorialSeen", composite_tutorial_seen))
 	formal_progress_snapshot.clear()
 	_load_level(current_level_index, true, active_schedule, true)
 	return true
+
+
+func _restore_home_composite_progress() -> bool:
+	var snapshot := home_composite_progress_snapshot.duplicate(true)
+	if not _formal_progress_snapshot_is_valid(snapshot):
+		home_composite_progress_snapshot.clear()
+		home_composite_entry_active = false
+		return false
+	var preserved_tutorial_snapshot := formal_progress_snapshot.duplicate(true)
+	var tutorial_seen_in_entry := composite_tutorial_seen
+	formal_progress_snapshot = snapshot
+	home_composite_progress_snapshot.clear()
+	home_composite_entry_active = false
+	composite_intro_running = false
+	composite_intro_marks_seen = false
+	var restored := _restore_formal_progress_snapshot()
+	formal_progress_snapshot = preserved_tutorial_snapshot
+	composite_tutorial_seen = composite_tutorial_seen or tutorial_seen_in_entry
+	return restored
 
 
 func _save_game() -> void:
@@ -4596,8 +5011,13 @@ func _save_game() -> void:
 		"tutorialCompleted": tutorial_completed,
 		"tutorialStarted": tutorial_started,
 		"tutorialStepIndex": tutorial_step_index,
-		"formalProgressSnapshot": formal_progress_snapshot
+		"formalProgressSnapshot": formal_progress_snapshot,
+		"homeCompositeEntryActive": home_composite_entry_active,
+		"homeCompositeProgressSnapshot": home_composite_progress_snapshot,
+		"compositeState": _composite_save_state(),
+		"compositeTutorialSeen": composite_tutorial_seen
 	}
+	resume_composite_state = data["compositeState"].duplicate(true)
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(data))
@@ -4738,6 +5158,9 @@ func _show_home() -> void:
 	_cancel_opening_king_intro(true)
 	_stop_result_lion_animation()
 	_stop_heart_tweens()
+	if home_composite_entry_active:
+		_restore_home_composite_progress()
+		_save_game()
 	if home_screen:
 		home_screen.show()
 	if game_screen:
@@ -4756,6 +5179,47 @@ func _start_current_flow() -> void:
 		_show_tutorial_resume_dialog()
 	else:
 		_start_tutorial_step(0)
+
+
+func _start_home_composite_flow() -> void:
+	if not tutorial_completed:
+		_start_current_flow()
+		return
+	var candidate := _home_composite_candidate()
+	if candidate.is_empty():
+		_show_toast("暂时没有可用的 6×6 拼块关卡")
+		return
+	if not _capture_formal_progress_snapshot():
+		_show_toast("当前关卡现场暂时无法保存")
+		return
+	home_composite_progress_snapshot = formal_progress_snapshot.duplicate(true)
+	formal_progress_snapshot.clear()
+	home_composite_entry_active = true
+	resume_level_id = -1
+	resume_states.clear()
+	resume_composite_state.clear()
+	var schedule: Dictionary = candidate["schedule"]
+	_load_level(int(candidate["levelIndex"]), false, schedule)
+	if not _is_assembly_phase():
+		_restore_home_composite_progress()
+		_show_toast("拼块关卡生成失败，请重试")
+		return
+	_show_game()
+	_save_game()
+
+
+func _home_composite_candidate() -> Dictionary:
+	for index in range(levels.size()):
+		var level: Dictionary = levels[index]
+		if int(level.get("rows", 0)) != 6 or int(level.get("cols", 0)) != 6:
+			continue
+		var schedule := LevelDirectorScript.manual_schedule_for_level(levels, index, 80, "home_composite")
+		schedule["assemblyEnabled"] = true
+		var seed := int(level.get("levelId", 1)) * 1000003 + 80 * 9176 + 20260722
+		for seed_offset in range(12):
+			if not CompositeLevelScript.build(level, seed + seed_offset).is_empty():
+				return {"levelIndex": index, "schedule": schedule}
+	return {}
 
 
 func _replay_tutorial_preserving_progress() -> void:
@@ -4781,7 +5245,11 @@ func _show_game() -> void:
 	_update_tutorial_button()
 	if board:
 		board.queue_redraw()
-	_play_pending_opening_king_reveal()
+	if _is_assembly_phase():
+		_apply_composite_phase_ui()
+		call_deferred("_maybe_play_composite_intro")
+	else:
+		_play_pending_opening_king_reveal()
 
 
 func _update_tutorial_button() -> void:
@@ -4806,9 +5274,11 @@ func _update_tutorial_button() -> void:
 	else:
 		_update_heart_label()
 	if crown_find_button:
-		crown_find_button.show()
+		crown_find_button.visible = not _is_assembly_phase()
 	if clear_button:
-		clear_button.show()
+		clear_button.visible = not _is_assembly_phase()
+	if hint_button:
+		hint_button.visible = not _is_assembly_phase()
 
 
 func _update_home() -> void:
@@ -4828,6 +5298,9 @@ func _update_home() -> void:
 			home_start_button.text = "继续新手教程"
 		else:
 			home_start_button.text = "开始新手教程"
+	if home_composite_button:
+		home_composite_button.text = _t("拼块玩法")
+		home_composite_button.disabled = not tutorial_completed
 	_refresh_level_select_picker()
 
 

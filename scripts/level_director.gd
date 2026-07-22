@@ -236,16 +236,18 @@ static func record_retention_if_needed(progress: Dictionary, today: String, now_
 
 
 static func _make_schedule(level: Dictionary, index: int, display: int, mode: String, is_milestone: bool, allowed_sizes: Array, selected_size: int, selected_difficulty: String) -> Dictionary:
+	var assembly_enabled := is_milestone and selected_size >= 6
 	return {
 		"displayLevel": display,
 		"levelIndex": index,
 		"levelId": int(level.get("levelId", -1)),
 		"mode": mode,
 		"isMilestoneChallenge": is_milestone,
+		"assemblyEnabled": assembly_enabled,
 		"allowedSizes": allowed_sizes.duplicate(),
 		"selectedSize": selected_size,
 		"selectedDifficulty": selected_difficulty,
-		"kingPositions": _opening_king_positions(level, display, index, mode == "fixed")
+		"kingPositions": [] if assembly_enabled else _opening_king_positions(level, display, index, mode == "fixed")
 	}
 
 
