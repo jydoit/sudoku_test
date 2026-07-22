@@ -128,13 +128,68 @@ func _run() -> void:
 	assert(game.top_home_button.visible, "Formal level should restore the home button")
 	assert(not game.board.tutorial_mask_enabled, "Formal level should not keep tutorial mask")
 
+	var preserved_level_index := 1
+	var preserved_schedule: Dictionary = game._schedule_for_manual_level(preserved_level_index)
+	game._load_level(preserved_level_index, false, preserved_schedule)
+	await process_frame
+	var preserved_mark := Vector2i(-1, -1)
+	for row in range(int(game.current_level["rows"])):
+		for col in range(int(game.current_level["cols"])):
+			if game.cell_states[row][col] == "empty":
+				preserved_mark = Vector2i(col, row)
+				break
+		if preserved_mark.x >= 0:
+			break
+	assert(preserved_mark.x >= 0, "Formal restore test needs one editable cell")
+	game.cell_states[preserved_mark.y][preserved_mark.x] = "blocked"
+	game.board.set_states(game.cell_states)
+	game.heart_count = 1
+	game.run_move_count = 7
+	game.director_progress["tutorialRestoreMarker"] = 42
+	var completed_marker := int(game.levels[0]["levelId"])
+	if not game.completed_levels.has(completed_marker):
+		game.completed_levels.append(completed_marker)
+	var preserved_level_id := int(game.current_level["levelId"])
+	var preserved_player_level: int = game.player_level_number
+	var preserved_states: Array = game.cell_states.duplicate(true)
+	var preserved_completed: Array = game.completed_levels.duplicate()
+
 	game._show_home()
 	await process_frame
 	game._simulate_new_user_flow()
 	await process_frame
 	assert(game.in_tutorial, "New user button should re-enter tutorial")
-	assert(not game.tutorial_completed, "New user button should reset tutorial completion")
+	assert(not game.tutorial_completed, "Replaying tutorial should temporarily reset tutorial completion")
 	assert(game.tutorial_step_index == 0, "New user button should restart tutorial")
+	assert(game._formal_progress_snapshot_is_valid(game.formal_progress_snapshot), "Replaying tutorial should preserve a valid formal progress snapshot")
+	var saved_file := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	var saved_data = JSON.parse_string(saved_file.get_as_text())
+	assert(saved_data is Dictionary and saved_data.get("formalProgressSnapshot", {}) is Dictionary, "Formal progress snapshot should persist while tutorial is active")
+	assert(int(saved_data["formalProgressSnapshot"].get("currentLevelId", -1)) == preserved_level_id, "Persisted snapshot should retain the previous formal level")
+
+	game.queue_free()
+	await process_frame
+	var reloaded_game = packed.instantiate()
+	root.add_child(reloaded_game)
+	await process_frame
+	await process_frame
+	await create_timer(0.5).timeout
+	await process_frame
+	assert(reloaded_game.tutorial_started, "Restarting during tutorial should retain the tutorial session")
+	assert(reloaded_game._formal_progress_snapshot_is_valid(reloaded_game.formal_progress_snapshot), "Restarting during tutorial should reload the formal progress snapshot")
+	reloaded_game._start_tutorial_step(reloaded_game.tutorial_step_index)
+	await process_frame
+	game = reloaded_game
+
+	game._finish_tutorial(true)
+	await process_frame
+	assert(not game.in_tutorial and game.tutorial_completed, "Leaving a replayed tutorial should return to formal play")
+	assert(game.current_level_index == preserved_level_index and int(game.current_level["levelId"]) == preserved_level_id, "Tutorial exit should restore the previous formal level")
+	assert(game.player_level_number == preserved_player_level, "Tutorial exit should restore the displayed formal level number")
+	assert(game.cell_states == preserved_states and game.cell_states[preserved_mark.y][preserved_mark.x] == "blocked", "Tutorial exit should restore the unfinished board state, including opening levels")
+	assert(game.heart_count == 1 and game.run_move_count == 7, "Tutorial exit should restore formal run state")
+	assert(game.completed_levels == preserved_completed and int(game.director_progress.get("tutorialRestoreMarker", 0)) == 42, "Tutorial exit should preserve completed levels and director progress")
+	assert(game.formal_progress_snapshot.is_empty(), "Formal progress snapshot should clear after a successful restore")
 
 	game.queue_free()
 	await process_frame

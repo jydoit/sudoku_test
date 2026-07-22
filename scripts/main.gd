@@ -36,7 +36,7 @@ const LION_KING_VICTORY_FRAMES = [
 	LION_KING_VICTORY_FUNNY_ICON
 ]
 const SAVE_PATH := "user://color_queens_save.json"
-const SAVE_VERSION := 7
+const SAVE_VERSION := 8
 const INITIAL_HINT_COUNT := 3
 const INITIAL_HEART_COUNT := 3
 const INITIAL_CROWN_FIND_COUNT := 3
@@ -111,6 +111,7 @@ var resume_level_id := -1
 var resume_states: Array = []
 var resume_completed := false
 var resume_failed := false
+var formal_progress_snapshot: Dictionary = {}
 var tutorial_completed := false
 var tutorial_started := false
 var tutorial_step_index := 0
@@ -224,11 +225,11 @@ func _ready() -> void:
 	var resume_schedule := _schedule_for_current_level()
 	current_level_index = int(resume_schedule.get("levelIndex", current_level_index))
 	_load_level(current_level_index, true, resume_schedule)
-	if tutorial_completed:
-		_show_home()
-	elif tutorial_started:
+	if tutorial_started:
 		_show_home()
 		_show_tutorial_resume_dialog()
+	elif tutorial_completed:
+		_show_home()
 	else:
 		_start_tutorial_step(0)
 
@@ -429,7 +430,7 @@ func _build_home_primary_buttons() -> Control:
 	newbie.add_theme_color_override("font_shadow_color", Color(1.0, 1.0, 1.0, 0.0))
 	newbie.add_theme_stylebox_override("hover", _card_style(Color("#F6FAFF"), 22, true))
 	newbie.add_theme_stylebox_override("pressed", _button_style(Color("#E7F1FF"), 22))
-	newbie.pressed.connect(_simulate_new_user_flow)
+	newbie.pressed.connect(_replay_tutorial_preserving_progress)
 	column.add_child(newbie)
 	return column
 
@@ -1183,7 +1184,7 @@ func _sync_director_completed_levels() -> void:
 	director_progress["completedLevelIds"] = completed_levels.duplicate()
 
 
-func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = {}) -> void:
+func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = {}, force_resume: bool = false) -> void:
 	_cancel_opening_king_intro()
 	in_tutorial = false
 	if coach_panel:
@@ -1211,7 +1212,7 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 	var rows := int(current_level["rows"])
 	var cols := int(current_level["cols"])
 	current_heart_limit = _heart_limit_for_display_level(player_level_number)
-	var can_resume := allow_resume and _can_restore_saved_level(rows, cols)
+	var can_resume := allow_resume and _can_restore_saved_level(rows, cols, force_resume)
 	if can_resume:
 		cell_states = resume_states.duplicate(true)
 		is_completed = resume_completed
@@ -1267,13 +1268,13 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 		_save_game()
 
 
-func _can_restore_saved_level(rows: int, cols: int) -> bool:
+func _can_restore_saved_level(rows: int, cols: int, force_resume: bool = false) -> bool:
 	if resume_level_id != int(current_level["levelId"]):
 		return false
 	if not _states_match_size(resume_states, rows, cols):
 		return false
 	var display := int(active_schedule.get("displayLevel", player_level_number))
-	if not resume_completed and display <= LevelDirectorScript.FIXED_OPENING_COUNT:
+	if not force_resume and not resume_completed and display <= LevelDirectorScript.FIXED_OPENING_COUNT:
 		return false
 	return true
 
@@ -2795,7 +2796,8 @@ func _start_tutorial_step(index: int) -> void:
 	if tutorial_skip_button:
 		_update_tutorial_button()
 	if completion_next_button:
-		completion_next_button.text = "下一步  →" if tutorial_step_index < TUTORIAL_LEVELS.size() - 1 else "进入第 1 关  →"
+		var final_action := "返回关卡  →" if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else "进入第 1 关  →"
+		completion_next_button.text = "下一步  →" if tutorial_step_index < TUTORIAL_LEVELS.size() - 1 else final_action
 	if completion_replay_button:
 		completion_replay_button.text = "重来本步"
 		completion_replay_button.show()
@@ -3906,8 +3908,8 @@ func _show_tutorial_challenge_ready() -> void:
 		result_reward_label.text = "新手教程完成"
 		result_reward_label.show()
 	if result_tip_label:
-		result_tip_label.text = "进入第 1 关，开始真正的挑战"
-	completion_next_button.text = "开始挑战"
+		result_tip_label.text = "返回进入教程前的关卡现场" if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else "进入第 1 关，开始真正的挑战"
+	completion_next_button.text = "返回关卡" if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else "开始挑战"
 	if completion_replay_button:
 		completion_replay_button.hide()
 	completion_overlay.show()
@@ -3940,10 +3942,11 @@ func _next_tutorial_step() -> void:
 
 func _request_skip_tutorial() -> void:
 	if in_tutorial:
+		var destination := "返回进入教程前的关卡现场。" if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else "直接进入第 1 关。"
 		dialog_controller.show_dialog(
 			"tutorial_skip",
 			"跳过新手教程？",
-			"跳过后会直接进入第 1 关，之后不再自动显示新手教程。",
+			"跳过后会%s之后不再自动显示新手教程。" % destination,
 			"",
 			[
 				{"id": "continue", "text": "继续教程", "variant": "secondary"},
@@ -3968,12 +3971,17 @@ func _finish_tutorial(skipped: bool) -> void:
 	_hide_tutorial_hand()
 	tutorial_step_index = 0
 	tutorial_button_stage = 0
-	player_level_number = 1
-	active_schedule = LevelDirectorScript.schedule_for_display_level(levels, player_level_number, director_progress)
-	_load_level(int(active_schedule.get("levelIndex", 0)), false, active_schedule)
+	var restored_formal_progress := _restore_formal_progress_snapshot()
+	if not restored_formal_progress:
+		player_level_number = 1
+		active_schedule = LevelDirectorScript.schedule_for_display_level(levels, player_level_number, director_progress)
+		_load_level(int(active_schedule.get("levelIndex", 0)), false, active_schedule)
 	_show_game()
 	_save_game()
-	_show_toast("已跳过教程，进入第 1 关" if skipped else "新手教程完成，进入第 1 关")
+	if restored_formal_progress:
+		_show_toast("已跳过教程，返回之前的关卡" if skipped else "新手教程完成，返回之前的关卡")
+	else:
+		_show_toast("已跳过教程，进入第 1 关" if skipped else "新手教程完成，进入第 1 关")
 
 
 func _complete_level() -> void:
@@ -4488,6 +4496,74 @@ func _load_save() -> void:
 	tutorial_completed = bool(data.get("tutorialCompleted", false))
 	tutorial_started = bool(data.get("tutorialStarted", false))
 	tutorial_step_index = clampi(int(data.get("tutorialStepIndex", 0)), 0, TUTORIAL_LEVELS.size() - 1)
+	var loaded_formal_snapshot = data.get("formalProgressSnapshot", {})
+	formal_progress_snapshot = loaded_formal_snapshot.duplicate(true) if loaded_formal_snapshot is Dictionary else {}
+
+
+func _capture_formal_progress_snapshot() -> bool:
+	if in_tutorial or current_level.is_empty() or int(current_level.get("levelId", -1)) < 0:
+		return false
+	formal_progress_snapshot = {
+		"currentLevelIndex": current_level_index,
+		"currentLevelId": int(current_level["levelId"]),
+		"playerLevelNumber": player_level_number,
+		"activeSchedule": active_schedule.duplicate(true),
+		"directorProgress": director_progress.duplicate(true),
+		"completedLevels": completed_levels.duplicate(),
+		"cellStates": cell_states.duplicate(true),
+		"isCompleted": is_completed,
+		"isFailed": is_failed,
+		"heartCount": heart_count,
+		"runStartedUnix": run_started_unix,
+		"runMoveCount": run_move_count,
+		"runHintCount": run_hint_count,
+		"runCoinExchangeCount": run_coin_exchange_count
+	}
+	return true
+
+
+func _formal_progress_snapshot_is_valid(snapshot: Dictionary) -> bool:
+	if snapshot.is_empty():
+		return false
+	var level_index := int(snapshot.get("currentLevelIndex", -1))
+	if level_index < 0 or level_index >= levels.size():
+		return false
+	var level: Dictionary = levels[level_index]
+	if int(snapshot.get("currentLevelId", -1)) != int(level.get("levelId", -2)):
+		return false
+	var states = snapshot.get("cellStates", [])
+	if not states is Array:
+		return false
+	return _states_match_size(states, int(level["rows"]), int(level["cols"]))
+
+
+func _restore_formal_progress_snapshot() -> bool:
+	var snapshot := formal_progress_snapshot.duplicate(true)
+	if not _formal_progress_snapshot_is_valid(snapshot):
+		formal_progress_snapshot.clear()
+		return false
+	current_level_index = int(snapshot["currentLevelIndex"])
+	player_level_number = maxi(1, int(snapshot.get("playerLevelNumber", current_level_index + 1)))
+	var snapshot_schedule = snapshot.get("activeSchedule", {})
+	active_schedule = snapshot_schedule.duplicate(true) if snapshot_schedule is Dictionary else {}
+	var snapshot_progress = snapshot.get("directorProgress", {})
+	director_progress = snapshot_progress.duplicate(true) if snapshot_progress is Dictionary else {}
+	LevelDirectorScript.normalize_progress(director_progress)
+	completed_levels.assign(snapshot.get("completedLevels", []))
+	for index in range(completed_levels.size()):
+		completed_levels[index] = int(completed_levels[index])
+	resume_level_id = int(snapshot["currentLevelId"])
+	resume_states = snapshot["cellStates"].duplicate(true)
+	resume_completed = bool(snapshot.get("isCompleted", false))
+	resume_failed = bool(snapshot.get("isFailed", false))
+	heart_count = maxi(0, int(snapshot.get("heartCount", INITIAL_HEART_COUNT)))
+	run_started_unix = int(snapshot.get("runStartedUnix", 0))
+	run_move_count = maxi(0, int(snapshot.get("runMoveCount", 0)))
+	run_hint_count = maxi(0, int(snapshot.get("runHintCount", 0)))
+	run_coin_exchange_count = maxi(0, int(snapshot.get("runCoinExchangeCount", 0)))
+	formal_progress_snapshot.clear()
+	_load_level(current_level_index, true, active_schedule, true)
+	return true
 
 
 func _save_game() -> void:
@@ -4519,7 +4595,8 @@ func _save_game() -> void:
 		"cellStates": cell_states,
 		"tutorialCompleted": tutorial_completed,
 		"tutorialStarted": tutorial_started,
-		"tutorialStepIndex": tutorial_step_index
+		"tutorialStepIndex": tutorial_step_index,
+		"formalProgressSnapshot": formal_progress_snapshot
 	}
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file:
@@ -4681,22 +4758,19 @@ func _start_current_flow() -> void:
 		_start_tutorial_step(0)
 
 
-func _simulate_new_user_flow() -> void:
+func _replay_tutorial_preserving_progress() -> void:
+	_capture_formal_progress_snapshot()
 	tutorial_completed = false
 	tutorial_started = false
 	tutorial_step_index = 0
 	tutorial_interaction_stage = 0
-	current_level_index = 0
-	player_level_number = 1
-	active_schedule.clear()
-	active_king_positions.clear()
-	director_progress.clear()
-	resume_level_id = -1
-	resume_states = []
-	resume_completed = false
 	completion_overlay.hide()
 	_start_tutorial_step(0)
-	_show_toast("已进入新人流程")
+	_show_toast("已进入新手教程，正式关卡进度已保存")
+
+
+func _simulate_new_user_flow() -> void:
+	_replay_tutorial_preserving_progress()
 
 
 func _show_game() -> void:
