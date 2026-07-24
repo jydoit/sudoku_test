@@ -6,6 +6,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	print("CASES EDITOR-001")
 	var packed: PackedScene = load("res://scenes/level_editor.tscn")
 	assert(packed != null, "Level editor scene must load")
 	var editor = packed.instantiate()

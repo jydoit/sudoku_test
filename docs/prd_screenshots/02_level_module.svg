@@ -58,11 +58,11 @@
 <rect x="327.0" y="743.0" width="55.0" height="55.0" rx="4" fill="#B9F2E6" stroke="#FFFFFF" stroke-width="2" />
 <rect x="382.0" y="743.0" width="55.0" height="55.0" rx="4" fill="#B9F2E6" stroke="#FFFFFF" stroke-width="2" />
 <rect x="111" y="842" width="92" height="58" rx="16" fill="#FFFFFF" stroke="#D8DEE9" stroke-width="2" />
-<text x="157.0" y="879.0" font-family="Arial, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#fff" text-anchor="middle">撤销</text>
-<text x="157" y="878" font-family="Arial, PingFang SC, sans-serif" font-size="19" font-weight="700" fill="#26334A" text-anchor="middle">撤销</text>
+<text x="157.0" y="879.0" font-family="Arial, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#fff" text-anchor="middle">小狮子</text>
+<text x="157" y="878" font-family="Arial, PingFang SC, sans-serif" font-size="19" font-weight="700" fill="#26334A" text-anchor="middle">小狮子</text>
 <rect x="224" y="842" width="92" height="58" rx="16" fill="#FFFFFF" stroke="#D8DEE9" stroke-width="2" />
-<text x="270.0" y="879.0" font-family="Arial, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#fff" text-anchor="middle">清除</text>
-<text x="270" y="878" font-family="Arial, PingFang SC, sans-serif" font-size="19" font-weight="700" fill="#26334A" text-anchor="middle">清除</text>
+<text x="270.0" y="879.0" font-family="Arial, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#fff" text-anchor="middle">提示</text>
+<text x="270" y="878" font-family="Arial, PingFang SC, sans-serif" font-size="19" font-weight="700" fill="#26334A" text-anchor="middle">提示</text>
 <rect x="337" y="842" width="92" height="58" rx="16" fill="#48B985" stroke="#2A9C6F" stroke-width="2" />
 <text x="383.0" y="879.0" font-family="Arial, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#fff" text-anchor="middle">提示</text>
 <rect x="112" y="930" width="320" height="56" rx="14" fill="#EEF2F8" stroke="#D8DEE9" stroke-width="2" />
@@ -75,16 +75,16 @@
 <circle cx="548" cy="330" r="20" fill="#E23B4A"/>
 <text x="548" y="337" font-family="Arial, PingFang SC, sans-serif" font-size="21" font-weight="700" fill="#fff" text-anchor="middle">2</text>
 <text x="580" y="327" font-family="Arial, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#26334A" text-anchor="start">进度反馈</text>
-<text x="580" y="357" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#536278" text-anchor="start">已找到皇冠数实时驱动进度条，达到目标后检查通关。</text>
+<text x="580" y="357" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#536278" text-anchor="start">已找到小狮子数实时驱动进度条，达到目标后检查通关。</text>
 <line x1="408" y1="290" x2="532" y2="330" stroke="#E23B4A" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
 <circle cx="548" cy="505" r="20" fill="#E23B4A"/>
 <text x="548" y="512" font-family="Arial, PingFang SC, sans-serif" font-size="21" font-weight="700" fill="#fff" text-anchor="middle">3</text>
 <text x="580" y="502" font-family="Arial, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#26334A" text-anchor="start">解题区域</text>
-<text x="580" y="532" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#536278" text-anchor="start">棋盘是核心操作区，点击格子循环空白、X、皇冠。</text>
+<text x="580" y="532" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#536278" text-anchor="start">棋盘是核心操作区，单击标记或取消 X，双击尝试找小狮子。</text>
 <line x1="436" y1="620" x2="532" y2="505" stroke="#E23B4A" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
 <circle cx="548" cy="735" r="20" fill="#E23B4A"/>
 <text x="548" y="742" font-family="Arial, PingFang SC, sans-serif" font-size="21" font-weight="700" fill="#fff" text-anchor="middle">4</text>
 <text x="580" y="732" font-family="Arial, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#26334A" text-anchor="start">底部操作</text>
-<text x="580" y="762" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#536278" text-anchor="start">撤销、清除、提示服务当前关卡；广告位保留在底部。</text>
+<text x="580" y="762" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#536278" text-anchor="start">底部只保留小狮子和提示，服务当前关卡。</text>
 <line x1="430" y1="870" x2="532" y2="735" stroke="#E23B4A" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
 </svg>

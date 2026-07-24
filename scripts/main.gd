@@ -40,6 +40,8 @@ const SAVE_VERSION := 7
 const INITIAL_HINT_COUNT := 3
 const INITIAL_HEART_COUNT := 3
 const INITIAL_CROWN_FIND_COUNT := 3
+const LEVEL_SELECT_PAGE_SIZE := 20
+const LEVEL_SELECT_COLUMNS := 5
 const INK := UITokensScript.INK
 const MUTED := UITokensScript.MUTED
 const CREAM := UITokensScript.SURFACE_CREAM
@@ -47,7 +49,6 @@ const CARD := UITokensScript.SURFACE_CARD
 const GREEN := UITokensScript.SUCCESS_GREEN
 const HEART_ACTIVE_COLOR := Color("#F25D72")
 const HEART_EMPTY_COLOR := Color("#C8CDD5")
-const HEART_PULSE_STAGGER_SECONDS := 0.0
 const COACH_TUTORIAL_SIZE := 19
 const COACH_NORMAL_SIZE := 16
 const TUTORIAL_PHASE_PLACE := 0
@@ -68,7 +69,7 @@ const TUTORIAL_LEVELS = [
 		"rows": 5,
 		"cols": 5,
 		"targetCount": 5,
-		"tutorial": "每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。",
+		"tutorial": "每个颜色区域都要找到一个小狮子。现在这个区域只剩一个可选格，双击找到它。",
 		"regions": [
 			[3, 2, 2, 4, 4],
 			[3, 2, 4, 4, 4],
@@ -138,7 +139,14 @@ var settings_button: Button
 var home_chest_label: Label
 var board
 var level_picker: OptionButton
-var level_select_picker: OptionButton
+var level_select_grid: GridContainer
+var level_select_page_label: Label
+var level_select_selection_label: Label
+var level_select_previous_button: Button
+var level_select_next_button: Button
+var level_select_buttons: Array[Button] = []
+var level_select_selected_index := 0
+var level_select_page := 0
 var level_label: Label
 var help_button: Button
 var top_home_button: Button
@@ -201,6 +209,7 @@ var drag_changed := false
 var drag_cells := {}
 var opening_king_reveal_pending := false
 var result_overlay_mode := "success"
+var thinking_timer: Timer
 
 
 
@@ -261,6 +270,15 @@ func _build_ui() -> void:
 	_build_help_dialog()
 	_build_level_select_dialog()
 	_build_settings_dialog()
+	_build_thinking_timer()
+
+
+func _build_thinking_timer() -> void:
+	thinking_timer = Timer.new()
+	thinking_timer.wait_time = 8.0
+	thinking_timer.one_shot = true
+	thinking_timer.timeout.connect(_on_thinking_timer_timeout)
+	add_child(thinking_timer)
 
 
 func _build_home_screen() -> Control:
@@ -301,36 +319,6 @@ func _build_home_screen() -> Control:
 	return root
 
 
-func _build_home_top_resources() -> Control:
-	var bar := HBoxContainer.new()
-	bar.set_anchor(SIDE_LEFT, 0.0)
-	bar.set_anchor(SIDE_RIGHT, 1.0)
-	bar.offset_left = 18
-	bar.offset_top = 18
-	bar.offset_right = -18
-	bar.offset_bottom = 62
-	bar.add_theme_constant_override("separation", 8)
-
-	home_coin_label = _coin_value_label(coin_count)
-	bar.add_child(_coin_resource_badge(home_coin_label))
-
-	home_heart_label = _resource_label("♥  %d" % heart_count, Color("#F06B78"))
-	bar.add_child(home_heart_label)
-
-	home_star_label = _resource_label("★  %d" % completed_levels.size(), Color("#5D74D9"))
-	bar.add_child(home_star_label)
-
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bar.add_child(spacer)
-
-	var settings := _small_button("⚙")
-	settings.tooltip_text = "设置"
-	settings.pressed.connect(_on_settings)
-	bar.add_child(settings)
-	return bar
-
-
 func _build_home_castle() -> Control:
 	var castle := VBoxContainer.new()
 	castle.set_anchor(SIDE_LEFT, 0.08)
@@ -349,63 +337,11 @@ func _build_home_castle() -> Control:
 	title.add_theme_font_size_override("font_size", 48)
 	castle.add_child(title)
 
-	var castle_body := _piece_texture_rect(Vector2(210, 210))
+	var castle_body := _piece_texture_rect(Vector2(230, 230), LION_KING_VICTORY_ICON)
 	castle_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	castle.add_child(castle_body)
 
 	return castle
-
-
-func _build_home_side_buttons() -> Control:
-	var layer := Control.new()
-	layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-
-	var daily := _floating_home_button("礼")
-	daily.position = Vector2(18, 114)
-	daily.tooltip_text = "每日奖励"
-	daily.pressed.connect(func() -> void:
-		coin_count += 10
-		_update_coin_label()
-		_update_home()
-		_save_game()
-		_show_toast("每日奖励：金币 +10")
-	)
-	layer.add_child(daily)
-
-	var chest := _floating_home_button("箱")
-	chest.position = Vector2(18, 176)
-	chest.tooltip_text = "宝箱"
-	chest.pressed.connect(func() -> void: _show_toast("继续通关，皇冠宝箱即将开启"))
-	layer.add_child(chest)
-
-	var editor := _floating_home_button("编")
-	editor.position = Vector2(18, 238)
-	editor.tooltip_text = "关卡编辑器"
-	editor.pressed.connect(_open_level_editor)
-	layer.add_child(editor)
-
-	var event := _floating_home_button("!")
-	event.set_anchor(SIDE_LEFT, 1.0)
-	event.set_anchor(SIDE_RIGHT, 1.0)
-	event.offset_left = -70
-	event.offset_top = 136
-	event.offset_right = -18
-	event.offset_bottom = 188
-	event.tooltip_text = "活动"
-	event.pressed.connect(func() -> void: _show_toast("活动将在后续版本开放"))
-	layer.add_child(event)
-
-	var rank := _floating_home_button("榜")
-	rank.set_anchor(SIDE_LEFT, 1.0)
-	rank.set_anchor(SIDE_RIGHT, 1.0)
-	rank.offset_left = -70
-	rank.offset_top = 198
-	rank.offset_right = -18
-	rank.offset_bottom = 250
-	rank.tooltip_text = "排行榜"
-	rank.pressed.connect(func() -> void: _show_toast("排行榜将在后续版本开放"))
-	layer.add_child(rank)
-	return layer
 
 
 func _build_home_primary_buttons() -> Control:
@@ -423,7 +359,7 @@ func _build_home_primary_buttons() -> Control:
 	home_start_button.pressed.connect(_start_current_flow)
 	column.add_child(home_start_button)
 
-	var newbie := _royal_home_button("新人流程", CARD)
+	var newbie := _royal_home_button("新人引导", CARD)
 	newbie.custom_minimum_size.y = 66
 	newbie.add_theme_color_override("font_color", Color("#287BFF"))
 	newbie.add_theme_color_override("font_shadow_color", Color(1.0, 1.0, 1.0, 0.0))
@@ -432,138 +368,6 @@ func _build_home_primary_buttons() -> Control:
 	newbie.pressed.connect(_simulate_new_user_flow)
 	column.add_child(newbie)
 	return column
-
-
-func _build_home_bottom_nav() -> Control:
-	var panel := PanelContainer.new()
-	panel.set_anchor(SIDE_TOP, 1.0)
-	panel.set_anchor(SIDE_RIGHT, 1.0)
-	panel.set_anchor(SIDE_BOTTOM, 1.0)
-	panel.offset_top = -78
-	panel.add_theme_stylebox_override("panel", _button_style(Color("#1679D4"), 0))
-
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 4)
-	panel.add_child(row)
-
-	row.add_child(_nav_button("★", "星"))
-	row.add_child(_nav_button("杯", "杯"))
-
-	var home := _nav_button("城", "主页")
-	home.disabled = true
-	row.add_child(home)
-
-	row.add_child(_nav_button("队", "队"))
-	row.add_child(_nav_button("⚙", "设"))
-	return panel
-
-
-func _build_home_resource_bar() -> Control:
-	var row := HBoxContainer.new()
-	row.custom_minimum_size.y = 58
-	row.add_theme_constant_override("separation", 8)
-
-	home_coin_label = _coin_value_label(coin_count)
-	row.add_child(_coin_resource_badge(home_coin_label))
-
-	home_heart_label = _resource_label("♥  %d" % heart_count, Color("#F06B78"))
-	row.add_child(home_heart_label)
-
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(spacer)
-
-	var settings := _small_button("⚙")
-	settings.tooltip_text = "设置"
-	settings.pressed.connect(_on_settings)
-	row.add_child(settings)
-
-	var editor := _small_button("编")
-	editor.tooltip_text = "关卡编辑器"
-	editor.pressed.connect(_open_level_editor)
-	row.add_child(editor)
-	return row
-
-
-func _build_home_hero() -> Control:
-	var panel := PanelContainer.new()
-	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.custom_minimum_size.y = 410
-	panel.add_theme_stylebox_override("panel", _card_style(Color("#DDEFFD"), 24, true, 18))
-
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 12)
-	panel.add_child(column)
-
-	var title := Label.new()
-	title.text = "color king"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_color_override("font_color", INK)
-	title.add_theme_font_size_override("font_size", 36)
-	column.add_child(title)
-
-	var subtitle := Label.new()
-	subtitle.text = "皇冠花园"
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_color_override("font_color", Color("#52627A"))
-	subtitle.add_theme_font_size_override("font_size", 18)
-	column.add_child(subtitle)
-
-	var castle := _piece_texture_rect(Vector2(180, 180))
-	castle.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(castle)
-
-	return panel
-
-
-func _build_home_actions() -> Control:
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 10)
-
-	home_start_button = _action_button("开始关卡", Color("#FFB84E"))
-	home_start_button.custom_minimum_size.y = 66
-	home_start_button.add_theme_font_size_override("font_size", 23)
-	home_start_button.pressed.connect(_start_current_flow)
-	column.add_child(home_start_button)
-
-	var row := HBoxContainer.new()
-	row.custom_minimum_size.y = 70
-	row.add_theme_constant_override("separation", 10)
-	column.add_child(row)
-
-	var daily := _action_button("每日奖励", Color("#FFFFFF"))
-	daily.pressed.connect(func() -> void:
-		coin_count += 10
-		_update_coin_label()
-		_update_home()
-		_save_game()
-		_show_toast("每日奖励：金币 +10")
-	)
-	row.add_child(daily)
-
-	var chest := _action_button("宝箱", Color("#FFFFFF"))
-	chest.pressed.connect(func() -> void: _show_toast("继续通关，皇冠宝箱即将开启"))
-	row.add_child(chest)
-	return column
-
-
-func _build_home_nav() -> Control:
-	var row := HBoxContainer.new()
-	row.custom_minimum_size.y = 54
-	row.add_theme_constant_override("separation", 8)
-
-	var home := _action_button("主页", Color("#EAF8F0"))
-	home.disabled = true
-	row.add_child(home)
-
-	var event := _action_button("活动")
-	event.pressed.connect(func() -> void: _show_toast("活动将在后续版本开放"))
-	row.add_child(event)
-
-	var shop := _action_button("商店")
-	shop.pressed.connect(func() -> void: _show_toast("商店将在后续版本开放"))
-	row.add_child(shop)
-	return row
 
 
 func _build_game_screen() -> Control:
@@ -682,6 +486,8 @@ func _build_progress_row() -> Control:
 
 	progress_label = Label.new()
 	progress_label.custom_minimum_size.x = 52
+	progress_label.layout_direction = Control.LAYOUT_DIRECTION_LTR
+	progress_label.text_direction = Control.TEXT_DIRECTION_LTR
 	progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	progress_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	progress_label.add_theme_color_override("font_color", INK)
@@ -768,20 +574,16 @@ func _build_action_bar() -> Control:
 	row.custom_minimum_size.y = 94
 	row.add_theme_constant_override("separation", 10)
 
-	var clear_tool := _tool_button("clear", "清除 · 免费", Color("#EEF5FF"), Color("#477DB7"))
-	clear_button = clear_tool["button"]
-	clear_button_label = clear_tool["label"]
-	clear_button.pressed.connect(_clear_board)
-	row.add_child(clear_button)
-
-	var crown_tool := _tool_button("crown", "皇冠直找", Color("#FFF4CE"), Color("#B97A09"))
+	var crown_tool := _tool_button("crown", "×3", Color("#EAF8F0"), Color("#23845C"))
 	crown_find_button = crown_tool["button"]
+	crown_find_button.tooltip_text = "小狮子直找"
 	crown_find_button_label = crown_tool["label"]
 	crown_find_button.pressed.connect(_use_crown_find)
 	row.add_child(crown_find_button)
 
-	var hint_tool := _tool_button("hint", "提示", Color("#EAF8F0"), Color("#23845C"))
+	var hint_tool := _tool_button("hint", "×3", Color("#EAF8F0"), Color("#23845C"))
 	hint_button = hint_tool["button"]
+	hint_button.tooltip_text = "提示"
 	hint_button_label = hint_tool["label"]
 	hint_button.pressed.connect(_use_hint)
 	row.add_child(hint_button)
@@ -921,7 +723,7 @@ func _build_completion_overlay() -> void:
 	showcase_column.add_child(result_reward_label)
 
 	result_tip_label = Label.new()
-	result_tip_label.text = "继续前进，收集更多皇冠"
+	result_tip_label.text = "继续前进，找出更多小狮子"
 	result_tip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	result_tip_label.add_theme_color_override("font_color", Color("#6A82A6"))
 	result_tip_label.add_theme_font_size_override("font_size", 17)
@@ -1033,20 +835,20 @@ func _build_help_dialog() -> void:
 	column.add_child(_build_help_rule(
 		RuleIllustrationScript.ADJACENT,
 		"AdjacentRuleIllustration",
-		"皇冠周围都是 X",
-		"皇冠的八个邻近方格不能再出现皇冠。"
+		"小狮子周围都是 X",
+		"小狮子的八个邻近方格不能再出现小狮子。"
 	))
 	column.add_child(_build_help_rule(
 		RuleIllustrationScript.ROW_COLUMN,
 		"RowColumnRuleIllustration",
-		"每行、每列一个皇冠",
-		"找到皇冠后，同一行和同一列的其它格都标记 X。"
+		"每行、每列一个小狮子",
+		"找到小狮子后，同一行和同一列的其它格都标记 X。"
 	))
 	column.add_child(_build_help_rule(
 		RuleIllustrationScript.REGION,
 		"RegionRuleIllustration",
-		"每种颜色一个皇冠",
-		"一个颜色区域只能有一个皇冠，其余同色格标记 X。"
+		"每种颜色一个小狮子",
+		"一个颜色区域只能有一个小狮子，其余同色格标记 X。"
 	))
 	dialog_controller.register_content("help_rules", help_content)
 
@@ -1096,22 +898,56 @@ func _build_help_rule(kind: String, illustration_name: String, title_text: Strin
 func _build_level_select_dialog() -> void:
 	var margin := MarginContainer.new()
 	margin.name = "LevelSelectContent"
-	margin.custom_minimum_size = Vector2(368, 86)
-	margin.add_theme_constant_override("margin_left", 12)
-	margin.add_theme_constant_override("margin_right", 12)
-	margin.add_theme_constant_override("margin_top", 12)
-	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.custom_minimum_size = Vector2(368, 330)
+	margin.add_theme_constant_override("margin_left", 4)
+	margin.add_theme_constant_override("margin_right", 4)
+	margin.add_theme_constant_override("margin_top", 4)
+	margin.add_theme_constant_override("margin_bottom", 4)
 	level_select_content = margin
 
-	level_select_picker = OptionButton.new()
-	level_select_picker.custom_minimum_size.y = 48
-	level_select_picker.focus_mode = Control.FOCUS_NONE
-	level_select_picker.add_theme_font_size_override("font_size", 17)
-	level_select_picker.add_theme_color_override("font_color", INK)
-	level_select_picker.add_theme_stylebox_override("normal", _button_style(Color("#F1F4F7"), 12))
-	margin.add_child(level_select_picker)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 12)
+	margin.add_child(column)
+
+	level_select_selection_label = Label.new()
+	level_select_selection_label.name = "LevelSelectSelection"
+	level_select_selection_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	level_select_selection_label.add_theme_color_override("font_color", INK)
+	level_select_selection_label.add_theme_font_size_override("font_size", 18)
+	column.add_child(level_select_selection_label)
+
+	var page_row := HBoxContainer.new()
+	page_row.add_theme_constant_override("separation", 10)
+	column.add_child(page_row)
+
+	level_select_previous_button = _small_button("上一页", Vector2(88, 46), 16)
+	level_select_previous_button.name = "LevelSelectPrevious"
+	level_select_previous_button.pressed.connect(func() -> void: _change_level_select_page(-1))
+	page_row.add_child(level_select_previous_button)
+
+	level_select_page_label = Label.new()
+	level_select_page_label.name = "LevelSelectPageRange"
+	level_select_page_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	level_select_page_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	level_select_page_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	level_select_page_label.add_theme_color_override("font_color", MUTED)
+	level_select_page_label.add_theme_font_size_override("font_size", 15)
+	page_row.add_child(level_select_page_label)
+
+	level_select_next_button = _small_button("下一页", Vector2(88, 46), 16)
+	level_select_next_button.name = "LevelSelectNext"
+	level_select_next_button.pressed.connect(func() -> void: _change_level_select_page(1))
+	page_row.add_child(level_select_next_button)
+
+	level_select_grid = GridContainer.new()
+	level_select_grid.name = "LevelSelectGrid"
+	level_select_grid.columns = LEVEL_SELECT_COLUMNS
+	level_select_grid.add_theme_constant_override("h_separation", 8)
+	level_select_grid.add_theme_constant_override("v_separation", 8)
+	column.add_child(level_select_grid)
+
 	dialog_controller.register_content("level_select", level_select_content)
-	_refresh_level_select_picker()
+	_refresh_level_select_grid()
 
 
 func _build_settings_dialog() -> void:
@@ -1173,7 +1009,8 @@ func _schedule_for_current_level() -> Dictionary:
 
 
 func _schedule_for_manual_level(index: int) -> Dictionary:
-	var display := index + 1 if index < LevelDirectorScript.FIXED_OPENING_COUNT else player_level_number
+	var safe_index := clampi(index, 0, levels.size() - 1)
+	var display := int(levels[safe_index].get("levelId", safe_index + 1))
 	var mode := "fixed" if index < LevelDirectorScript.FIXED_OPENING_COUNT else "manual"
 	return LevelDirectorScript.manual_schedule_for_level(levels, index, maxi(1, display), mode)
 
@@ -1243,11 +1080,9 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 	if crown_find_button:
 		crown_find_button.show()
 		crown_find_button.disabled = is_failed
-	if clear_button:
-		clear_button.show()
-		clear_button.disabled = is_failed
 	_update_heart_label()
 	_update_crown_find_button()
+	_update_hint_button()
 	_update_level_picker()
 	coach_label.text = _level_coach_text()
 	coach_label.add_theme_color_override("font_color", Color("#72552B"))
@@ -1310,8 +1145,8 @@ func _play_opening_king_intro(cells: Array) -> void:
 	var token := opening_king_animation_token
 	var total_count := int(current_level.get("targetCount", cells.size()))
 	var base_progress := maxi(0, _piece_positions().size() - cells.size())
-	opening_king_title.text = _t("本关需要找到 %d 个皇冠", [total_count])
-	opening_king_count_label.text = _t("开局提供 %d 个提示皇冠", [cells.size()])
+	opening_king_title.text = _t("本关需要找到 %d 个小狮子", [total_count])
+	opening_king_count_label.text = _opening_lion_subtitle(cells.size())
 	opening_king_source_count_label.text = "×%d" % cells.size()
 	if progress_bar:
 		progress_bar.value = base_progress
@@ -1397,9 +1232,9 @@ func _level_coach_text() -> String:
 		)
 	var display := int(active_schedule.get("displayLevel", player_level_number))
 	if str(active_schedule.get("mode", "")) == "fixed" and display <= 9 and not active_king_positions.is_empty():
-		return prefix + _t("国王提示：开局已展示一个皇冠，请围绕它继续推理。")
+		return prefix + _t("国王提示：开局已展示一个小狮子，请围绕它继续推理。")
 	return prefix + _runtime_text(
-		str(current_level.get("tutorial", "放置全部皇冠，满足行、列、颜色区域和相邻规则。")),
+		str(current_level.get("tutorial", "放置全部小狮子，满足行、列、颜色区域和相邻规则。")),
 		"请观察棋盘中保持明亮的格子，并根据行、列、颜色区域和相邻规则继续推理。"
 	)
 
@@ -1408,6 +1243,12 @@ func _display_level_title() -> String:
 	if bool(active_schedule.get("isMilestoneChallenge", false)):
 		return _t("关卡 %d · 难度挑战", [player_level_number])
 	return _t("关卡 %d", [player_level_number])
+
+
+func _opening_lion_subtitle(count: int) -> String:
+	if count == 1:
+		return _t("开局提供 1 个提示小狮子")
+	return _t("开局提供 %d 个提示小狮子", [count])
 
 
 func _update_active_king_positions() -> void:
@@ -1452,13 +1293,14 @@ func _is_piece_state(state: String) -> bool:
 
 
 func _on_cell_pressed(row: int, col: int) -> void:
+	_reset_thinking_timer()
 	if in_tutorial:
 		_on_tutorial_cell_pressed(row, col)
 		return
 	if is_completed or is_failed or _is_king_cell(row, col):
 		return
 	var state: String = cell_states[row][col]
-	if state == "hint" or state == "wrong":
+	if state == "piece" or state == "hint" or state == "wrong":
 		return
 	active_hint_step.clear()
 	active_hint_stage = 0
@@ -1470,9 +1312,6 @@ func _on_cell_pressed(row: int, col: int) -> void:
 	elif state == "blocked":
 		cell_states[row][col] = "empty"
 		audio_controller.play_erase()
-	elif state == "piece":
-		cell_states[row][col] = "blocked"
-		audio_controller.play_mark()
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
 	run_move_count += 1
@@ -1481,6 +1320,7 @@ func _on_cell_pressed(row: int, col: int) -> void:
 
 
 func _on_cell_double_pressed(row: int, col: int) -> void:
+	_reset_thinking_timer()
 	if in_tutorial:
 		_on_tutorial_cell_double_pressed(row, col)
 		return
@@ -1496,17 +1336,18 @@ func _on_cell_double_pressed(row: int, col: int) -> void:
 	var is_answer := _is_solution_cell(row, col)
 	cell_states[row][col] = "piece" if is_answer else "wrong"
 	board.set_states(cell_states)
-	board.play_cell_feedback(row, col)
 	if is_answer:
 		audio_controller.play_correct()
+		board.play_king_reveal([Vector2i(col, row)])
 		_validate_and_update(true)
-		coach_label.text = "已放置皇冠。继续用行、列、颜色区域和相邻规则检查其它位置。"
+		coach_label.text = "已找到小狮子。继续用行、列、颜色区域和相邻规则检查其它位置。"
 		coach_label.add_theme_color_override("font_color", Color("#72552B"))
 	else:
 		audio_controller.play_wrong()
+		board.play_wrong_feedback(row, col)
 		var crown_find_count_before_wrong := crown_find_count
 		_validate_and_update(false)
-		coach_label.text = "这个位置不是皇冠，已标记为 X。"
+		coach_label.text = "这个位置不是小狮子，已标记为 X。"
 		coach_label.add_theme_color_override("font_color", Color("#B93D4D"))
 		_consume_heart_for_wrong_crown()
 		crown_find_count = crown_find_count_before_wrong
@@ -1515,6 +1356,7 @@ func _on_cell_double_pressed(row: int, col: int) -> void:
 
 
 func _on_cell_drag_started(row: int, col: int) -> void:
+	_reset_thinking_timer()
 	if in_tutorial:
 		_on_tutorial_drag_started(row, col)
 		return
@@ -1538,6 +1380,7 @@ func _on_cell_drag_started(row: int, col: int) -> void:
 
 
 func _on_cell_dragged(row: int, col: int) -> void:
+	_reset_thinking_timer()
 	if in_tutorial:
 		_on_tutorial_dragged(row, col)
 		return
@@ -1588,11 +1431,19 @@ func _apply_drag_cell(row: int, col: int) -> void:
 
 func _undo() -> void:
 	if in_tutorial:
-		_use_tutorial_undo()
+		_show_toast("新手教程里请跟随高亮完成操作")
 		return
 	if move_history.is_empty() or is_completed or is_failed:
 		return
-	cell_states = move_history.pop_back()
+	var previous_states: Array = move_history.pop_back()
+	# Undo is retained only as an internal compatibility action. It may
+	# change ordinary X marks, but every locked result must remain permanent.
+	for row in range(cell_states.size()):
+		for col in range(cell_states[row].size()):
+			var current_state := str(cell_states[row][col])
+			if current_state == "piece" or current_state == "hint" or current_state == "king" or current_state == "wrong":
+				previous_states[row][col] = current_state
+	cell_states = previous_states
 	board.set_states(cell_states)
 	_validate_and_update(false)
 	run_move_count += 1
@@ -1602,7 +1453,7 @@ func _undo() -> void:
 
 func _clear_board() -> void:
 	if in_tutorial:
-		_use_tutorial_clear()
+		_show_toast("新手教程里请跟随高亮完成操作")
 		return
 	if is_completed or is_failed or _clearable_marks_empty():
 		return
@@ -1611,7 +1462,7 @@ func _clear_board() -> void:
 	for row in range(cell_states.size()):
 		for col in range(cell_states[row].size()):
 			var state := str(cell_states[row][col])
-			if state == "hint":
+			if state == "piece" or state == "hint" or state == "king" or state == "wrong":
 				locked_marks[Vector2i(col, row)] = state
 	cell_states = _blank_states(int(current_level["rows"]), int(current_level["cols"]))
 	_apply_king_positions_to_state()
@@ -1625,7 +1476,7 @@ func _clear_board() -> void:
 	run_move_count += 1
 	audio_controller.play_clear()
 	_save_game()
-	_show_toast("已清除普通标记和错误标记，提示皇冠已保留")
+	_show_toast("已清除普通 X，已确认的小狮子和错误 X 已保留")
 
 
 func _current_tool_price(tool: String) -> int:
@@ -1665,7 +1516,7 @@ func _show_coin_shortage_dialog(tool: String, price: int) -> void:
 	)
 	var tool_name := "逻辑提示"
 	if tool == CoinEconomyScript.TOOL_CROWN_FIND:
-		tool_name = "皇冠位置提醒"
+		tool_name = "小狮子直找"
 	elif tool == CoinEconomyScript.TOOL_REVIVE:
 		tool_name = "保留棋盘复活"
 	var shortage := maxi(0, price - coin_count)
@@ -1687,6 +1538,7 @@ func _show_coin_shortage_dialog(tool: String, price: int) -> void:
 
 
 func _use_hint() -> void:
+	_reset_thinking_timer()
 	if in_tutorial:
 		_use_tutorial_hint()
 		return
@@ -1704,11 +1556,6 @@ func _use_hint() -> void:
 
 	var guides: Dictionary = hint.get("guides", {})
 	board.set_guides(guides)
-	var target: Vector2i = hint["target"]
-	if target.x >= 0:
-		board.play_guide_feedback(target.y, target.x)
-	else:
-		board.play_guide_feedback_for_cells(guides.keys())
 	_update_coin_label()
 	_update_hint_button()
 	run_hint_count += 1
@@ -1717,6 +1564,7 @@ func _use_hint() -> void:
 
 
 func _use_crown_find() -> void:
+	_reset_thinking_timer()
 	if in_tutorial:
 		_use_tutorial_crown_find()
 		return
@@ -1724,7 +1572,7 @@ func _use_crown_find() -> void:
 		return
 	var target := _next_findable_solution_cell()
 	if target.x < 0:
-		_show_toast("当前已经没有可直接找到的皇冠")
+		_show_toast("当前已经没有可直接找到的小狮子")
 		_update_crown_find_button()
 		return
 	var uses_free_count := crown_find_count > 0
@@ -1740,12 +1588,12 @@ func _use_crown_find() -> void:
 	cell_states[target.y][target.x] = "hint"
 	audio_controller.play_correct()
 	board.set_states(cell_states)
-	board.play_cell_feedback(target.y, target.x)
+	board.play_king_reveal([target])
 	_validate_and_update(true)
 	run_move_count += 1
 	_update_crown_find_button()
 	_save_game()
-	_show_toast("已直接找到一个皇冠")
+	_show_toast("已直接找到一个小狮子")
 
 
 func _next_findable_solution_cell() -> Vector2i:
@@ -1770,9 +1618,6 @@ func _validate_and_update(allow_completion: bool) -> void:
 		progress_label.text = "%d / %d" % [pieces.size(), int(current_level["targetCount"])]
 	if undo_button:
 		undo_button.disabled = move_history.is_empty()
-	if clear_button:
-		clear_button.disabled = _clearable_marks_empty()
-		_refresh_tool_button_visual(clear_button)
 	_update_crown_find_button()
 
 	if not conflicts.is_empty() and immediate_errors:
@@ -1780,7 +1625,7 @@ func _validate_and_update(allow_completion: bool) -> void:
 		coach_label.add_theme_color_override("font_color", Color("#B93D4D"))
 		if allow_completion:
 			Input.vibrate_handheld(35)
-	else:
+	elif not in_tutorial:
 		coach_label.text = _level_coach_text()
 		coach_label.add_theme_color_override("font_color", Color("#72552B"))
 
@@ -1906,7 +1751,7 @@ func _best_single_candidate_message(unit_name: String, target: Vector2i, unit_ce
 	var detail := _first_exclusion_detail(exclusions)
 	var target_region := int(current_level["regions"][target.y][target.x])
 	var target_text := "第 %d 行第 %d 列" % [target.y + 1, target.x + 1]
-	var message := "%s还需要 1 个皇冠，%s，所以只剩 %s。" % [unit_name, summary, target_text]
+	var message := "%s还需要 1 个小狮子，%s，所以只剩 %s。" % [unit_name, summary, target_text]
 	message += " 这个格所在列还剩 %d 个候选，%s还剩 %d 个候选。" % [_available_candidates_in_col(target.x).size(), _region_name(target_region), _available_candidates_in_region(target_region).size()]
 	if detail != "":
 		message += " 例如：%s。" % detail
@@ -1964,7 +1809,7 @@ func _make_locked_hint(source_name: String, locked_cells: Array[Vector2i], targe
 	return {
 		"target": focus,
 		"guides": guides,
-		"message": "%s的皇冠只可能在这些绿色候选里，而这些候选都落在%s内。因此%s里的其它橙色候选可以先排除。" % [source_name, target_name, target_name]
+		"message": "%s的小狮子只可能在这些绿色候选里，而这些候选都落在%s内。因此%s里的其它橙色候选可以先排除。" % [source_name, target_name, target_name]
 	}
 
 
@@ -2020,7 +1865,7 @@ func _make_subset_lock_hint(source_names: Array[String], source_cells: Array[Vec
 	return {
 		"target": other_cells[0],
 		"guides": guides,
-		"message": "%s的皇冠只能落在%s里。因为这些单元彼此占满了这组位置，所以%s中其它橙色候选可以排除。" % ["、".join(source_names), "、".join(target_names), "、".join(target_names)]
+		"message": "%s的小狮子只能落在%s里。因为这些单元彼此占满了这组位置，所以%s中其它橙色候选可以排除。" % ["、".join(source_names), "、".join(target_names), "、".join(target_names)]
 	}
 
 
@@ -2042,7 +1887,7 @@ func _best_lookahead_exclusion_hint() -> Dictionary:
 			return {
 				"target": cell,
 				"guides": guides,
-				"message": "如果第 %d 行第 %d 列是皇冠，%s就没有任何可找皇冠的位置了。所以这个橙色格一定不是皇冠，可以先标 X。" % [row + 1, col + 1, unit_name]
+				"message": "如果第 %d 行第 %d 列是小狮子，%s就没有任何可找小狮子的位置了。所以这个橙色格一定不是小狮子，可以先标 X。" % [row + 1, col + 1, unit_name]
 			}
 	return {}
 
@@ -2065,7 +1910,7 @@ func _best_exclusion_hint() -> Dictionary:
 			return {
 				"target": cell,
 				"guides": guides,
-				"message": "第 %d 行第 %d 列可以排除：%s。这个格不可能是皇冠，先标 X 能减少后面的候选。" % [row + 1, col + 1, reason]
+				"message": "第 %d 行第 %d 列可以排除：%s。这个格不可能是小狮子，先标 X 能减少后面的候选。" % [row + 1, col + 1, reason]
 			}
 	return {}
 
@@ -2117,7 +1962,7 @@ func _exclusion_summary(exclusions: Array[Dictionary]) -> String:
 		var reason := str(item["reason"])
 		if reason == "已标 X":
 			blocked += 1
-		elif reason == "已有皇冠":
+		elif reason == "已有小狮子":
 			occupied += 1
 		else:
 			conflict += 1
@@ -2125,9 +1970,9 @@ func _exclusion_summary(exclusions: Array[Dictionary]) -> String:
 	if blocked > 0:
 		parts.append("%d 个已被你标 X" % blocked)
 	if occupied > 0:
-		parts.append("%d 个已经有皇冠" % occupied)
+		parts.append("%d 个已经有小狮子" % occupied)
 	if conflict > 0:
-		parts.append("%d 个会和已有皇冠冲突" % conflict)
+		parts.append("%d 个会和已有小狮子冲突" % conflict)
 	if parts.is_empty():
 		return "其它格都不适合"
 	return "其它格中：" + "，".join(parts)
@@ -2136,7 +1981,7 @@ func _exclusion_summary(exclusions: Array[Dictionary]) -> String:
 func _first_exclusion_detail(exclusions: Array[Dictionary]) -> String:
 	for item in exclusions:
 		var reason := str(item["reason"])
-		if reason != "已标 X" and reason != "已有皇冠":
+		if reason != "已标 X" and reason != "已有小狮子":
 			var cell: Vector2i = item["cell"]
 			return "第 %d 行第 %d 列被排除，因为%s" % [cell.y + 1, cell.x + 1, reason]
 	return ""
@@ -2379,7 +2224,7 @@ func _build_staged_hint(step: Dictionary, stage: int) -> Dictionary:
 			"stage": stage_number,
 			"target": target,
 			"guides": guides,
-			"message": "提示 1/3：先看%s。这个单元最终需要 1 个皇冠，先不要急着放，先找哪些格子还可能成为候选。" % unit_name
+			"message": "提示 1/3：先看%s。这个单元最终需要 1 个小狮子，先不要急着放，先找哪些格子还可能成为候选。" % unit_name
 		}
 
 	if stage_number == 2:
@@ -2404,7 +2249,7 @@ func _build_staged_hint(step: Dictionary, stage: int) -> Dictionary:
 			"stage": stage_number,
 			"target": final_target,
 			"guides": final_guides,
-			"message": "%s现在只剩 1 个合法候选：第 %d 行第 %d 列。原因是其它格已经被 X、已有皇冠或冲突规则排除了。" % [unit_name, final_target.y + 1, final_target.x + 1]
+			"message": "%s现在只剩 1 个合法候选：第 %d 行第 %d 列。原因是其它格已经被 X、已有小狮子或冲突规则排除了。" % [unit_name, final_target.y + 1, final_target.x + 1]
 		}
 	if candidates.has(target):
 		final_guides[target] = "place"
@@ -2476,7 +2321,7 @@ func _excluded_cells_in_cells(cells: Array[Vector2i]) -> Array[Dictionary]:
 		if state == "blocked":
 			result.append({"cell": cell, "reason": "已标 X"})
 		elif _is_piece_state(state):
-			result.append({"cell": cell, "reason": "已有皇冠"})
+			result.append({"cell": cell, "reason": "已有小狮子"})
 		else:
 			var reason := _first_conflict_reason(cell)
 			if reason != "":
@@ -2492,7 +2337,7 @@ func _candidate_breakdown_message(unit_name: String, candidates: Array[Vector2i]
 		var reason := str(item["reason"])
 		if reason == "已标 X":
 			blocked += 1
-		elif reason == "已有皇冠":
+		elif reason == "已有小狮子":
 			occupied += 1
 		else:
 			conflict += 1
@@ -2500,9 +2345,9 @@ func _candidate_breakdown_message(unit_name: String, candidates: Array[Vector2i]
 	if blocked > 0:
 		reasons.append("%d 个已被你标 X" % blocked)
 	if occupied > 0:
-		reasons.append("%d 个已有皇冠" % occupied)
+		reasons.append("%d 个已有小狮子" % occupied)
 	if conflict > 0:
-		reasons.append("%d 个会和已有皇冠冲突" % conflict)
+		reasons.append("%d 个会和已有小狮子冲突" % conflict)
 	var reason_text := "目前没有明确排除格"
 	if not reasons.is_empty():
 		reason_text = "已经排除：" + "，".join(reasons)
@@ -2617,13 +2462,13 @@ func _single_candidate_message(unit_name: String, position: Vector2i, unit_cells
 	if blocked > 0:
 		reasons.append("%d 个已被你标 X" % blocked)
 	if conflict > 0:
-		reasons.append("%d 个会和已有皇冠冲突" % conflict)
+		reasons.append("%d 个会和已有小狮子冲突" % conflict)
 	if occupied > 0:
-		reasons.append("%d 个已经有皇冠" % occupied)
+		reasons.append("%d 个已经有小狮子" % occupied)
 	var reason_text := "其它格都不适合"
 	if not reasons.is_empty():
 		reason_text = "其它格中：" + "，".join(reasons)
-	return "%s还需要一个皇冠。%s；所以只剩第 %d 行第 %d 列。" % [unit_name, reason_text, position.y + 1, position.x + 1]
+	return "%s还需要一个小狮子。%s；所以只剩第 %d 行第 %d 列。" % [unit_name, reason_text, position.y + 1, position.x + 1]
 
 
 func _available_candidates_in_row(row: int) -> Array[Vector2i]:
@@ -2661,13 +2506,13 @@ func _is_available_candidate(position: Vector2i) -> bool:
 func _first_conflict_reason(position: Vector2i) -> String:
 	for piece in _piece_positions():
 		if piece.y == position.y:
-			return "它和第 %d 行第 %d 列的皇冠在同一行" % [piece.y + 1, piece.x + 1]
+			return "它和第 %d 行第 %d 列的小狮子在同一行" % [piece.y + 1, piece.x + 1]
 		if piece.x == position.x:
-			return "它和第 %d 行第 %d 列的皇冠在同一列" % [piece.y + 1, piece.x + 1]
+			return "它和第 %d 行第 %d 列的小狮子在同一列" % [piece.y + 1, piece.x + 1]
 		if int(current_level["regions"][piece.y][piece.x]) == int(current_level["regions"][position.y][position.x]):
-			return "它和第 %d 行第 %d 列的皇冠都在%s" % [piece.y + 1, piece.x + 1, _region_name(int(current_level["regions"][position.y][position.x]))]
+			return "它和第 %d 行第 %d 列的小狮子都在%s" % [piece.y + 1, piece.x + 1, _region_name(int(current_level["regions"][position.y][position.x]))]
 		if absi(piece.x - position.x) <= 1 and absi(piece.y - position.y) <= 1:
-			return "它和第 %d 行第 %d 列的皇冠相邻" % [piece.y + 1, piece.x + 1]
+			return "它和第 %d 行第 %d 列的小狮子相邻" % [piece.y + 1, piece.x + 1]
 	return ""
 
 
@@ -2745,7 +2590,7 @@ func _clearable_marks_empty() -> bool:
 	for row in range(cell_states.size()):
 		for col in range(cell_states[row].size()):
 			var state: String = cell_states[row][col]
-			if state == "blocked" or state == "piece" or state == "wrong":
+			if state == "blocked":
 				return false
 	return true
 
@@ -2834,9 +2679,9 @@ func _set_tutorial_guides() -> void:
 				if place_target.x >= 0:
 					guides[place_target] = "place"
 			elif tutorial_interaction_stage == TUTORIAL_PHASE_ADJACENT or tutorial_interaction_stage == TUTORIAL_PHASE_ROW_COL:
-				var exclusion_target := _next_tutorial_single_map_exclusion_cell()
-				if exclusion_target.x >= 0:
-					guides[exclusion_target] = "exclude_empty"
+				for exclusion_target in _tutorial_single_map_valid_exclusion_cells():
+					if cell_states[exclusion_target.y][exclusion_target.x] == "empty":
+						guides[exclusion_target] = "exclude_empty"
 		"place":
 			guides[target] = "place"
 		"color":
@@ -2857,7 +2702,7 @@ func _set_tutorial_guides() -> void:
 				guides[combined_cell] = "exclude_empty"
 		"tools":
 			guides = _tutorial_button_guides()
-	board.set_guides(guides)
+	board.set_guides(guides, not _tutorial_uses_open_exclusion_guides())
 
 
 func _update_tutorial_action_bar() -> void:
@@ -2866,10 +2711,6 @@ func _update_tutorial_action_bar() -> void:
 	_restore_action_button_styles()
 	if crown_find_button:
 		crown_find_button.visible = true
-	if clear_button:
-		clear_button.visible = true
-		clear_button.disabled = true
-		_refresh_tool_button_visual(clear_button)
 	if in_tutorial and _tutorial_kind() == "single_map":
 		hint_button.visible = true
 		hint_button.disabled = tutorial_interaction_stage != TUTORIAL_PHASE_HINT
@@ -2880,7 +2721,7 @@ func _update_tutorial_action_bar() -> void:
 		if tutorial_interaction_stage == TUTORIAL_PHASE_HINT:
 			coach_label.text = "点一下提示，看看下一步该观察哪里。"
 		elif tutorial_interaction_stage == TUTORIAL_PHASE_CROWN_FIND:
-			coach_label.text = "点击皇冠直找，直接找到一个皇冠。教程中不会消耗使用次数。"
+			coach_label.text = "点击小狮子，直接找到一个小狮子。教程中不会消耗使用次数。"
 			_apply_action_button_style(crown_find_button, Color("#FFE06F"))
 			crown_find_button.add_theme_color_override("font_color", INK)
 		return
@@ -2902,11 +2743,9 @@ func _update_tutorial_action_button_styles() -> void:
 func _restore_action_button_styles() -> void:
 	if undo_button:
 		_apply_action_button_style(undo_button, CARD)
-	if clear_button:
-		_apply_action_button_style(clear_button, Color("#EEF5FF"))
 	if crown_find_button:
-		_apply_action_button_style(crown_find_button, Color("#FFF4CE"))
-		crown_find_button.add_theme_color_override("font_color", Color("#B97A09"))
+		_apply_action_button_style(crown_find_button, Color("#EAFBF0"))
+		crown_find_button.add_theme_color_override("font_color", Color("#2D9E63"))
 	if hint_button:
 		_apply_action_button_style(hint_button, Color("#EAFBF0"))
 		hint_button.add_theme_color_override("font_color", Color("#2D9E63"))
@@ -2949,7 +2788,7 @@ func _on_tutorial_cell_pressed(row: int, col: int) -> void:
 		_focus_tutorial_cell(target, 0.12)
 		return
 	if kind == "place":
-		_show_toast("请双击找到皇冠")
+		_show_toast("请双击找到小狮子")
 		_focus_tutorial_cell(target, 0.12)
 		return
 
@@ -2966,7 +2805,7 @@ func _on_tutorial_cell_double_pressed(row: int, col: int) -> void:
 		_show_toast("这一步请单击高亮格标记 X")
 		return
 	if Vector2i(col, row) != target:
-		_show_toast("请双击找到皇冠")
+		_show_toast("请双击找到小狮子")
 		_focus_tutorial_cell(target, 0.12)
 		return
 	if kind == "tools" and tutorial_button_stage != 3:
@@ -2975,7 +2814,7 @@ func _on_tutorial_cell_double_pressed(row: int, col: int) -> void:
 	cell_states[row][col] = "piece"
 	audio_controller.play_correct()
 	board.set_states(cell_states)
-	board.play_cell_feedback(row, col)
+	board.play_king_reveal([Vector2i(col, row)])
 	if kind == "tools":
 		board.set_guides({})
 		_hide_tutorial_hand()
@@ -3046,7 +2885,7 @@ func _on_tutorial_row_col_cell_pressed(row: int, col: int, crown: Vector2i) -> v
 func _on_tutorial_adjacent_cell_pressed(row: int, col: int, crown: Vector2i) -> void:
 	var cell := Vector2i(col, row)
 	if not _tutorial_adjacent_cells(crown).has(cell):
-		_show_toast("请把皇冠周围高亮的格子标记为 X")
+		_show_toast("请把小狮子周围高亮的格子标记为 X")
 		_focus_tutorial_cell(_next_tutorial_adjacent_cell(), 0.12)
 		return
 	if cell_states[row][col] != "blocked":
@@ -3085,10 +2924,10 @@ func _on_tutorial_hint_target_pressed(row: int, col: int, target: Vector2i) -> v
 		_show_toast("先点击底部提示按钮")
 		return
 	if Vector2i(col, row) != target:
-		_show_toast("请双击高亮格找到皇冠")
+		_show_toast("请双击高亮格找到小狮子")
 		_focus_tutorial_cell(target, 0.12)
 		return
-	_show_toast("请双击高亮格找到皇冠")
+	_show_toast("请双击高亮格找到小狮子")
 	_focus_tutorial_cell(target, 0.12)
 
 
@@ -3101,12 +2940,12 @@ func _on_tutorial_single_map_pressed(row: int, col: int) -> void:
 		_focus_tutorial_control(hint_button, 0.12)
 		return
 	if tutorial_interaction_stage == TUTORIAL_PHASE_CROWN_FIND:
-		_show_toast("先点击底部皇冠直找按钮")
+		_show_toast("先点击底部小狮子按钮")
 		_focus_tutorial_control(crown_find_button, 0.12)
 		return
 	var target := _current_tutorial_place_target()
 	if Vector2i(col, row) == target:
-		_show_toast("请双击找到皇冠")
+		_show_toast("请双击找到小狮子")
 	else:
 		_show_toast("请先操作高亮格")
 	_focus_tutorial_cell(target, 0.12)
@@ -3114,7 +2953,7 @@ func _on_tutorial_single_map_pressed(row: int, col: int) -> void:
 
 func _on_tutorial_single_map_double_pressed(row: int, col: int) -> void:
 	if tutorial_interaction_stage == TUTORIAL_PHASE_CROWN_FIND:
-		_show_toast("这一阶段请点击底部皇冠直找按钮")
+		_show_toast("这一阶段请点击底部小狮子按钮")
 		_focus_tutorial_control(crown_find_button, 0.12)
 		return
 	if tutorial_interaction_stage != TUTORIAL_PHASE_PLACE and tutorial_interaction_stage != TUTORIAL_PHASE_HINT_PLACE:
@@ -3123,7 +2962,7 @@ func _on_tutorial_single_map_double_pressed(row: int, col: int) -> void:
 		return
 	var target := _current_tutorial_place_target()
 	if Vector2i(col, row) != target:
-		_show_toast("请双击找到皇冠")
+		_show_toast("请双击找到小狮子")
 		_focus_tutorial_cell(target, 0.12)
 		return
 	_push_tutorial_history()
@@ -3131,12 +2970,12 @@ func _on_tutorial_single_map_double_pressed(row: int, col: int) -> void:
 	audio_controller.play_correct()
 	tutorial_active_crown = target
 	board.set_states(cell_states)
-	board.play_cell_feedback(row, col)
+	board.play_king_reveal([Vector2i(col, row)])
 	_update_tutorial_progress()
 	if tutorial_solution_index == 0:
-		_show_toast("成功找到第一个皇冠")
+		_show_toast("成功找到第一个小狮子")
 	else:
-		_show_toast("成功找到皇冠")
+		_show_toast("成功找到小狮子")
 	tutorial_solution_index += 1
 	if tutorial_solution_index >= _tutorial_solution_cells().size():
 		tutorial_interaction_stage = TUTORIAL_PHASE_DONE
@@ -3150,7 +2989,7 @@ func _on_tutorial_single_map_double_pressed(row: int, col: int) -> void:
 		_advance_tutorial_single_map_after_exclusions()
 		_save_game()
 		return
-	coach_label.text = "皇冠不能和皇冠挨着。滑过它周围的格子，把这些位置标记为 X。"
+	coach_label.text = "小狮子不能和小狮子挨着。滑过它周围的格子，把这些位置标记为 X。"
 	coach_label.add_theme_color_override("font_color", Color("#31506D"))
 	coach_label.add_theme_font_size_override("font_size", COACH_TUTORIAL_SIZE)
 	_set_tutorial_guides()
@@ -3162,23 +3001,23 @@ func _on_tutorial_single_map_double_pressed(row: int, col: int) -> void:
 func _on_tutorial_single_map_exclusion(row: int, col: int, from_drag: bool) -> void:
 	if tutorial_interaction_stage != TUTORIAL_PHASE_ADJACENT and tutorial_interaction_stage != TUTORIAL_PHASE_ROW_COL:
 		return
-	var expected := _next_tutorial_single_map_exclusion_cell()
-	if expected.x < 0:
+	var next_target := _next_tutorial_single_map_exclusion_cell()
+	if next_target.x < 0:
 		_advance_tutorial_single_map_after_exclusions()
 		return
 	var cell := Vector2i(col, row)
 	var valid_cells := _tutorial_single_map_valid_exclusion_cells()
-	if not valid_cells.has(cell) or cell != expected:
+	if not valid_cells.has(cell):
 		if not from_drag:
-			_show_toast("请点击当前高亮的格子")
-			_focus_tutorial_cell(expected, 0.12)
+			_show_toast("请操作金色细边内的格子")
+			_focus_tutorial_cell(next_target, 0.12)
 		return
 	if cell_states[row][col] == "empty":
 		_push_tutorial_history()
 		cell_states[row][col] = "blocked"
 		audio_controller.play_mark()
 	else:
-		_focus_tutorial_cell(expected, 0.12)
+		_focus_tutorial_cell(next_target, 0.12)
 		return
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
@@ -3198,13 +3037,13 @@ func _advance_tutorial_single_map_after_exclusions() -> void:
 		if _next_tutorial_single_map_exclusion_cell().x < 0:
 			_advance_tutorial_single_map_after_exclusions()
 			return
-		coach_label.text = "每行、每列都只能有一个皇冠。这个皇冠所在的行和列，其他格都可以标记 X。"
+		coach_label.text = "每行、每列都只能有一个小狮子。这个小狮子所在的行和列，其他格都可以标记 X。"
 		_set_tutorial_guides()
 		_focus_tutorial_cell(_next_tutorial_single_map_exclusion_cell(), 0.12)
 		_update_tutorial_action_bar()
 		return
 	if _next_tutorial_solution_cell() == _tutorial_solution_cells().back():
-		_show_direct_tutorial_crown_clue("每行、每列都要找到一个皇冠。现在只剩这个位置符合规则，双击找到最后一个皇冠。")
+		_show_direct_tutorial_crown_clue("每行、每列都要找到一个小狮子。现在只剩这个位置符合规则，双击找到最后一个小狮子。")
 		return
 	if not tutorial_hint_button_taught:
 		tutorial_interaction_stage = TUTORIAL_PHASE_HINT
@@ -3215,13 +3054,13 @@ func _advance_tutorial_single_map_after_exclusions() -> void:
 		return
 	if not tutorial_crown_find_taught:
 		tutorial_interaction_stage = TUTORIAL_PHASE_CROWN_FIND
-		coach_label.text = "点击皇冠直找，直接找到一个皇冠。教程中不会消耗使用次数。"
+		coach_label.text = "点击小狮子，直接找到一个小狮子。教程中不会消耗使用次数。"
 		_set_tutorial_guides()
 		_update_tutorial_action_bar()
 		_focus_tutorial_control(crown_find_button, 0.18)
 		return
 	if tutorial_hint_button_taught:
-		_show_direct_tutorial_crown_clue("每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。")
+		_show_direct_tutorial_crown_clue("每个颜色区域都要找到一个小狮子。现在这个区域只剩一个可选格，双击找到它。")
 		return
 
 
@@ -3273,6 +3112,16 @@ func _tutorial_single_map_valid_exclusion_cells() -> Array[Vector2i]:
 	return []
 
 
+func _tutorial_uses_open_exclusion_guides() -> bool:
+	return (
+		_tutorial_kind() == "single_map"
+		and (
+			tutorial_interaction_stage == TUTORIAL_PHASE_ADJACENT
+			or tutorial_interaction_stage == TUTORIAL_PHASE_ROW_COL
+		)
+	)
+
+
 func _show_direct_tutorial_crown_clue(message: String) -> void:
 	tutorial_hint_target = _next_tutorial_solution_cell()
 	tutorial_interaction_stage = TUTORIAL_PHASE_HINT_PLACE
@@ -3298,11 +3147,11 @@ func _validate_tutorial_step(row: int, col: int) -> void:
 					progress_bar.value = 1
 				if progress_label:
 					progress_label.text = "1 / 1"
-				coach_label.text = "成功找到皇冠"
+				coach_label.text = "成功找到小狮子"
 				_hide_tutorial_hand()
-				_complete_tutorial_step("你学会了找到皇冠。")
+				_complete_tutorial_step("你学会了找到小狮子。")
 			else:
-				coach_label.text = "这一关需要双击高亮格找到皇冠。"
+				coach_label.text = "这一关需要双击高亮格找到小狮子。"
 		"color":
 			var blocked_count := _tutorial_blocked_color_count(_tutorial_target())
 			if progress_bar:
@@ -3311,9 +3160,9 @@ func _validate_tutorial_step(row: int, col: int) -> void:
 				progress_label.text = "%d / 3" % blocked_count
 			if blocked_count >= 3:
 				_hide_tutorial_hand()
-				_complete_tutorial_step("这个颜色区域只能有一个皇冠")
+				_complete_tutorial_step("这个颜色区域只能有一个小狮子")
 			else:
-				coach_label.text = _runtime_text("这个颜色区域已经找到皇冠，还剩 %d 个格子可以标记为 X。" % [3 - blocked_count])
+				coach_label.text = _runtime_text("这个颜色区域已经找到小狮子，还剩 %d 个格子可以标记为 X。" % [3 - blocked_count])
 		"row_col":
 			var blocked_count := _tutorial_blocked_row_col_count(_tutorial_target())
 			if progress_bar:
@@ -3322,9 +3171,9 @@ func _validate_tutorial_step(row: int, col: int) -> void:
 				progress_label.text = "%d / 6" % blocked_count
 			if blocked_count >= 6:
 				_hide_tutorial_hand()
-				_complete_tutorial_step("皇冠所在的行和列都已排除")
+				_complete_tutorial_step("小狮子所在的行和列都已排除")
 			else:
-				coach_label.text = _runtime_text("同行同列不能再有皇冠，还剩 %d 个格要排除。" % [6 - blocked_count])
+				coach_label.text = _runtime_text("同行同列不能再有小狮子，还剩 %d 个格要排除。" % [6 - blocked_count])
 		"adjacent":
 			var blocked_count := _tutorial_blocked_adjacent_count(_tutorial_target())
 			if progress_bar:
@@ -3333,9 +3182,9 @@ func _validate_tutorial_step(row: int, col: int) -> void:
 				progress_label.text = "%d / 8" % blocked_count
 			if blocked_count >= 8:
 				_hide_tutorial_hand()
-				_complete_tutorial_step("皇冠的周围全部被排除")
+				_complete_tutorial_step("小狮子的周围全部被排除")
 			else:
-				coach_label.text = _runtime_text("继续把皇冠周围的格子点成 X，还剩 %d 个。" % [8 - blocked_count])
+				coach_label.text = _runtime_text("继续把小狮子周围的格子点成 X，还剩 %d 个。" % [8 - blocked_count])
 		"adjacent_row_col":
 			var blocked_count := _tutorial_blocked_adjacent_row_col_count(_tutorial_target())
 			if progress_bar:
@@ -3344,11 +3193,11 @@ func _validate_tutorial_step(row: int, col: int) -> void:
 				progress_label.text = "%d / 12" % blocked_count
 			if blocked_count >= 12:
 				_hide_tutorial_hand()
-				_complete_tutorial_step("皇冠周围和同行同列都已排除")
+				_complete_tutorial_step("小狮子周围和同行同列都已排除")
 			elif _tutorial_blocked_adjacent_count(_tutorial_target()) >= 8:
 				coach_label.text = "周围一圈已排除。现在继续排除同行同列剩下的格子。"
 			else:
-				coach_label.text = _runtime_text("先把皇冠周围一圈点成 X，还剩 %d 个。" % [8 - _tutorial_blocked_adjacent_count(_tutorial_target())])
+				coach_label.text = _runtime_text("先把小狮子周围一圈点成 X，还剩 %d 个。" % [8 - _tutorial_blocked_adjacent_count(_tutorial_target())])
 		"tools":
 			_show_toast("这一关请先学习提示按钮")
 
@@ -3483,7 +3332,7 @@ func _next_tutorial_adjacent_cell() -> Vector2i:
 func _show_tutorial_hand_for_cell(cell: Vector2i) -> void:
 	if not in_tutorial or cell.x < 0 or cell.y < 0 or not board or not tutorial_hand_label:
 		return
-	board.set_tutorial_focus(cell, true)
+	board.set_tutorial_focus(cell, not _tutorial_uses_open_exclusion_guides())
 	tutorial_hand_cell = cell
 	tutorial_hand_control = null
 	_position_tutorial_hand()
@@ -3519,7 +3368,7 @@ func _focus_tutorial_cell(cell: Vector2i, delay: float = 0.36) -> void:
 	_hide_tutorial_hand()
 	tutorial_focus_token += 1
 	var token := tutorial_focus_token
-	board.set_tutorial_focus(cell, true)
+	board.set_tutorial_focus(cell, not _tutorial_uses_open_exclusion_guides())
 	if _tutorial_kind() == "single_map" and tutorial_interaction_stage == TUTORIAL_PHASE_ROW_COL:
 		board.play_guide_feedback_for_cells(_tutorial_row_col_cells(tutorial_active_crown))
 	else:
@@ -3598,9 +3447,7 @@ func _tutorial_hand_cell_action() -> String:
 	if _tutorial_kind() == "single_map":
 		if tutorial_interaction_stage == TUTORIAL_PHASE_PLACE or tutorial_interaction_stage == TUTORIAL_PHASE_HINT_PLACE:
 			return "double"
-		if tutorial_interaction_stage == TUTORIAL_PHASE_ROW_COL:
-			return "single"
-		if tutorial_interaction_stage == TUTORIAL_PHASE_ADJACENT:
+		if tutorial_interaction_stage == TUTORIAL_PHASE_ROW_COL or tutorial_interaction_stage == TUTORIAL_PHASE_ADJACENT:
 			return "slide"
 	return "single"
 
@@ -3773,12 +3620,12 @@ func _use_tutorial_crown_find() -> void:
 		_show_toast("请跟随当前教程步骤操作")
 		return
 	if tutorial_interaction_stage != TUTORIAL_PHASE_CROWN_FIND:
-		_show_toast("皇冠直找会在稍后的教程步骤中解锁")
+		_show_toast("小狮子会在稍后的教程步骤中解锁")
 		_focus_current_single_map_tutorial_target(0.12)
 		return
 	var target := _next_tutorial_solution_cell()
 	if target.x < 0:
-		_show_toast("当前已经没有可直接找到的皇冠")
+		_show_toast("当前已经没有可直接找到的小狮子")
 		return
 	_push_tutorial_history()
 	tutorial_crown_find_taught = true
@@ -3787,9 +3634,8 @@ func _use_tutorial_crown_find() -> void:
 	audio_controller.play_correct()
 	tutorial_solution_index += 1
 	board.set_states(cell_states)
-	board.play_cell_feedback(target.y, target.x)
 	_update_tutorial_progress()
-	_show_toast("皇冠直找：已直接找到并锁定一个皇冠")
+	_show_toast("小狮子：已直接找到并锁定一个小狮子")
 	if tutorial_solution_index >= _tutorial_solution_cells().size():
 		tutorial_interaction_stage = TUTORIAL_PHASE_DONE
 		board.set_guides({})
@@ -3799,14 +3645,14 @@ func _use_tutorial_crown_find() -> void:
 		return
 	tutorial_interaction_stage = TUTORIAL_PHASE_ADJACENT
 	if _next_tutorial_single_map_exclusion_cell().x >= 0:
-		coach_label.text = "皇冠直找会直接找到并锁定皇冠。继续把皇冠周围的格子标记为 X。"
+		coach_label.text = "小狮子按钮会直接找到并锁定小狮子。继续把它周围的格子标记为 X。"
 		_set_tutorial_guides()
 		_update_tutorial_action_bar()
 		_focus_tutorial_cell(_next_tutorial_single_map_exclusion_cell(), 0.18)
 	else:
 		tutorial_interaction_stage = TUTORIAL_PHASE_ROW_COL
 		if _next_tutorial_single_map_exclusion_cell().x >= 0:
-			coach_label.text = "皇冠直找已直接找到并锁定皇冠，周围位置已经排除。继续排除同行同列。"
+			coach_label.text = "小狮子按钮已直接找到并锁定小狮子，周围位置已经排除。继续排除同行同列。"
 			_set_tutorial_guides()
 			_update_tutorial_action_bar()
 			_focus_tutorial_cell(_next_tutorial_single_map_exclusion_cell(), 0.18)
@@ -3825,7 +3671,7 @@ func _use_tutorial_hint() -> void:
 			return
 		tutorial_hint_button_taught = true
 		audio_controller.play_hint()
-		_show_direct_tutorial_crown_clue("每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。")
+		_show_direct_tutorial_crown_clue("每个颜色区域都要找到一个小狮子。现在这个区域只剩一个可选格，双击找到它。")
 		_save_game()
 		return
 	if _tutorial_kind() != "tools":
@@ -3843,7 +3689,7 @@ func _use_tutorial_hint() -> void:
 	})
 	board.play_guide_feedback(target.y, target.x)
 	_focus_tutorial_cell(target, 0.18)
-	coach_label.text = "每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。"
+	coach_label.text = "每个颜色区域都要找到一个小狮子。现在这个区域只剩一个可选格，双击找到它。"
 	coach_label.add_theme_color_override("font_color", Color("#31506D"))
 	coach_label.add_theme_font_size_override("font_size", COACH_TUTORIAL_SIZE)
 	tutorial_button_stage = 3
@@ -3889,8 +3735,6 @@ func _show_tutorial_challenge_ready() -> void:
 	board.play_victory()
 	if undo_button:
 		undo_button.hide()
-	if clear_button:
-		clear_button.hide()
 	if hint_button:
 		hint_button.hide()
 	if crown_find_button:
@@ -3923,7 +3767,7 @@ func _complete_tutorial_step(message: String) -> void:
 	audio_controller.play_victory()
 	_save_game()
 	if _tutorial_kind() == "adjacent":
-		_show_tutorial_center_popup("皇冠的周围全部被排除")
+		_show_tutorial_center_popup("小狮子的周围全部被排除")
 	else:
 		_show_toast("%s 完成：%s" % [str(current_level["title"]), message])
 	await get_tree().create_timer(2.0).timeout
@@ -4033,24 +3877,21 @@ func _prepare_success_result_page(reward: int = 0) -> void:
 func _prepare_failure_result_page() -> void:
 	result_overlay_mode = "failure"
 	_stop_result_lion_animation()
-	completion_title.text = "挑战失败"
-	reward_label.text = _t("第 %d 关 未完成", [player_level_number])
+	completion_title.text = "再试一次"
+	reward_label.text = "红心用完了"
 	if result_icon_label:
-		result_icon_label.text = "♥"
-		result_icon_label.add_theme_color_override("font_color", Color("#F25D72"))
-		result_icon_label.add_theme_color_override("font_shadow_color", Color("#B92E4A"))
-		result_icon_label.show()
+		result_icon_label.hide()
 	if result_piece_icon:
-		result_piece_icon.hide()
+		result_piece_icon.texture = LION_KING_WRONG_ICON
+		result_piece_icon.show()
 	if result_reward_label:
-		result_reward_label.text = "红心已用完"
-		result_reward_label.show()
+		result_reward_label.hide()
 	if result_tip_label:
-		result_tip_label.text = "复活会保留当前棋盘，并恢复 1 颗红心"
+		result_tip_label.text = "重新挑战，帮小狮子找回信心"
 	if completion_next_button:
-		completion_next_button.text = _t("金币复活  -%d", [_current_tool_price(CoinEconomyScript.TOOL_REVIVE)])
+		completion_next_button.text = "重新挑战"
 	if completion_replay_button:
-		completion_replay_button.text = "重新挑战"
+		completion_replay_button.text = "返回首页"
 		completion_replay_button.show()
 
 
@@ -4175,7 +4016,8 @@ func _completion_primary_pressed() -> void:
 		"tutorial":
 			_next_level()
 		"failure":
-			_revive_current_level()
+			completion_overlay.hide()
+			_replay_level()
 		_:
 			_next_level()
 
@@ -4183,7 +4025,8 @@ func _completion_primary_pressed() -> void:
 func _completion_secondary_pressed() -> void:
 	if result_overlay_mode == "failure":
 		completion_overlay.hide()
-		_replay_level()
+		_show_home()
+		_save_game()
 	elif result_overlay_mode == "success":
 		completion_overlay.hide()
 		_show_home()
@@ -4336,7 +4179,7 @@ func _refresh_localized_ui() -> void:
 	_update_home()
 	_update_hint_button()
 	_update_crown_find_button()
-	_refresh_level_select_picker()
+	_refresh_level_select_grid()
 	if in_tutorial:
 		level_label.text = _t("新手教程")
 		_update_tutorial_action_bar()
@@ -4354,39 +4197,114 @@ func _open_level_select() -> void:
 	if in_tutorial:
 		_show_toast("完成新手教程后即可选择关卡")
 		return
-	_refresh_level_select_picker()
-	level_select_picker.select(current_level_index)
+	level_select_selected_index = clampi(current_level_index, 0, levels.size() - 1)
+	level_select_page = floori(float(level_select_selected_index) / float(LEVEL_SELECT_PAGE_SIZE))
+	_refresh_level_select_grid()
+	var selected_level_id := _selected_manual_level_id()
 	dialog_controller.show_dialog(
 		"level_select",
-		"关卡选择",
+		_t("关卡选择"),
 		"",
 		"level_select",
 		[
-			{"id": "cancel", "text": "取消", "variant": "secondary"},
-			{"id": "enter", "text": "进入关卡", "variant": "primary"}
+			{"id": "cancel", "text": _t("取消"), "variant": "secondary"},
+			{"id": "enter", "text": _t("进入关卡 %d", [selected_level_id]), "variant": "primary"}
 		],
-		UITokensScript.DIALOG_STANDARD_WIDTH,
+		UITokensScript.DIALOG_RICH_WIDTH,
 		true
 	)
 
 
-func _refresh_level_select_picker() -> void:
-	if not level_select_picker:
+func _refresh_level_select_grid() -> void:
+	if not level_select_grid:
 		return
-	level_select_picker.clear()
-	for index in range(levels.size()):
+	for child in level_select_grid.get_children():
+		level_select_grid.remove_child(child)
+		child.queue_free()
+	level_select_buttons.clear()
+	if levels.is_empty():
+		return
+	var page_count := maxi(1, ceili(float(levels.size()) / float(LEVEL_SELECT_PAGE_SIZE)))
+	level_select_page = clampi(level_select_page, 0, page_count - 1)
+	level_select_selected_index = clampi(level_select_selected_index, 0, levels.size() - 1)
+	var start_index := level_select_page * LEVEL_SELECT_PAGE_SIZE
+	var end_index := mini(levels.size(), start_index + LEVEL_SELECT_PAGE_SIZE)
+	var first_level_id := int(levels[start_index].get("levelId", start_index + 1))
+	var last_level_id := int(levels[end_index - 1].get("levelId", end_index))
+	level_select_page_label.text = _t("%d–%d 关", [first_level_id, last_level_id])
+	level_select_previous_button.text = _t("上一页")
+	level_select_next_button.text = _t("下一页")
+	level_select_previous_button.disabled = level_select_page <= 0
+	level_select_next_button.disabled = level_select_page >= page_count - 1
+	for index in range(start_index, end_index):
 		var level: Dictionary = levels[index]
-		var completed_mark := "✓ " if completed_levels.has(int(level["levelId"])) else ""
-		level_select_picker.add_item("%s%s" % [completed_mark, _t("关卡 %d · %s", [int(level["levelId"]), _t(str(level.get("difficulty", "normal")))])], index)
-	if levels.size() > 0:
-		level_select_picker.select(clampi(current_level_index, 0, levels.size() - 1))
+		var level_id := int(level.get("levelId", index + 1))
+		var completed := completed_levels.has(level_id)
+		var selected := index == level_select_selected_index
+		var button := Button.new()
+		button.name = "LevelSelect_%d" % level_id
+		button.text = ("✓\n%d" if completed else "%d") % level_id
+		button.tooltip_text = _t("关卡 %d · %s", [level_id, _t(str(level.get("difficulty", "normal")))])
+		button.custom_minimum_size = Vector2(58, 58)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.focus_mode = Control.FOCUS_NONE
+		button.add_theme_font_size_override("font_size", 18 if not completed else 15)
+		_apply_level_select_button_style(button, selected, completed)
+		var button_index := index
+		button.pressed.connect(func() -> void: _select_manual_level(button_index))
+		level_select_grid.add_child(button)
+		level_select_buttons.append(button)
+	_update_level_select_selection()
+
+
+func _apply_level_select_button_style(button: Button, selected: bool, completed: bool) -> void:
+	var color := Color("#F1F4F7")
+	var font_color := INK
+	if completed:
+		color = Color("#EAF8F0")
+		font_color = Color("#23845C")
+	if selected:
+		color = UITokensScript.PRIMARY_BLUE
+		font_color = Color.WHITE
+	button.add_theme_color_override("font_color", font_color)
+	button.add_theme_color_override("font_hover_color", font_color)
+	button.add_theme_color_override("font_pressed_color", font_color)
+	button.add_theme_stylebox_override("normal", _button_style(color, 12))
+	button.add_theme_stylebox_override("hover", _button_style(color.lightened(0.04), 12))
+	button.add_theme_stylebox_override("pressed", _button_style(color.darkened(0.06), 12))
+
+
+func _change_level_select_page(offset: int) -> void:
+	level_select_page += offset
+	var first_index := clampi(level_select_page * LEVEL_SELECT_PAGE_SIZE, 0, levels.size() - 1)
+	level_select_selected_index = first_index
+	_refresh_level_select_grid()
+
+
+func _select_manual_level(index: int) -> void:
+	level_select_selected_index = clampi(index, 0, levels.size() - 1)
+	_refresh_level_select_grid()
+
+
+func _selected_manual_level_id() -> int:
+	if levels.is_empty():
+		return 1
+	var safe_index := clampi(level_select_selected_index, 0, levels.size() - 1)
+	return int(levels[safe_index].get("levelId", safe_index + 1))
+
+
+func _update_level_select_selection() -> void:
+	var level_id := _selected_manual_level_id()
+	if level_select_selection_label:
+		level_select_selection_label.text = _t("已选：关卡 %d", [level_id])
+	if dialog_controller and dialog_controller.is_dialog_open("level_select"):
+		var enter_button: Button = dialog_controller.find_child("DialogAction_enter", true, false)
+		if enter_button:
+			enter_button.text = _t("进入关卡 %d", [level_id])
 
 
 func _confirm_level_select() -> void:
-	var selected_index := level_select_picker.get_selected_id()
-	if selected_index < 0:
-		selected_index = level_select_picker.selected
-	selected_index = clampi(selected_index, 0, levels.size() - 1)
+	var selected_index := clampi(level_select_selected_index, 0, levels.size() - 1)
 	tutorial_completed = true
 	tutorial_started = false
 	tutorial_step_index = 0
@@ -4545,19 +4463,7 @@ func _update_heart_label() -> void:
 			heart.add_theme_font_size_override("font_size", 30)
 			heart.scale = Vector2.ONE
 			heart.pivot_offset = heart.custom_minimum_size * 0.5
-			var pulse_tween: Tween = null
-			if heart.visible and is_full and not in_tutorial:
-				pulse_tween = heart.create_tween().set_loops()
-				pulse_tween.set_trans(Tween.TRANS_SINE)
-				var initial_delay := float(index) * HEART_PULSE_STAGGER_SECONDS
-				if initial_delay > 0.0:
-					pulse_tween.tween_interval(initial_delay)
-				pulse_tween.tween_property(heart, "scale", Vector2(1.13, 1.13), 0.12).set_ease(Tween.EASE_OUT)
-				pulse_tween.tween_property(heart, "scale", Vector2.ONE, 0.13).set_ease(Tween.EASE_IN)
-				pulse_tween.tween_property(heart, "scale", Vector2(1.08, 1.08), 0.10).set_ease(Tween.EASE_OUT)
-				pulse_tween.tween_property(heart, "scale", Vector2.ONE, 0.13).set_ease(Tween.EASE_IN)
-				pulse_tween.tween_interval(0.86)
-			level_heart_tweens.append(pulse_tween)
+			level_heart_tweens.append(null)
 	if home_heart_label:
 		home_heart_label.text = "♥  %d" % heart_count
 
@@ -4589,7 +4495,7 @@ func _consume_heart_for_wrong_crown() -> void:
 	if heart_count <= 0:
 		_fail_level()
 	else:
-		_show_toast("皇冠位置错误，红心 -1")
+		_show_toast("这个位置不是小狮子，红心 -1")
 
 
 func _fail_level() -> void:
@@ -4605,9 +4511,6 @@ func _fail_level() -> void:
 	if crown_find_button:
 		crown_find_button.disabled = true
 		_refresh_tool_button_visual(crown_find_button)
-	if clear_button:
-		clear_button.disabled = true
-		_refresh_tool_button_visual(clear_button)
 	coach_label.text = "红心已用完，本关挑战失败。"
 	coach_label.add_theme_color_override("font_color", Color("#B93D4D"))
 	_prepare_failure_result_page()
@@ -4623,15 +4526,15 @@ func _update_hint_button() -> void:
 		return
 	if in_tutorial:
 		if hint_button_label:
-			hint_button_label.text = "提示"
+			hint_button_label.text = "×∞"
 		_refresh_tool_button_visual(hint_button)
 		return
 	if hint_count > 0:
 		if hint_button_label:
-			hint_button_label.text = _t("提示 ×%d", [hint_count])
+			hint_button_label.text = "×%d" % hint_count
 	else:
 		if hint_button_label:
-			hint_button_label.text = _t("提示 -%d", [_current_tool_price(CoinEconomyScript.TOOL_HINT)])
+			hint_button_label.text = "-%d" % _current_tool_price(CoinEconomyScript.TOOL_HINT)
 	_refresh_tool_button_visual(hint_button)
 
 
@@ -4640,13 +4543,13 @@ func _update_crown_find_button() -> void:
 		return
 	if in_tutorial:
 		if crown_find_button_label:
-			crown_find_button_label.text = "皇冠直找"
+			crown_find_button_label.text = "×∞"
 		crown_find_button.disabled = tutorial_interaction_stage != TUTORIAL_PHASE_CROWN_FIND
 		_refresh_tool_button_visual(crown_find_button)
 		return
 	var has_target := not current_level.is_empty() and _next_findable_solution_cell().x >= 0
 	if crown_find_button_label:
-		crown_find_button_label.text = _t("直找 ×%d", [crown_find_count]) if crown_find_count > 0 else _t("直找 -%d", [_current_tool_price(CoinEconomyScript.TOOL_CROWN_FIND)])
+		crown_find_button_label.text = "×%d" % crown_find_count if crown_find_count > 0 else "-%d" % _current_tool_price(CoinEconomyScript.TOOL_CROWN_FIND)
 	crown_find_button.disabled = is_completed or is_failed or not has_target
 	_refresh_tool_button_visual(crown_find_button)
 
@@ -4657,6 +4560,7 @@ func _update_level_picker() -> void:
 
 
 func _show_home() -> void:
+	_stop_thinking_timer()
 	_hide_tutorial_hand()
 	_cancel_opening_king_intro(true)
 	_stop_result_lion_animation()
@@ -4696,7 +4600,7 @@ func _simulate_new_user_flow() -> void:
 	resume_completed = false
 	completion_overlay.hide()
 	_start_tutorial_step(0)
-	_show_toast("已进入新人流程")
+	_show_toast("已进入新人引导")
 
 
 func _show_game() -> void:
@@ -4707,6 +4611,7 @@ func _show_game() -> void:
 	_update_tutorial_button()
 	if board:
 		board.queue_redraw()
+	_reset_thinking_timer()
 	_play_pending_opening_king_reveal()
 
 
@@ -4733,8 +4638,25 @@ func _update_tutorial_button() -> void:
 		_update_heart_label()
 	if crown_find_button:
 		crown_find_button.show()
-	if clear_button:
-		clear_button.show()
+
+
+func _reset_thinking_timer() -> void:
+	if not thinking_timer:
+		return
+	thinking_timer.stop()
+	if game_screen and game_screen.visible and not is_completed and not is_failed:
+		thinking_timer.start()
+
+
+func _stop_thinking_timer() -> void:
+	if thinking_timer:
+		thinking_timer.stop()
+
+
+func _on_thinking_timer_timeout() -> void:
+	if game_screen and game_screen.visible and board and not is_completed and not is_failed:
+		board.play_waiting_lion_wiggle()
+		thinking_timer.start()
 
 
 func _update_home() -> void:
@@ -4754,7 +4676,7 @@ func _update_home() -> void:
 			home_start_button.text = "继续新手教程"
 		else:
 			home_start_button.text = "开始新手教程"
-	_refresh_level_select_picker()
+	_refresh_level_select_grid()
 
 
 func _show_toast(message: String) -> void:
@@ -4876,11 +4798,11 @@ func _tool_button(kind: String, caption: String, color: Color, accent: Color) ->
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	button.add_child(margin)
 
-	var column := VBoxContainer.new()
-	column.alignment = BoxContainer.ALIGNMENT_CENTER
-	column.add_theme_constant_override("separation", 1)
-	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	margin.add_child(column)
+	var content_row := HBoxContainer.new()
+	content_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	content_row.add_theme_constant_override("separation", 8)
+	content_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_child(content_row)
 
 	var icon: Control
 	if kind == "crown":
@@ -4892,18 +4814,18 @@ func _tool_button(kind: String, caption: String, color: Color, accent: Color) ->
 	icon.name = "ToolIcon"
 	icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	column.add_child(icon)
+	content_row.add_child(icon)
 
 	var label := Label.new()
 	label.name = "ToolLabel"
 	label.text = caption
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_color_override("font_color", accent)
-	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_font_size_override("font_size", 20)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	column.add_child(label)
+	content_row.add_child(label)
 	return {"button": button, "icon": icon, "label": label}
 
 

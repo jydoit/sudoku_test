@@ -44,19 +44,19 @@ func play_erase() -> void:
 
 
 func play_correct() -> void:
-	_play(CORRECT_STREAM)
+	_play(CORRECT_STREAM, 2.0, 1.04)
 
 
 func play_wrong() -> void:
-	_play(WRONG_STREAM)
+	_play(WRONG_STREAM, 2.5, 0.96)
 
 
 func play_heart_lost() -> void:
-	_play(HEART_LOST_STREAM, -1.0)
+	_play(HEART_LOST_STREAM, 1.5, 0.98)
 
 
 func play_hint() -> void:
-	_play(HINT_STREAM, -1.0)
+	_play(HINT_STREAM, 1.0, 1.02)
 
 
 func play_clear() -> void:
@@ -64,7 +64,7 @@ func play_clear() -> void:
 
 
 func play_victory() -> void:
-	_play(VICTORY_STREAM)
+	_play(VICTORY_STREAM, 1.5)
 
 
 func play_ui_tap() -> void:

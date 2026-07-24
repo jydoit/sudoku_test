@@ -1,4 +1,5 @@
 .godot/
+artifacts/release_validation/
 export/
 builds/
 *.tmp

@@ -34,34 +34,34 @@ const DIALOG_SCREEN_MARGIN := 24
 const DIALOG_SHADOW_COLOR := Color(0.20, 0.23, 0.30, 0.16)
 const DIALOG_SHADOW_SIZE := 12
 const DIALOG_SHADOW_OFFSET := Vector2(0, 5)
-const CROWN_BASE_FONT_RATIO := 0.55
+const CROWN_BASE_FONT_RATIO := 0.66
 const CROWN_FEEDBACK_FONT_DELTA := 0.05
 const OPENING_CROWN_FONT_DELTA := 0.16
 const CROWN_MAX_FONT_RATIO := 0.72
 
-const REGION_COLOR_NAMES := ["红色", "蓝色", "绿色", "黄色", "紫色", "青色", "橙色", "靛蓝色", "黄绿色", "粉色"]
+const REGION_COLOR_NAMES := ["蓝色", "红色", "绿色", "金色", "紫色", "橙色", "青色", "粉色", "青柠色", "靛蓝色"]
+const REGION_PATTERN_NAMES := ["散点纹", "三竖线纹", "爪印纹", "双弧纹", "菱形点阵", "斜线纹", "圆环纹", "双横线纹", "弧叶纹", "菱形纹"]
 const REGION_COLORS := [
-	Color("#E53935"),
-	Color("#1E88E5"),
-	Color("#43A047"),
-	Color("#FDD835"),
-	Color("#8E24AA"),
-	Color("#00ACC1"),
-	Color("#FB8C00"),
-	Color("#3949AB"),
-	Color("#7CB342"),
-	Color("#D81B60")
+	Color("#38A7F4"),
+	Color("#FB5958"),
+	Color("#4FC267"),
+	Color("#FFDD45"),
+	Color("#AA30C4"),
+	Color("#FF9A3D"),
+	Color("#35D6D0"),
+	Color("#FF7BC8"),
+	Color("#A7DE38"),
+	Color("#5F7CFF")
 ]
 
 const BOARD_BORDER_INK := Color("#1F2530")
-const BOARD_BORDER_ALPHA := 0.46
-# Precomposed over a light surface so every boundary renders with the same color.
-const BOARD_BORDER := Color("#989BA0")
-const SAME_REGION_GAP_MIX := 0.22
+const BOARD_BORDER_ALPHA := 0.92
+const BOARD_BORDER := Color("#1F2530")
+const BOARD_GAP := Color("#FFFFFF")
 const CELL_GAP_RATIO := 0.033
 const CELL_GAP_MIN := 2.0
-const CELL_CORNER_RATIO := 0.065
-const ATTENTION_MASK_COLOR := Color(0.68, 0.72, 0.78, 0.70)
+const CELL_CORNER_RATIO := 0.085
+const ATTENTION_MASK_COLOR := Color(0.92, 0.94, 0.96, 0.58)
 const ATTENTION_HALO_COLOR := Color(1.0, 0.82, 0.34, 0.30)
 const ATTENTION_HALO_INNER_COLOR := Color(1.0, 1.0, 1.0, 0.24)
 
@@ -94,5 +94,5 @@ static func board_border_width(board_size: int) -> float:
 	return 2.0
 
 
-static func same_region_gap_color(base_color: Color) -> Color:
-	return base_color.lerp(BOARD_BORDER, SAME_REGION_GAP_MIX)
+static func same_region_gap_color(_base_color: Color) -> Color:
+	return BOARD_GAP
