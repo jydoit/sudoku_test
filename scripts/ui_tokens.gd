@@ -58,6 +58,8 @@ const BOARD_BORDER_INK := Color("#1F2530")
 const BOARD_BORDER_ALPHA := 0.92
 const BOARD_BORDER := Color("#1F2530")
 const BOARD_GAP := Color("#FFFFFF")
+const REGION_PATTERN_DARKEN := 0.20
+const REGION_PATTERN_ALPHA := 0.30
 const CELL_GAP_RATIO := 0.033
 const CELL_GAP_MIN := 2.0
 const CELL_CORNER_RATIO := 0.085
@@ -86,12 +88,8 @@ static func cell_corner_radius(cell_size: float) -> int:
 	return int(round(cell_size * CELL_CORNER_RATIO))
 
 
-static func board_border_width(board_size: int) -> float:
-	if board_size <= 6:
-		return 4.0
-	if board_size <= 8:
-		return 3.0
-	return 2.0
+static func board_border_width(_board_size: int) -> float:
+	return 0.0
 
 
 static func same_region_gap_color(_base_color: Color) -> Color:

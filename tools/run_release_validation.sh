@@ -47,6 +47,7 @@ print "color king release validation ${RUN_ID}" > "${SUMMARY}"
 print "Project: ${PROJECT_DIR}" >> "${SUMMARY}"
 
 run_case_group "A-core_HOME_LEVEL_BOARD_HINT_TOOL_ECON_DATA_I18N_RESULT" "/private/tmp/color_king_release_core" "res://tests/smoke_test.gd"
+run_case_group "A-board-input_BOARD-010_015" "/private/tmp/color_king_release_board_input" "res://tests/board_input_test.gd"
 run_case_group "A-tutorial_TUTOR" "/private/tmp/color_king_release_tutorial" "res://tests/tutorial_smoke_test.gd"
 run_case_group "A-save_SAVE-001_SAVE-002" "/private/tmp/color_king_release_save" "res://tests/save_compat_test.gd"
 run_case_group "A-regression_TODO-009_TODO-010" "/private/tmp/color_king_release_todo_9_10" "res://tools/verify_todo_9_10.gd"

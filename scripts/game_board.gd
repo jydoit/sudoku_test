@@ -19,6 +19,11 @@ const KING_MARK := "king"
 const WRONG_MARK := "wrong"
 const REGION_BORDER_COLOR := UITokensScript.BOARD_BORDER
 const BOARD_LAYOUT_INSET := 10.0
+const DOUBLE_TAP_MIN_MS := 80
+const DOUBLE_TAP_MAX_MS := 320
+const DOUBLE_TAP_MAX_DISTANCE := 18.0
+const TAP_MAX_DRIFT := 14.0
+const TOUCH_MOUSE_SUPPRESS_MS := 700
 
 var rows := 6
 var cols := 6
@@ -47,6 +52,12 @@ var press_cell := Vector2i(-1, -1)
 var last_drag_cell := Vector2i(-1, -1)
 var tracking_press := false
 var dragging := false
+var press_started_at_msec := 0
+var press_start_position := Vector2.ZERO
+var recent_tap_cell := Vector2i(-1, -1)
+var recent_tap_position := Vector2.ZERO
+var recent_tap_released_at_msec := 0
+var last_screen_touch_msec := -1000000
 
 
 
@@ -257,41 +268,47 @@ func _set_victory(value: float) -> void:
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if _should_ignore_mouse_event_after_touch():
+			accept_event()
+			return
 		if event.pressed:
-			_start_pointer(event.position, event.double_click)
+			_start_pointer(event.position)
 		else:
 			_finish_pointer(event.position)
 		accept_event()
 		return
 	if event is InputEventScreenTouch:
+		last_screen_touch_msec = Time.get_ticks_msec()
 		if event.pressed:
-			_start_pointer(event.position, event.double_tap)
+			_start_pointer(event.position)
 		else:
 			_finish_pointer(event.position)
 		accept_event()
 		return
 	if event is InputEventMouseMotion and tracking_press and (event.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
+		if _should_ignore_mouse_event_after_touch():
+			accept_event()
+			return
 		_update_drag(event.position)
 		accept_event()
 		return
 	if event is InputEventScreenDrag and tracking_press:
+		last_screen_touch_msec = Time.get_ticks_msec()
 		_update_drag(event.position)
 		accept_event()
 
 
-func _start_pointer(position: Vector2, is_double: bool) -> void:
+func _start_pointer(position: Vector2) -> void:
 	var cell := _cell_at_position(position)
 	if cell.x < 0 or not _interaction_allowed_for_cell(cell):
 		_reset_pointer()
-		return
-	if is_double:
-		_reset_pointer()
-		cell_double_pressed.emit(cell.y, cell.x)
 		return
 	tracking_press = true
 	dragging = false
 	press_cell = cell
 	last_drag_cell = cell
+	press_start_position = position
+	press_started_at_msec = Time.get_ticks_msec()
 
 
 func _finish_pointer(position: Vector2) -> void:
@@ -302,8 +319,12 @@ func _finish_pointer(position: Vector2) -> void:
 		cell_drag_ended.emit()
 	else:
 		var cell := _cell_at_position(position)
-		if cell == press_cell and _interaction_allowed_for_cell(cell):
-			cell_pressed.emit(cell.y, cell.x)
+		if (
+			cell == press_cell
+			and _interaction_allowed_for_cell(cell)
+			and position.distance_to(press_start_position) <= TAP_MAX_DRIFT
+		):
+			_handle_tap_release(cell, position)
 	_reset_pointer()
 
 
@@ -313,6 +334,7 @@ func _update_drag(position: Vector2) -> void:
 		return
 	if not dragging:
 		dragging = true
+		_clear_recent_tap()
 		cell_drag_started.emit(press_cell.y, press_cell.x)
 	last_drag_cell = cell
 	cell_dragged.emit(cell.y, cell.x)
@@ -323,6 +345,41 @@ func _reset_pointer() -> void:
 	dragging = false
 	press_cell = Vector2i(-1, -1)
 	last_drag_cell = Vector2i(-1, -1)
+	press_start_position = Vector2.ZERO
+	press_started_at_msec = 0
+
+
+func _handle_tap_release(cell: Vector2i, position: Vector2) -> void:
+	var now_msec := Time.get_ticks_msec()
+	if recent_tap_cell.x >= 0:
+		var interval := now_msec - recent_tap_released_at_msec
+		var same_cell := cell == recent_tap_cell
+		var near_previous := position.distance_to(recent_tap_position) <= DOUBLE_TAP_MAX_DISTANCE
+		if same_cell and near_previous and interval >= DOUBLE_TAP_MIN_MS and interval <= DOUBLE_TAP_MAX_MS:
+			_clear_recent_tap()
+			cell_double_pressed.emit(cell.y, cell.x)
+			return
+		if same_cell and near_previous and interval < DOUBLE_TAP_MIN_MS:
+			return
+	if _interaction_allowed_for_cell(cell):
+		cell_pressed.emit(cell.y, cell.x)
+		_record_recent_tap(cell, position, now_msec)
+
+
+func _record_recent_tap(cell: Vector2i, position: Vector2, released_at_msec: int) -> void:
+	recent_tap_cell = cell
+	recent_tap_position = position
+	recent_tap_released_at_msec = released_at_msec
+
+
+func _clear_recent_tap() -> void:
+	recent_tap_cell = Vector2i(-1, -1)
+	recent_tap_position = Vector2.ZERO
+	recent_tap_released_at_msec = 0
+
+
+func _should_ignore_mouse_event_after_touch() -> bool:
+	return Time.get_ticks_msec() - last_screen_touch_msec <= TOUCH_MOUSE_SUPPRESS_MS
 
 
 func _cell_at_position(position: Vector2) -> Vector2i:
@@ -339,11 +396,20 @@ func _cell_at_position(position: Vector2) -> Vector2i:
 
 
 func _interaction_allowed_for_cell(cell: Vector2i) -> bool:
+	if _cell_is_locked_for_input(cell):
+		return false
 	if guide_cells.size() > 0:
 		return _guide_cell_is_actionable(cell)
 	if tutorial_mask_enabled:
 		return cell == tutorial_focus_cell
 	return true
+
+
+func _cell_is_locked_for_input(cell: Vector2i) -> bool:
+	if cell.y < 0 or cell.y >= cell_states.size() or cell.x < 0 or cell.x >= cell_states[cell.y].size():
+		return true
+	var state: String = cell_states[cell.y][cell.x]
+	return state == PIECE_MARK or state == HINT_MARK or state == KING_MARK or state == WRONG_MARK
 
 func _draw() -> void:
 	if regions.is_empty() or cell_states.is_empty():
@@ -422,6 +488,8 @@ func _draw_cell_gap_backgrounds(origin: Vector2, cell_size: float) -> void:
 
 func _draw_board_outer_border(board_rect: Rect2, cell_size: float) -> void:
 	var border_width := _region_border_width(cell_size)
+	if border_width <= 0.0:
+		return
 	var border := StyleBoxFlat.new()
 	border.bg_color = Color.TRANSPARENT
 	border.border_color = REGION_BORDER_COLOR
@@ -565,8 +633,8 @@ func _draw_wrong(rect: Rect2, cell_size: float) -> void:
 
 
 func _draw_cell_pattern(rect: Rect2, cell_size: float, color_index: int, base_color: Color) -> void:
-	var pattern_color := base_color.darkened(0.16)
-	pattern_color.a = 0.20
+	var pattern_color := base_color.darkened(UITokensScript.REGION_PATTERN_DARKEN)
+	pattern_color.a = UITokensScript.REGION_PATTERN_ALPHA
 	var center := rect.get_center()
 	var unit := cell_size / 100.0
 	match color_index % 10:
