@@ -35,10 +35,12 @@ git pull
   - 产品、玩法、经济、提示、关卡、发布范围：`docs/PRODUCT_REQUIREMENTS.md`
   - UI、视觉、动效、音效、截图验收：`docs/UI_DESIGN_GUIDE.md`
   - 待办和延续事项：`docs/CODEX_TODO.md`
+  - 已完成功能、问题修复和验证记录：`docs/VERSION_HISTORY.md`
   - 运行、打包和代码结构概览：`README.md`
 - 产品功能事实源为 `docs/PRODUCT_REQUIREMENTS.md`。
 - 新增、删除或修改功能时，必须同步更新该文档。
 - 修改 UI、玩法、提示、经济、关卡、存档、编辑器或测试流程时，也必须同步更新该文档。
+- 已验证、已修复或已完成的事项应从 `docs/CODEX_TODO.md` 移除，并记录到 `docs/VERSION_HISTORY.md`。
 - 如果实现与文档不一致，要么修代码，要么修文档，不能留下隐性差异。
 
 ## 2026-07-23 主要更新约束

@@ -4578,6 +4578,11 @@ func _start_current_flow() -> void:
 	if tutorial_completed:
 		if is_completed:
 			_next_level()
+		elif is_failed:
+			_show_game()
+			_prepare_failure_result_page()
+			completion_overlay.show()
+			return
 		_show_game()
 	elif tutorial_started:
 		_show_tutorial_resume_dialog()

@@ -71,6 +71,7 @@ macOS 也可以直接执行：
 - `docs/PRODUCT_REQUIREMENTS.md`：PRD、玩法、经济、关卡、提示、发布前回归清单。
 - `docs/UI_DESIGN_GUIDE.md`：UI 规范、棋盘视觉标准、结果页规范、打包/发布前 UI 视觉验收标准。
 - `docs/CODEX_TODO.md`：后续待办和仍需优化的事项。
+- `docs/VERSION_HISTORY.md`：已完成的功能进展、问题修复、验证结果和重要流程变化。
 - `tools/capture_ui_screenshots.gd`：生成 540×960 移动端尺寸 UI 截图的验收脚本。
 
 涉及产品方案、UI、玩法逻辑、经济、关卡、提示、音效或动效的变更，必须先对照 PRD、UI 规范、README 和项目约束文件，向用户说明影响范围并得到确认；修改后同步更新这些文档，完成测试和截图验收后再打包。
@@ -152,6 +153,7 @@ AGENTS.md                  项目协作、文档和测试规则
 data/levels.json           关卡配置
 docs/PRODUCT_REQUIREMENTS.md 产品需求文档与回归测试清单
 docs/CODEX_TODO.md         Codex 后续优化待办记录
+docs/VERSION_HISTORY.md    功能进展、问题修复和验证记录
 scenes/main.tscn           主场景
 scenes/level_editor.tscn   关卡编辑器场景
 scripts/main.gd            UI、游戏状态、规则、存档与通关流程

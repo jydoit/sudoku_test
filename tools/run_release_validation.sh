@@ -16,7 +16,10 @@ elif [[ -n "${1:-}" ]]; then
   exit 2
 fi
 
-mkdir -p "${REPORT_DIR}"
+if ! mkdir -p "${REPORT_DIR}"; then
+  print -u2 "Failed to create release validation report directory: ${REPORT_DIR}"
+  exit 1
+fi
 SUMMARY="${REPORT_DIR}/summary.txt"
 STATUS=0
 
@@ -46,6 +49,7 @@ print "Project: ${PROJECT_DIR}" >> "${SUMMARY}"
 run_case_group "A-core_HOME_LEVEL_BOARD_HINT_TOOL_ECON_DATA_I18N_RESULT" "/private/tmp/color_king_release_core" "res://tests/smoke_test.gd"
 run_case_group "A-tutorial_TUTOR" "/private/tmp/color_king_release_tutorial" "res://tests/tutorial_smoke_test.gd"
 run_case_group "A-save_SAVE-001_SAVE-002" "/private/tmp/color_king_release_save" "res://tests/save_compat_test.gd"
+run_case_group "A-regression_TODO-009_TODO-010" "/private/tmp/color_king_release_todo_9_10" "res://tools/verify_todo_9_10.gd"
 run_case_group "A-editor_EDITOR" "/private/tmp/color_king_release_editor" "res://tests/editor_smoke_test.gd"
 
 if [[ ${VISUAL} -eq 1 ]]; then

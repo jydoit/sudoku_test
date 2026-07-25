@@ -497,6 +497,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - 当前保存字段包括 `currentLevelIndex`、`currentLevelId`、`playerLevelNumber`、`activeSchedule`、`directorProgress`、`economyProgress`、`runStartedUnix`、`runMoveCount`、`runHintCount`、`runCoinExchangeCount`、`cellStates`、`isCompleted`、`isFailed`、`coinCount`、`heartCount`、`hintCount`、`completedLevels`、`immediateErrors`、`tutorialCompleted`、`tutorialStarted`、`tutorialStepIndex`。
 - `directorProgress` 保存最近通关记录、size/difficulty 统计、下一关开启和次留补记状态。
 - 首页点击“开始关卡”时，如果当前恢复的正式关卡已经完成，会自动推进并加载下一关，避免停留在已完成且不可操作的棋盘。
+- 首页点击“开始关卡”时，如果当前恢复的正式关卡已经失败，会进入该关并重新显示失败页，由用户选择“重新挑战”或“返回首页”。
 - `SAVE_VERSION` 当前为 7，新增保存 `selectedLanguage`。
 
 功能截图与交互流转：
@@ -508,6 +509,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - 关卡切换、点击格子、使用提示、通关、新手教程推进后会保存。
 - 重新启动后恢复最近关卡、棋盘状态和教程状态。
 - 已完成关卡从首页继续时应进入下一关，且下一关可正常点击、滑动和双击操作。
+- 已失败关卡从首页继续时应显示失败页，不能进入隐藏弹窗但棋盘锁住的状态。
 - 新存档首次启动会因为没有 `tutorialCompleted` 而直接进入新手引导。
 - 旧版本存档不会导致启动失败。
 
@@ -704,8 +706,9 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 | TUTOR-004 | 完成或确认跳过教程 | 保存完成状态并进入正式第 1 关 | A+M | P0 |
 | RESULT-001 | 完成正式关卡 | 显示蓝色成功页、胜利小狮子、下一关和主菜单 | A+V+D | P0 |
 | RESULT-002 | 红心耗尽 | 显示蓝色失败页、失败小狮子、重新挑战和返回首页，无金币复活 | A+V+D | P0 |
-| SAVE-001 | 标记棋盘、修改资源后重启 | 当前关卡、棋盘、金币、次数和完成记录正确恢复 | A+M+D | P0 |
+| SAVE-001 | 标记棋盘、修改资源后重启 | 当前关卡、棋盘、金币、次数和完成记录正确恢复；临时提示蒙层、拖动状态和弹窗不残留 | A+M+D | P0 |
 | SAVE-002 | 使用上一存档版本启动 | 兼容迁移或安全回退，不丢失可保留进度 | A+M | P0 |
+| SAVE-003 | 红心归零失败后重启并点击开始关卡 | 保留失败状态并显示失败页，可重新挑战或返回首页 | A+M+D | P0 |
 | I18N-001 | 切换中、英、法、拉丁语 | 文案翻译且布局恢复 LTR，无缺字和裁切 | A+V+D | P1 |
 | I18N-002 | 切换阿拉伯语 | 页面与弹窗使用 RTL，棋盘坐标和逻辑不镜像 | A+V+D | P0 |
 | AUDIO-001 | 执行 X、取消、正确、错误、掉心、提示、直找和通关 | 每个事件只播放对应的短促反馈，设置开关有效 | A+M+D | P1 |
