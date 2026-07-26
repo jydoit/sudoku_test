@@ -62,7 +62,7 @@
 
   <section class="section">
     <h2>5. 按钮和顶部信息</h2>
-    <div class="grid2"><div class="spec"><h3>顶部</h3><ul><li>首页、金币、3 个红心、帮助、设置、选关保持同一视觉层级。</li><li>空心红心大小必须和实心红心一致，只改变填充状态。</li><li>金币图标使用透明 PNG，不退化为文字符号。</li></ul><h3>底部</h3><ul><li>只保留“小狮子直找”和“提示”两个按钮。</li><li>两个按钮并列、等宽、图标在上，文字和次数在下。</li><li>次数清楚显示，用完进入禁用或价格状态。</li></ul></div><div class="button-demo"><div class="demo-btn"><img src="../assets/ui/lion_king.png">小狮子 ×3</div><div class="demo-btn"><div class="bulb">💡</div>提示 ×3</div><div class="demo-btn disabled"><img src="../assets/ui/lion_king.png">小狮子 -10</div><div class="demo-btn disabled"><div class="bulb">💡</div>提示 -10</div></div></div>
+    <div class="grid2"><div class="spec"><h3>顶部</h3><ul><li>首页、金币、3 个红心、帮助、设置、选关保持同一视觉层级。</li><li>空心红心大小必须和实心红心一致，只改变填充状态。</li><li>金币图标使用透明 PNG，不退化为文字符号。</li></ul><h3>底部</h3><ul><li>只保留“小狮子直找”和“提示”两个按钮。</li><li>两个按钮并列、等宽、图标在上，文字和次数在下。</li><li>正式关卡次数最低显示 ×0，不显示负数或 -价格；用完后点击弹出获取入口。</li><li>新手引导不显示无限次数：初始计数为空，引导点击时显示 ×1，点击后显示 ×0。</li></ul></div><div class="button-demo"><div class="demo-btn"><img src="../assets/ui/lion_king.png">小狮子 ×3</div><div class="demo-btn"><div class="bulb">💡</div>提示 ×3</div><div class="demo-btn"><img src="../assets/ui/lion_king.png">小狮子 ×0</div><div class="demo-btn"><div class="bulb">💡</div>提示 ×0</div></div></div>
   </section>
 
   <section class="section">
@@ -73,7 +73,7 @@
   <section class="section">
     <h2>7. 结算和失败页</h2>
     <div class="grid2"><div class="phone-wrap"><div class="phone result-phone"><h4>太棒了！</h4><div class="sub">第 12 关 已完成</div><div class="result-card"><img src="../assets/ui/lion_king_victory.png" alt="胜利小狮子"></div><button class="big-btn primary">下一关</button><button class="big-btn secondary">主菜单</button></div></div><div class="phone-wrap"><div class="phone result-phone fail"><h4>再试一次</h4><div class="sub">红心用完了</div><div class="result-card"><img src="../assets/ui/lion_king_wrong.png" alt="失败小狮子"></div><button class="big-btn primary">重新挑战</button><button class="big-btn secondary">返回首页</button></div></div></div>
-    <p class="note">结果页不显示排行榜、广告、复杂奖励进度。失败页不展示金币复活入口。</p>
+    <p class="note">结果页不显示排行榜、广告、复杂奖励进度。失败前先展示最后一个错误红 X 1.5 秒；失败页不展示金币复活入口。</p>
   </section>
 
   <section class="section">

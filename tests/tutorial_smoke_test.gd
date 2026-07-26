@@ -52,6 +52,7 @@ func _run() -> void:
 	assert(game.crown_find_button.visible and game.crown_find_button.disabled, "Tutorial should keep lion finder visible until its guided step")
 	assert(game.hint_button.visible, "Tutorial should keep hint available")
 	assert(game.hint_button.disabled, "Hint should wait until the clue step")
+	assert(game.crown_find_button_label.text == "" and game.hint_button_label.text == "", "Tutorial tool counters should start empty instead of infinite")
 	assert(game.coach_label.text == "每个颜色区域都要找到一个小狮子。现在这个区域只剩一个可选格，双击找到它。", "Tutorial should start with the first color-region crown clue")
 	assert(game.coach_label.get_theme_font_size("font_size") >= 18, "Tutorial guidance should use larger text")
 	assert(game.coach_label.get_theme_color("font_color") == Color("#31506D"), "Tutorial guidance should use dark text")
@@ -74,6 +75,7 @@ func _run() -> void:
 	assert(game.tutorial_interaction_stage == game.TUTORIAL_PHASE_HINT, "Tutorial should ask for a hint after exclusions")
 	assert(game.coach_label.text == "点一下提示，看看下一步该观察哪里。", "Tutorial should guide hint after exclusions")
 	assert(not game.hint_button.disabled, "Hint button should be enabled at the clue step")
+	assert(game.hint_button_label.text == "×1", "Tutorial hint should show one use only when guiding the hint button")
 	await create_timer(0.25).timeout
 	await process_frame
 	assert(game.tutorial_hand_control == game.hint_button, "Tutorial should point to the hint button")
@@ -81,6 +83,7 @@ func _run() -> void:
 	game._use_hint()
 	await process_frame
 	assert(game.tutorial_interaction_stage == game.TUTORIAL_PHASE_HINT_PLACE, "Hint should move to guided crown placement")
+	assert(game.hint_button_label.text == "×0", "Tutorial hint should show zero after the guided click")
 	assert(game.coach_label.text == "每个颜色区域都要找到一个小狮子。现在这个区域只剩一个可选格，双击找到它。", "Hint should explain the color-region crown clue")
 	assert(game.board.tutorial_focus_cell == Vector2i(1, 0), "Hint should focus the next crown")
 	game._on_cell_pressed(0, 1)
@@ -93,6 +96,7 @@ func _run() -> void:
 	assert(game.tutorial_interaction_stage == game.TUTORIAL_PHASE_CROWN_FIND, "Tutorial should teach crown find after the normal hint")
 	assert(game.coach_label.text == "点击小狮子，直接找到一个小狮子。教程中不会消耗使用次数。", "Lion-finder step should explain its direct locked result")
 	assert(not game.crown_find_button.disabled, "Crown find should unlock only for its guided step")
+	assert(game.crown_find_button_label.text == "×1", "Tutorial lion finder should show one use only when guiding the lion button")
 	await create_timer(0.25).timeout
 	await process_frame
 	assert(game.tutorial_hand_control == game.crown_find_button, "Tutorial should point to the crown-find button")
@@ -101,6 +105,7 @@ func _run() -> void:
 	await process_frame
 	assert(game.cell_states[1][4] == "hint", "Crown find should directly place a locked tutorial crown")
 	assert(game.crown_find_count == crown_find_count_before, "Tutorial crown find must not consume formal free uses")
+	assert(game.crown_find_button_label.text == "×0", "Tutorial lion finder should show zero after the guided click")
 	assert(game.tutorial_crown_find_taught, "Tutorial should remember that crown find has been taught")
 	assert(game.tutorial_interaction_stage == game.TUTORIAL_PHASE_ROW_COL, "Crown find should continue with the remaining rule exclusions")
 	assert(game.coach_label.text == "小狮子按钮已直接找到并锁定小狮子，周围位置已经排除。继续排除同行同列。", "Lion find should explain the locked result and next remaining rule")
@@ -165,23 +170,41 @@ func _run() -> void:
 
 func _complete_current_exclusions(game) -> void:
 	while game.tutorial_interaction_stage == game.TUTORIAL_PHASE_ADJACENT or game.tutorial_interaction_stage == game.TUTORIAL_PHASE_ROW_COL:
+		var targets: Array = game.board.guide_cells.keys()
+		assert(not targets.is_empty(), "Exclusion phase should expose every remaining target in the current rule group")
+		assert(not game.board.tutorial_mask_enabled and not game.board.guide_mask_enabled, "Exclusion phases should never dim non-target cells")
 		if game.tutorial_interaction_stage == game.TUTORIAL_PHASE_ROW_COL:
-			assert(game._tutorial_hand_cell_action() == "slide", "Row/column phase should also demonstrate continuous sliding")
+			assert(game._tutorial_hand_cell_action() == "single", "Row/column phase should demonstrate tapping the green guide cell")
 			var row_col_copy_valid: bool = game.coach_label.text == "每行、每列都只能有一个小狮子。这个小狮子所在的行和列，其他格都可以标记 X。"
 			row_col_copy_valid = row_col_copy_valid or game.coach_label.text == "小狮子按钮已直接找到并锁定小狮子，周围位置已经排除。继续排除同行同列。"
 			assert(row_col_copy_valid, "Row/column phase should use concise exclusion copy")
+			var first_row_col: Vector2i = targets[0]
+			var target_count_before_drag: int = _blocked_count(game, targets)
+			game._on_cell_drag_started(first_row_col.y, first_row_col.x)
+			assert(game.cell_states[first_row_col.y][first_row_col.x] == "blocked", "Row/column tutorial should tolerate a slight drag that starts on the green guide cell")
+			if targets.size() > 1:
+				var next_dragged: Vector2i = targets[1]
+				game._on_cell_dragged(next_dragged.y, next_dragged.x)
+				assert(_blocked_count(game, targets) == target_count_before_drag + 1, "Row/column tutorial should not mark extra cells through a drag path")
+			game._on_cell_drag_ended()
 		else:
 			assert(game._tutorial_hand_cell_action() == "slide", "Adjacent phase should demonstrate sliding")
-		assert(not game.board.tutorial_mask_enabled and not game.board.guide_mask_enabled, "Exclusion phases should never dim non-target cells")
-		var targets: Array = game.board.guide_cells.keys()
-		assert(not targets.is_empty(), "Exclusion phase should expose every remaining target in the current rule group")
-		var first: Vector2i = targets[0]
-		game._on_cell_drag_started(first.y, first.x)
-		for raw_target in targets.slice(1):
-			var target: Vector2i = raw_target
-			game._on_cell_dragged(target.y, target.x)
-		game._on_cell_drag_ended()
+			var first: Vector2i = targets[0]
+			game._on_cell_drag_started(first.y, first.x)
+			for raw_target in targets.slice(1):
+				var target: Vector2i = raw_target
+				game._on_cell_dragged(target.y, target.x)
+			game._on_cell_drag_ended()
 		await process_frame
+
+
+func _blocked_count(game, cells: Array) -> int:
+	var count := 0
+	for raw_cell in cells:
+		var cell: Vector2i = raw_cell
+		if game.cell_states[cell.y][cell.x] == "blocked":
+			count += 1
+	return count
 
 
 func _restore_save(had_save: bool, contents: String) -> void:

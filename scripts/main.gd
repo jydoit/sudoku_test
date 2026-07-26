@@ -102,6 +102,8 @@ var crown_find_count := INITIAL_CROWN_FIND_COUNT
 var immediate_errors := true
 var is_completed := false
 var is_failed := false
+var failure_reveal_pending := false
+var failure_reveal_token := 0
 var active_hint_step: Dictionary = {}
 var active_hint_stage := 0
 var run_started_unix := 0
@@ -1022,6 +1024,7 @@ func _sync_director_completed_levels() -> void:
 
 func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = {}) -> void:
 	_cancel_opening_king_intro()
+	_cancel_pending_failure_reveal()
 	in_tutorial = false
 	if coach_panel:
 		coach_panel.hide()
@@ -1505,7 +1508,12 @@ func _spend_coins_for_tool(tool: String) -> bool:
 	return true
 
 
-func _show_coin_shortage_dialog(tool: String, price: int) -> void:
+func _show_tool_refill_dialog(tool: String) -> void:
+	var price := _current_tool_price(tool)
+	_show_coin_shortage_dialog(tool, price, true)
+
+
+func _show_coin_shortage_dialog(tool: String, price: int, free_uses_empty: bool = false) -> void:
 	pending_coin_tool = tool
 	pending_coin_price = price
 	pending_rewarded_coin_grant = CoinEconomyScript.rewarded_ad_coin_grant(
@@ -1522,9 +1530,13 @@ func _show_coin_shortage_dialog(tool: String, price: int) -> void:
 	var shortage := maxi(0, price - coin_count)
 	tool_name = _t(tool_name)
 	var message := _t("%s需要 %d 金币。\n当前持有 %d，还差 %d。\n\n可购买金币，或主动观看一次激励广告补足本次需求。", [tool_name, price, coin_count, shortage])
+	var title := "金币不足"
+	if free_uses_empty:
+		title = "获取道具次数"
+		message = "%s免费次数已用完。\n当前持有 %d 金币。\n\n可购买金币，或主动观看一次激励广告获取积分后继续使用。" % [tool_name, coin_count]
 	dialog_controller.show_dialog(
 		"coin_shortage",
-		"金币不足",
+		title,
 		message,
 		"",
 		[
@@ -1544,15 +1556,17 @@ func _use_hint() -> void:
 		return
 	if is_completed or is_failed:
 		return
+	if hint_count <= 0:
+		hint_count = 0
+		_update_hint_button()
+		_show_tool_refill_dialog(CoinEconomyScript.TOOL_HINT)
+		return
 
 	var hint := _build_best_next_hint()
 	if hint.is_empty():
 		_show_toast("当前没有明显可提示的位置")
 		return
-	if hint_count > 0:
-		hint_count -= 1
-	elif not _spend_coins_for_tool(CoinEconomyScript.TOOL_HINT):
-		return
+	hint_count = maxi(0, hint_count - 1)
 
 	var guides: Dictionary = hint.get("guides", {})
 	board.set_guides(guides)
@@ -1570,21 +1584,22 @@ func _use_crown_find() -> void:
 		return
 	if is_completed or is_failed:
 		return
+	if crown_find_count <= 0:
+		crown_find_count = 0
+		_update_crown_find_button()
+		_show_tool_refill_dialog(CoinEconomyScript.TOOL_CROWN_FIND)
+		return
 	var target := _next_findable_solution_cell()
 	if target.x < 0:
 		_show_toast("当前已经没有可直接找到的小狮子")
 		_update_crown_find_button()
-		return
-	var uses_free_count := crown_find_count > 0
-	if not uses_free_count and not _spend_coins_for_tool(CoinEconomyScript.TOOL_CROWN_FIND):
 		return
 
 	_push_history()
 	active_hint_step.clear()
 	active_hint_stage = 0
 	board.set_guides({})
-	if uses_free_count:
-		crown_find_count -= 1
+	crown_find_count = maxi(0, crown_find_count - 1)
 	cell_states[target.y][target.x] = "hint"
 	audio_controller.play_correct()
 	board.set_states(cell_states)
@@ -2832,7 +2847,7 @@ func _on_tutorial_drag_started(row: int, col: int) -> void:
 	if is_completed:
 		return
 	if _tutorial_kind() == "single_map":
-		_on_tutorial_single_map_exclusion(row, col, true)
+		_on_tutorial_single_map_exclusion(row, col, tutorial_interaction_stage != TUTORIAL_PHASE_ROW_COL)
 
 
 func _on_tutorial_dragged(row: int, col: int) -> void:
@@ -3004,6 +3019,9 @@ func _on_tutorial_single_map_exclusion(row: int, col: int, from_drag: bool) -> v
 	var next_target := _next_tutorial_single_map_exclusion_cell()
 	if next_target.x < 0:
 		_advance_tutorial_single_map_after_exclusions()
+		return
+	if from_drag and tutorial_interaction_stage == TUTORIAL_PHASE_ROW_COL:
+		_focus_tutorial_cell(next_target, 0.12)
 		return
 	var cell := Vector2i(col, row)
 	var valid_cells := _tutorial_single_map_valid_exclusion_cells()
@@ -3447,7 +3465,7 @@ func _tutorial_hand_cell_action() -> String:
 	if _tutorial_kind() == "single_map":
 		if tutorial_interaction_stage == TUTORIAL_PHASE_PLACE or tutorial_interaction_stage == TUTORIAL_PHASE_HINT_PLACE:
 			return "double"
-		if tutorial_interaction_stage == TUTORIAL_PHASE_ROW_COL or tutorial_interaction_stage == TUTORIAL_PHASE_ADJACENT:
+		if tutorial_interaction_stage == TUTORIAL_PHASE_ADJACENT:
 			return "slide"
 	return "single"
 
@@ -4025,6 +4043,7 @@ func _completion_primary_pressed() -> void:
 func _completion_secondary_pressed() -> void:
 	if result_overlay_mode == "failure":
 		completion_overlay.hide()
+		_replay_level()
 		_show_home()
 		_save_game()
 	elif result_overlay_mode == "success":
@@ -4502,6 +4521,9 @@ func _fail_level() -> void:
 	if is_completed or is_failed:
 		return
 	is_failed = true
+	failure_reveal_pending = true
+	failure_reveal_token += 1
+	var reveal_token := failure_reveal_token
 	active_hint_step.clear()
 	active_hint_stage = 0
 	board.set_guides({})
@@ -4513,6 +4535,11 @@ func _fail_level() -> void:
 		_refresh_tool_button_visual(crown_find_button)
 	coach_label.text = "红心已用完，本关挑战失败。"
 	coach_label.add_theme_color_override("font_color", Color("#B93D4D"))
+	_save_game()
+	await get_tree().create_timer(1.5).timeout
+	if reveal_token != failure_reveal_token or not failure_reveal_pending or not is_failed or is_completed:
+		return
+	failure_reveal_pending = false
 	_prepare_failure_result_page()
 	_save_game()
 	completion_overlay.show()
@@ -4521,20 +4548,26 @@ func _fail_level() -> void:
 	tween.tween_property(completion_overlay, "modulate:a", 1.0, 0.2)
 
 
+func _cancel_pending_failure_reveal() -> void:
+	failure_reveal_token += 1
+	failure_reveal_pending = false
+
+
 func _update_hint_button() -> void:
 	if not hint_button:
 		return
 	if in_tutorial:
 		if hint_button_label:
-			hint_button_label.text = "×∞"
+			hint_button_label.text = _tutorial_hint_label_text()
 		_refresh_tool_button_visual(hint_button)
 		return
 	if hint_count > 0:
 		if hint_button_label:
 			hint_button_label.text = "×%d" % hint_count
 	else:
+		hint_count = 0
 		if hint_button_label:
-			hint_button_label.text = "-%d" % _current_tool_price(CoinEconomyScript.TOOL_HINT)
+			hint_button_label.text = "×0"
 	_refresh_tool_button_visual(hint_button)
 
 
@@ -4543,15 +4576,39 @@ func _update_crown_find_button() -> void:
 		return
 	if in_tutorial:
 		if crown_find_button_label:
-			crown_find_button_label.text = "×∞"
+			crown_find_button_label.text = _tutorial_crown_find_label_text()
 		crown_find_button.disabled = tutorial_interaction_stage != TUTORIAL_PHASE_CROWN_FIND
 		_refresh_tool_button_visual(crown_find_button)
 		return
 	var has_target := not current_level.is_empty() and _next_findable_solution_cell().x >= 0
 	if crown_find_button_label:
-		crown_find_button_label.text = "×%d" % crown_find_count if crown_find_count > 0 else "-%d" % _current_tool_price(CoinEconomyScript.TOOL_CROWN_FIND)
+		crown_find_button_label.text = "×%d" % maxi(0, crown_find_count)
 	crown_find_button.disabled = is_completed or is_failed or not has_target
 	_refresh_tool_button_visual(crown_find_button)
+
+
+func _tutorial_hint_label_text() -> String:
+	if _tutorial_kind() == "single_map":
+		if tutorial_interaction_stage == TUTORIAL_PHASE_HINT:
+			return "×1"
+		if tutorial_hint_button_taught:
+			return "×0"
+		return ""
+	if _tutorial_kind() == "tools":
+		if tutorial_button_stage == 2:
+			return "×1"
+		if tutorial_button_stage > 2:
+			return "×0"
+	return ""
+
+
+func _tutorial_crown_find_label_text() -> String:
+	if _tutorial_kind() == "single_map":
+		if tutorial_interaction_stage == TUTORIAL_PHASE_CROWN_FIND:
+			return "×1"
+		if tutorial_crown_find_taught:
+			return "×0"
+	return ""
 
 
 func _update_level_picker() -> void:
@@ -4579,9 +4636,8 @@ func _start_current_flow() -> void:
 		if is_completed:
 			_next_level()
 		elif is_failed:
+			_replay_level()
 			_show_game()
-			_prepare_failure_result_page()
-			completion_overlay.show()
 			return
 		_show_game()
 	elif tutorial_started:

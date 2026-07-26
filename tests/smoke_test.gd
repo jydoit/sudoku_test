@@ -370,7 +370,9 @@ func _run() -> void:
 		var next_wrong: Vector2i = wrong_cells[index]
 		game._on_cell_double_pressed(next_wrong.y, next_wrong.x)
 	assert(game.is_failed, "The level should fail when hearts reach zero")
-	assert(game.completion_overlay.visible, "Failing the level should show the result overlay")
+	assert(not game.completion_overlay.visible, "Failing the level should keep the red X visible before showing the result overlay")
+	await create_timer(1.6).timeout
+	assert(game.completion_overlay.visible, "Failing the level should show the result overlay after the red X pause")
 	assert(game.completion_title.text == "再试一次", "Failure title should match the new result-page copy")
 	assert(game.completion_next_button.text == "重新挑战", "Failure primary action should restart the challenge")
 	assert(game.completion_replay_button.text == "返回首页", "Failure secondary action should return home")
@@ -383,6 +385,14 @@ func _run() -> void:
 	game.completion_overlay.show()
 	game._completion_secondary_pressed()
 	assert(game.home_screen.visible, "Failure secondary action should return to the home screen")
+	assert(not game.is_failed, "Returning home from failure should clear the failed state")
+	assert(game.heart_count == game.current_heart_limit, "Returning home from failure should prepare a fresh retry")
+	game._start_current_flow()
+	assert(game.game_screen.visible, "Starting from home after a failed level should enter the game")
+	assert(not game.completion_overlay.visible, "Starting from home after failure should not show the failure page again")
+	assert(not game.is_failed, "Starting from home after failure should restart the challenge")
+	assert(_count_state(game.cell_states, "wrong") == 0, "Starting from home after failure should clear locked wrong marks")
+	assert(game.heart_count == game.current_heart_limit, "Starting from home after failure should restore hearts")
 	game.resume_level_id = int(game.current_level["levelId"])
 	game.resume_completed = false
 	game.resume_states = game.cell_states.duplicate(true)
@@ -401,15 +411,14 @@ func _run() -> void:
 	while game.crown_find_count > 0:
 		game._use_crown_find()
 	assert(game.crown_find_count == 0, "Crown find count should stop at zero")
-	assert(not game.crown_find_button.disabled, "Crown find should remain available for coins after free uses are exhausted")
-	assert(str(game.crown_find_button_label.text).contains("-"), "Crown find should display its current coin price")
+	assert(not game.crown_find_button.disabled, "Crown find should remain available to open the refill dialog after free uses are exhausted")
+	assert(str(game.crown_find_button_label.text) == "×0", "Crown find should display zero instead of a negative price")
 	var pieces_before_shortage: int = game._piece_positions().size()
-	game.coin_count = 0
 	game._use_crown_find()
-	assert(game._piece_positions().size() == pieces_before_shortage, "Insufficient coins must not place a crown")
-	assert(game.dialog_controller.is_dialog_open("coin_shortage"), "Insufficient coins should offer voluntary purchase and rewarded-ad routes")
-	assert(game.pending_coin_tool == CoinEconomyScript.TOOL_CROWN_FIND, "Coin shortage dialog should retain the requested tool")
-	assert(game.pending_rewarded_coin_grant > 0 and game.pending_rewarded_coin_grant <= game.pending_coin_price, "Rewarded-ad grant should cover the shortage without exceeding the requested tool price")
+	assert(game._piece_positions().size() == pieces_before_shortage, "Empty crown-find uses must not place a crown")
+	assert(game.dialog_controller.is_dialog_open("coin_shortage"), "Empty crown-find uses should offer voluntary purchase and rewarded-ad routes")
+	assert(game.pending_coin_tool == CoinEconomyScript.TOOL_CROWN_FIND, "Tool refill dialog should retain the requested tool")
+	assert(game.pending_rewarded_coin_grant > 0 and game.pending_rewarded_coin_grant <= game.pending_coin_price, "Rewarded-ad grant should stay bounded by the requested tool price")
 	var shortage_later_button: Button = game.dialog_controller.find_child("DialogAction_later", true, false)
 	assert(shortage_later_button != null, "Coin shortage should expose all actions through the shared controller")
 	shortage_later_button.pressed.emit()
@@ -477,6 +486,18 @@ func _run() -> void:
 	var no_x_hint_count: int = game.hint_count
 	game._use_hint()
 	assert(game.hint_count == no_x_hint_count, "Hint uses should not be consumed when no non-crown X target exists")
+
+	game.hint_count = 0
+	game._update_hint_button()
+	assert(str(game.hint_button_label.text) == "×0", "Hint should display zero instead of a negative price")
+	var guide_count_before_empty_hint: int = game.board.guide_cells.size()
+	game._use_hint()
+	assert(game.board.guide_cells.size() == guide_count_before_empty_hint, "Empty hint uses must not reveal a new hint")
+	assert(game.dialog_controller.is_dialog_open("coin_shortage"), "Empty hint uses should offer voluntary purchase and rewarded-ad routes")
+	assert(game.pending_coin_tool == CoinEconomyScript.TOOL_HINT, "Tool refill dialog should retain the hint request")
+	var hint_later_button: Button = game.dialog_controller.find_child("DialogAction_later", true, false)
+	assert(hint_later_button != null, "Hint refill should expose the later action")
+	hint_later_button.pressed.emit()
 
 	game._load_level(0)
 	var completion_coins_before: int = game.coin_count

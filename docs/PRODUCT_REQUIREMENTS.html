@@ -148,7 +148,7 @@ figcaption {
 <li>小狮子在视觉上统一使用戴皇冠的卡通小狮子头像贴图，棋盘、开局提示动画、进度和结果页不得继续使用 Unicode 皇冠字符。</li>
 <li>开局只提供 1 个提示小狮子时，多语言文案必须使用正确单数语法；英文显示 <code>1 lion is provided at the start</code>。</li>
 <li>双击空格或普通排除 X 时，若该格是标准答案格则放置小狮子；若不是标准答案格，则扣除 1 个红心并把该格标记为不可修改的红色 X。</li>
-<li>正式关卡按展示关卡序号分配红心：第 1-10 关 3 个，第 11-30 关 2 个，第 31 关起 1 个；红心为 0 时，本关失败并显示关卡失败页。</li>
+<li>正式关卡按展示关卡序号分配红心：第 1-10 关 3 个，第 11-30 关 2 个，第 31 关起 1 个；红心为 0 时，本关失败，先停顿 1.5 秒展示最后一个错误红 X，再显示关卡失败页。</li>
 <li>滑动操作只能处理普通排除 X，不能标记小狮子，不能改变小狮子或提示小狮子；一次滑动开始时决定是标记模式还是取消模式，过程中不来回翻转。</li>
 <li>普通排除 X 可以取消。</li>
 </ul>
@@ -194,7 +194,7 @@ figcaption {
 <p>主要页面：</p>
 <ul>
 <li>首页：主视觉、开始关卡、新人引导入口。</li>
-<li>新手引导教程：首次进入第一关前，用单张 5x5 教程棋盘图串联双击找小狮子、滑动排除、同行同列排除、提示线索和通关目标。</li>
+<li>新手引导教程：首次进入第一关前，用单张 5x5 教程棋盘图串联双击找小狮子、滑动排除相邻格、点击绿色引导格完成同行同列排除、提示线索和通关目标。</li>
 <li>关卡页：棋盘、规则提示、选关、提示。</li>
 <li>通关结果页：通关反馈、小狮子奖励展位、下一关、主菜单。</li>
 </ul>
@@ -303,8 +303,9 @@ figcaption {
 <li>按住并从普通 X 开始滑动时，沿途普通 X 连续取消为空格；滑动经过小狮子或提示小狮子时保持原状态。</li>
 <li>双击空格或普通排除 X 尝试标记小狮子。</li>
 <li>双击标准答案格放置张嘴开心笑、眼睛带高光的小狮子；双击非标准答案格会显示居中的不可修改红色 X，同时只扣除 1 个红心，不扣除小狮子直找次数、提示次数或金币。</li>
-<li>正式关卡进入或重试时按展示关卡序号重置红心：第 1-10 关 3 个、第 11-30 关 2 个、第 31 关起 1 个；错误小狮子尝试扣 1 个红心，红心为 0 时锁定棋盘并弹出关卡失败页。</li>
-<li>小狮子直找按钮与提示按钮同一行显示，采用“图标 ×次数”的紧凑横排结构，不显示道具名称；每个用户初始 3 次，点击后直接把一个未找到的标准答案格标记为锁定小狮子，免费次数用完后在图标旁显示金币价格。</li>
+<li>正式关卡进入或重试时按展示关卡序号重置红心：第 1-10 关 3 个、第 11-30 关 2 个、第 31 关起 1 个；错误小狮子尝试扣 1 个红心，红心为 0 时先锁定棋盘并停顿 1.5 秒展示最后一个错误红 X，再弹出关卡失败页。</li>
+<li>小狮子直找按钮与提示按钮同一行显示，采用“图标 ×次数”的紧凑横排结构，不显示道具名称；每个用户初始各 3 次，点击后直接把一个未找到的标准答案格标记为锁定小狮子或展示提示范围。免费次数用完后按钮显示 <code>×0</code>，点击只弹出购买金币 / 观看激励广告获取积分入口，不直接扣金币使用。</li>
+<li>新手引导复用同一排小狮子直找和提示按钮，但不显示无限次数：非当前教学阶段的道具计数为空；当引导用户点击提示或小狮子按钮时显示 <code>×1</code>；点击完成后显示 <code>×0</code>，且不消耗正式关卡免费次数、金币或红心。</li>
 <li>当前版本不在关卡底部暴露清除和撤销按钮；已确认小狮子和错误红色 X 锁定，用户通过重新挑战重置棋盘。</li>
 <li>内部兼容撤销逻辑也只能改变普通 X，不得移除正确小狮子、提示小狮子、开局小狮子或错误红 X；教程不再进入旧撤销/清除教学流程。</li>
 <li>关卡失败页沿用通关结果页蓝色整屏风格，文案为失败反馈，按钮为“重新挑战”和“返回首页”。</li>
@@ -312,7 +313,7 @@ figcaption {
 <li>移动端棋盘输入以触屏事件为准，不能把 Android 派发的触屏事件和兼容鼠标事件重复处理成两次点击。</li>
 <li>双击找小狮子由项目自定义判定：必须是同一格的两次完整按下/抬起，间隔在安全窗口内，移动距离小，且没有进入滑动状态；不直接依赖 Godot 自带 <code>double_tap</code> 或 <code>double_click</code> 标记。</li>
 <li>有冲突时冲突格变红。</li>
-<li>正式关卡使用提示时，全部提示相关格和已有 X/小狮子/错误 X 保持正常亮度，不加高亮框、不闪烁；其它空格覆盖半透明白灰浮层，并禁止点击。新手教程的相邻排除和同行同列排除阶段不使用蒙层：棋盘全部保持原亮度，本阶段全部合法目标格同时开放并显示轻量金色细边，允许一次按住连续滑动标记多个 X。</li>
+<li>正式关卡使用提示时，全部提示相关格和已有 X/小狮子/错误 X 保持正常亮度，不加高亮框、不闪烁；其它空格覆盖半透明白灰浮层，并禁止点击。新手教程的相邻排除和同行同列排除阶段不使用蒙层：棋盘全部保持原亮度，本阶段全部合法目标格同时开放并显示轻量金色细边。相邻排除可用小手滑动演示连续标记 X；同行同列排除必须用小手点击绿色引导格演示。真机上从绿色目标格起手的轻微滑动按一次点击容错处理，但不得沿路径批量完成同行同列阶段。</li>
 <li>操作后提供轻量动画反馈；正确和错误放置必须使用同一狮子角色的不同表情，保证状态反馈清晰且角色一致。</li>
 </ul>
 <p>当前实现：</p>
@@ -352,7 +353,7 @@ figcaption {
 <li>双击正确答案格显示小狮子并触发反馈。</li>
 <li>已确认小狮子再次单击、双击或滑动经过时都保持不变。</li>
 <li>双击非答案格显示红色 X、只扣除 1 个红心并触发反馈；不得扣除小狮子直找次数、提示次数或金币。红色 X 不可通过单击或滑动修改。</li>
-<li>点击小狮子按钮会直接找到一个锁定小狮子并优先消耗 1 次免费次数；免费次数为 0 后显示金币价格，金币足够时仍可继续使用。</li>
+<li>点击小狮子按钮会直接找到一个锁定小狮子并优先消耗 1 次免费次数；免费次数为 0 后显示 <code>×0</code>，点击弹出购买金币 / 观看激励广告获取积分入口，不直接放置小狮子。</li>
 <li>普通 X、红色 X、小狮子、高亮和冲突图形可见且不遮挡棋盘。</li>
 <li>棋盘在不同窗口尺寸下保持正方形比例。</li>
 </ul>
@@ -392,9 +393,9 @@ figcaption {
 <p>功能逻辑：</p>
 <ul>
 <li>正式关卡提示范围只能包含可排除的非小狮子空格，不提示小狮子位置，也不把候选观察格或推理单元放入可操作范围。</li>
-<li>提示消耗免费次数；免费次数用完后消耗金币。</li>
+<li>提示消耗免费次数；免费次数用完后按钮显示 <code>×0</code>，点击弹出购买金币 / 观看激励广告获取积分入口。</li>
 <li>免费提示初始为 3 次。</li>
-<li>免费次数用完后，逻辑提示价格为当前关卡奖励基数的 <code>1 倍</code>；按钮直接展示本次金币价格。</li>
+<li>免费次数用完后，本次点击不直接消耗金币、不展示负数或 <code>-价格</code>，也不立即给出提示。</li>
 <li>提示通过整盘半透明白灰蒙层、正常亮度的提示相关格和可操作范围表达，不显示文字解释；不同颜色区域之间仍不额外绘制深色线。</li>
 <li>正式关卡提示范围内的全部格子统一使用 <code>exclude_empty</code>，保持正常亮度、允许单击画 X，不加高亮框、不闪烁；已有 X/小狮子仍保持正常亮度，但不进入提示操作范围。</li>
 <li>当前棋盘没有可确定排除的非小狮子空格时，提示不生效，也不扣除免费次数或金币。</li>
@@ -527,11 +528,11 @@ figcaption {
 <p>功能逻辑：</p>
 <ul>
 <li>金币发放、道具价格和流水统计统一由 <code>scripts/coin_economy.gd</code> 管理，页面层不独立硬编码价格。</li>
-<li>免费逻辑提示和免费小狮子直找次数耗尽后仍可继续使用，对应价格分别为本关奖励基数的 <code>1 倍</code>、<code>3 倍</code>。</li>
+<li>免费逻辑提示和免费小狮子直找次数耗尽后，按钮显示 <code>×0</code>，点击时弹出获取入口；当前版本不在点击时直接消耗金币执行道具。</li>
 <li>红心耗尽时失败页不提供复活入口；主按钮为“重新挑战”，副按钮为“返回首页”。</li>
 <li>若最近 3 次通关均未使用金币兑换道具，则下一次道具价格减去 <code>max(1, 本关奖励基数 × 20%)</code>，降低首次付费使用门槛。</li>
 <li>同一局中每发生一次金币兑换，折扣逐步减弱；累计 3 次兑换后回到标准价格。</li>
-<li>金币不足时只弹出“购买金币 / 观看激励广告 / 稍后再说”选择，不自动播放广告、不打断正常解题。</li>
+<li>免费次数耗尽后只弹出“购买金币 / 观看激励广告 / 稍后再说”选择，不自动播放广告、不打断正常解题。</li>
 <li>单次激励广告补币至少为本关一个奖励基数，同时保证足够补齐当前道具缺口，且不超过本次道具价格；目标是一次广告可解决当前需求，但不制造大量额外囤币。</li>
 <li>当前版本购买和激励广告按钮为 SDK 接入占位，不直接伪造到账；后续接入时必须在回调成功后才发放金币。</li>
 <li>游戏不使用强制插屏广告；激励广告只由玩家在金币不足且主动使用道具时选择。</li>
@@ -544,9 +545,9 @@ figcaption {
 </ul>
 <p>回归测试重点：</p>
 <ul>
-<li>道具按钮显示的价格与实际扣款一致。</li>
-<li>金币不足不产生负数，不修改道具次数或棋盘状态，并展示自愿获取金币入口。</li>
-<li>失败页点击“重新挑战”会重置当前关卡和红心；点击“返回首页”回到首页。</li>
+<li>道具按钮最低显示 <code>×0</code>，不得显示负数或 <code>-价格</code>。</li>
+<li>免费次数耗尽后点击道具不修改道具次数或棋盘状态，并展示自愿获取金币 / 激励广告入口。</li>
+<li>失败页点击“重新挑战”会立即重置当前关卡和红心；点击“返回首页”视为放弃本次失败局，回到首页并准备一盘新的当前关卡。</li>
 <li>不使用道具的玩家不会被自动弹出广告或插屏广告打断。</li>
 </ul>
 <h3>6.8 存档模块</h3>
@@ -566,7 +567,7 @@ figcaption {
 <li>当前保存字段包括 <code>currentLevelIndex</code>、<code>currentLevelId</code>、<code>playerLevelNumber</code>、<code>activeSchedule</code>、<code>directorProgress</code>、<code>economyProgress</code>、<code>runStartedUnix</code>、<code>runMoveCount</code>、<code>runHintCount</code>、<code>runCoinExchangeCount</code>、<code>cellStates</code>、<code>isCompleted</code>、<code>isFailed</code>、<code>coinCount</code>、<code>heartCount</code>、<code>hintCount</code>、<code>completedLevels</code>、<code>immediateErrors</code>、<code>tutorialCompleted</code>、<code>tutorialStarted</code>、<code>tutorialStepIndex</code>。</li>
 <li><code>directorProgress</code> 保存最近通关记录、size/difficulty 统计、下一关开启和次留补记状态。</li>
 <li>首页点击“开始关卡”时，如果当前恢复的正式关卡已经完成，会自动推进并加载下一关，避免停留在已完成且不可操作的棋盘。</li>
-<li>首页点击“开始关卡”时，如果当前恢复的正式关卡已经失败，会进入该关并重新显示失败页，由用户选择“重新挑战”或“返回首页”。</li>
+<li>首页点击“开始关卡”时，如果当前正式关卡已经失败或存档恢复为失败状态，会重新开始该关，恢复红心并清空本次失败局的错误红 X，不再重新显示失败页。</li>
 <li><code>SAVE_VERSION</code> 当前为 7，新增保存 <code>selectedLanguage</code>。</li>
 </ul>
 <p>功能截图与交互流转：</p>
@@ -576,7 +577,7 @@ figcaption {
 <li>关卡切换、点击格子、使用提示、通关、新手教程推进后会保存。</li>
 <li>重新启动后恢复最近关卡、棋盘状态和教程状态。</li>
 <li>已完成关卡从首页继续时应进入下一关，且下一关可正常点击、滑动和双击操作。</li>
-<li>已失败关卡从首页继续时应显示失败页，不能进入隐藏弹窗但棋盘锁住的状态。</li>
+<li>已失败关卡从首页继续时应重新开始当前关卡，不能进入隐藏弹窗但棋盘锁住的状态，也不能再次显示旧失败页阻断进入。</li>
 <li>新存档首次启动会因为没有 <code>tutorialCompleted</code> 而直接进入新手引导。</li>
 <li>旧版本存档不会导致启动失败。</li>
 </ul>
@@ -595,7 +596,7 @@ figcaption {
 <ul>
 <li>新手引导使用单张 5x5 可操作教程棋盘图，在同一棋盘里让玩家理解全部核心规则，不污染正式第 1 关的棋盘进度。</li>
 <li>教程棋盘必须包含颜色区域、小狮子、普通 X、滑动手势/方向提示和核心规则摘要。</li>
-<li>教程必须包含双击找小狮子、滑动批量排除 X、小狮子相邻排除、同行同列排除、提示线索、小狮子直找和完整找出全部小狮子。</li>
+<li>教程必须包含双击找小狮子、滑动批量排除相邻 X、小狮子相邻排除、点击绿色引导格完成同行同列排除、提示线索、小狮子直找和完整找出全部小狮子。</li>
 <li>教程页面复用正式关卡的首页、金币、红心、帮助、标题、小狮子进度与底部小狮子直找、提示布局；选关入口在教程期间替换为“跳过”。</li>
 <li>教程文案统一使用“找到小狮子”或“找出小狮子”，不得使用动作类摆放说法。</li>
 <li>教程允许跳过；用户选择跳过后视为完成新手引导，并直接进入第 1 关正式关卡。</li>
@@ -606,7 +607,7 @@ figcaption {
 <ol>
 <li>初始聚焦第一个小狮子目标格，文案显示“每个颜色区域都要找到一个小狮子。现在这个区域只剩一个可选格，双击找到它。”。</li>
 <li>玩家双击找到小狮子后，进入相邻排除阶段，文案显示“小狮子不能和小狮子挨着。滑过它周围的格子，把这些位置标记为 X。”。</li>
-<li>相邻格排除完成后，进入同行同列排除阶段，文案显示“每行、每列都只能有一个小狮子。这个小狮子所在的行和列，其他格都可以标记 X。”。</li>
+<li>相邻格排除完成后，进入同行同列排除阶段，文案显示“每行、每列都只能有一个小狮子。这个小狮子所在的行和列，其他格都可以标记 X。”；小手必须指向绿色引导格做单次点击演示，不做横向滑动。玩家需要点击绿色引导格完成该步骤；如果手指从绿色目标格起手后轻微滑动，也按一次点击容错处理。</li>
 <li>排除完成后，引导点击提示按钮，文案显示“点一下提示，看看下一步该观察哪里。”。</li>
 <li>点击提示后给出下一个小狮子线索，文案显示“每个颜色区域都要找到一个小狮子。现在这个区域只剩一个可选格，双击找到它。”。</li>
 <li>第二个小狮子的排除完成后，引导点击“小狮子直找”，直接生成并锁定第三个小狮子；教学使用不扣除正式免费次数，也不扣金币。</li>
@@ -625,15 +626,16 @@ figcaption {
 <p>当前实现：</p>
 <ul>
 <li>已实现。新存档启动后直接进入单张 5x5 新手教程棋盘；完成教程或跳过后进入第 1 关正式关卡。</li>
-<li>教程由 <code>TUTORIAL_LEVELS</code> 的 <code>single_map</code> 配置和教程状态机驱动；双击找小狮子等单目标步骤可使用单格聚焦，相邻排除和同行同列排除阶段取消棋盘蒙层、一次开放当前规则组全部合法格，并配合小手滑动动画、提示与小狮子直找按钮引导和最终开始挑战入口。</li>
-<li>教程与正式关卡共用顶部、进度和底部道具组件；提示和小狮子直找只在对应教学阶段启用。</li>
+<li>教程由 <code>TUTORIAL_LEVELS</code> 的 <code>single_map</code> 配置和教程状态机驱动；双击找小狮子等单目标步骤可使用单格聚焦，相邻排除和同行同列排除阶段取消棋盘蒙层、一次开放当前规则组全部合法格。相邻排除阶段配合小手滑动动画；同行同列排除阶段小手只做点击绿色引导格的演示，并允许从绿色目标格起手的轻微滑动按一次点击容错，但不允许拖动路径批量完成；提示与小狮子直找按钮使用按钮点击引导，最后进入开始挑战入口。</li>
+<li>教程与正式关卡共用顶部、进度和底部道具组件；提示和小狮子直找只在对应教学阶段启用，计数只显示当前教学道具的 <code>×1</code>，使用后显示 <code>×0</code>，其它阶段为空。</li>
 <li>正式关卡页隐藏教程按钮。</li>
 </ul>
 <p>回归测试重点：</p>
 <ul>
 <li>新存档首次启动必须直接进入单张 5x5 新手教程棋盘，而不是停留在首页或直接进入第 1 关。</li>
-<li>教程必须完整展示双击找小狮子、滑动排除、同行同列排除、提示线索、小狮子直找和核心规则。</li>
+<li>教程必须完整展示双击找小狮子、滑动排除相邻格、点击绿色引导格完成同行同列排除、提示线索、小狮子直找和核心规则。</li>
 <li>教程保持正式关卡两道具布局；提示和小狮子直找按教程阶段依次启用。</li>
+<li>教程道具计数不得显示 <code>×∞</code> 或正式关卡真实次数；只在引导点击该道具时显示 <code>×1</code>，点击后显示 <code>×0</code>。</li>
 <li>教程小狮子直找必须生成锁定提示小狮子，且不消耗正式关卡免费次数或金币。</li>
 <li>文案必须使用“找到小狮子”或“找出小狮子”。</li>
 <li>找完教程棋盘全部小狮子并点击“开始挑战”后必须进入第 1 关正式关卡。</li>
@@ -680,7 +682,7 @@ figcaption {
 </ul>
 <p>候选素材技术规格：<code>44.1 kHz / 16-bit / mono WAV</code>，所有文件必须保留峰值余量且不得削波。</p>
 <h2>7. 关键参数</h2>
-<div class="table-wrap"><table><thead><tr><th>参数</th><th>当前值</th><th>位置</th><th>说明</th></tr></thead><tbody><tr><td>初始金币</td><td>55</td><td><code>scripts/main.gd</code></td><td>新存档默认金币</td></tr><tr><td>初始免费提示</td><td>3</td><td><code>INITIAL_HINT_COUNT</code></td><td>新存档默认提示次数</td></tr><tr><td>初始小狮子直找</td><td>3</td><td><code>INITIAL_CROWN_FIND_COUNT</code></td><td>新存档默认直找小狮子次数</td></tr><tr><td>尺寸奖励基数</td><td>10 / 14 / 18 / 23 / 28</td><td><code>CoinEconomy.SIZE_BASE_REWARDS</code></td><td>对应 5x5 到 9x9</td></tr><tr><td>开局小狮子奖励系数</td><td>80%</td><td><code>OPENING_KING_REWARD_MULTIPLIER</code></td><td>有提示小狮子时降低奖励</td></tr><tr><td>错误奖励扣减</td><td>每次 25%，最低 50%</td><td><code>MISTAKE_PENALTY_PER_COUNT</code></td><td>只影响本局通关结算</td></tr><tr><td>逻辑提示价格</td><td>1 × 本关奖励基数</td><td><code>TOOL_HINT</code></td><td>免费提示耗尽后核销</td></tr><tr><td>小狮子直找价格</td><td>3 × 本关奖励基数</td><td><code>TOOL_CROWN_FIND</code></td><td>免费直找耗尽后核销</td></tr><tr><td>首次兑换折扣</td><td>20% 基数，3 次兑换内回归</td><td><code>INACTIVE_TOOL_DISCOUNT_RATE</code></td><td>最近 3 次通关未兑换时生效</td></tr><tr><td>每关红心</td><td>1-10 关为 3；11-30 关为 2；31 关起为 1</td><td><code>_heart_limit_for_display_level()</code></td><td>正式关卡每次进入/重试时按展示关卡序号重置</td></tr><tr><td>关卡红心动效</td><td>默认静止，状态变化时短促反馈</td><td><code>_update_heart_label()</code></td><td>不持续跳动；失去的红心同尺寸变灰并恢复正常大小</td></tr><tr><td>默认棋盘尺寸</td><td>5x5-9x9</td><td><code>data/levels.json</code></td><td>由关卡导演按进度解锁</td></tr><tr><td>默认关卡数</td><td>1670</td><td><code>data/levels.json</code></td><td>MVP 内置关卡</td></tr><tr><td>动态提示小狮子</td><td>11-50 关默认显示，50 关后每 5 关屏蔽</td><td><code>LevelDirector._should_reveal_dynamic_kings()</code></td><td>提示小狮子开局带动画</td></tr><tr><td>新手引导触发</td><td>新存档启动后立即进入</td><td><code>scripts/main.gd</code></td><td>完成后写入存档，后续不再强制触发</td></tr><tr><td>新手引导形式</td><td>单张 5x5 教程棋盘</td><td><code>TUTORIAL_LEVELS</code></td><td>用同一张棋盘图串联核心操作和规则</td></tr><tr><td>新手引导棋盘</td><td>5x5</td><td><code>TUTORIAL_LEVELS</code></td><td>教程全程不换图，让用户在同一棋盘上逐步找出全部小狮子</td></tr><tr><td>新手引导跳过</td><td>允许</td><td>顶部“跳过”按钮</td><td>二次确认后视为完成并进入第 1 关</td></tr><tr><td>新手引导跳过入口</td><td>教程中显示</td><td>顶部“跳过”按钮</td><td>正式关卡页隐藏</td></tr><tr><td>新人引导按钮</td><td>首页常驻</td><td><code>_simulate_new_user_flow()</code></td><td>用于模拟新用户状态并重新进入教程</td></tr><tr><td>教程完成反馈</td><td>找完教学地图全部小狮子后显示开始挑战</td><td><code>_show_tutorial_challenge_ready()</code></td><td>用户点击开始挑战进入第 1 关</td></tr><tr><td>全局 UI 字体</td><td>Noto Sans SC + Noto Sans Arabic</td><td><code>assets/fonts/</code>、<code>project.godot</code></td><td>字体随项目打包，中文和阿拉伯语不依赖系统字体回退</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>参数</th><th>当前值</th><th>位置</th><th>说明</th></tr></thead><tbody><tr><td>初始金币</td><td>55</td><td><code>scripts/main.gd</code></td><td>新存档默认金币</td></tr><tr><td>初始免费提示</td><td>3</td><td><code>INITIAL_HINT_COUNT</code></td><td>新存档默认提示次数</td></tr><tr><td>初始小狮子直找</td><td>3</td><td><code>INITIAL_CROWN_FIND_COUNT</code></td><td>新存档默认直找小狮子次数</td></tr><tr><td>尺寸奖励基数</td><td>10 / 14 / 18 / 23 / 28</td><td><code>CoinEconomy.SIZE_BASE_REWARDS</code></td><td>对应 5x5 到 9x9</td></tr><tr><td>开局小狮子奖励系数</td><td>80%</td><td><code>OPENING_KING_REWARD_MULTIPLIER</code></td><td>有提示小狮子时降低奖励</td></tr><tr><td>错误奖励扣减</td><td>每次 25%，最低 50%</td><td><code>MISTAKE_PENALTY_PER_COUNT</code></td><td>只影响本局通关结算</td></tr><tr><td>逻辑提示获取基准</td><td>1 × 本关奖励基数</td><td><code>TOOL_HINT</code></td><td>免费提示耗尽后用于获取入口估算，不在按钮上显示负数</td></tr><tr><td>小狮子直找获取基准</td><td>3 × 本关奖励基数</td><td><code>TOOL_CROWN_FIND</code></td><td>免费直找耗尽后用于获取入口估算，不在按钮上显示负数</td></tr><tr><td>首次获取折扣</td><td>20% 基数，3 次兑换内回归</td><td><code>INACTIVE_TOOL_DISCOUNT_RATE</code></td><td>最近 3 次通关未兑换时生效</td></tr><tr><td>每关红心</td><td>1-10 关为 3；11-30 关为 2；31 关起为 1</td><td><code>_heart_limit_for_display_level()</code></td><td>正式关卡每次进入/重试时按展示关卡序号重置</td></tr><tr><td>关卡红心动效</td><td>默认静止，状态变化时短促反馈</td><td><code>_update_heart_label()</code></td><td>不持续跳动；失去的红心同尺寸变灰并恢复正常大小</td></tr><tr><td>默认棋盘尺寸</td><td>5x5-9x9</td><td><code>data/levels.json</code></td><td>由关卡导演按进度解锁</td></tr><tr><td>默认关卡数</td><td>1670</td><td><code>data/levels.json</code></td><td>MVP 内置关卡</td></tr><tr><td>动态提示小狮子</td><td>11-50 关默认显示，50 关后每 5 关屏蔽</td><td><code>LevelDirector._should_reveal_dynamic_kings()</code></td><td>提示小狮子开局带动画</td></tr><tr><td>新手引导触发</td><td>新存档启动后立即进入</td><td><code>scripts/main.gd</code></td><td>完成后写入存档，后续不再强制触发</td></tr><tr><td>新手引导形式</td><td>单张 5x5 教程棋盘</td><td><code>TUTORIAL_LEVELS</code></td><td>用同一张棋盘图串联核心操作和规则</td></tr><tr><td>新手引导棋盘</td><td>5x5</td><td><code>TUTORIAL_LEVELS</code></td><td>教程全程不换图，让用户在同一棋盘上逐步找出全部小狮子</td></tr><tr><td>新手引导跳过</td><td>允许</td><td>顶部“跳过”按钮</td><td>二次确认后视为完成并进入第 1 关</td></tr><tr><td>新手引导跳过入口</td><td>教程中显示</td><td>顶部“跳过”按钮</td><td>正式关卡页隐藏</td></tr><tr><td>新人引导按钮</td><td>首页常驻</td><td><code>_simulate_new_user_flow()</code></td><td>用于模拟新用户状态并重新进入教程</td></tr><tr><td>教程完成反馈</td><td>找完教学地图全部小狮子后显示开始挑战</td><td><code>_show_tutorial_challenge_ready()</code></td><td>用户点击开始挑战进入第 1 关</td></tr><tr><td>全局 UI 字体</td><td>Noto Sans SC + Noto Sans Arabic</td><td><code>assets/fonts/</code>、<code>project.godot</code></td><td>字体随项目打包，中文和阿拉伯语不依赖系统字体回退</td></tr></tbody></table></div>
 <h2>8. 功能模块测试用例</h2>
 <h3>8.1 用例管理规则</h3>
 <ul>
@@ -693,11 +695,11 @@ figcaption {
 <h3>8.2 首页与导航</h3>
 <div class="table-wrap"><table><thead><tr><th>编号</th><th>前置条件与操作</th><th>预期结果</th><th>验证</th><th>级别</th></tr></thead><tbody><tr><td>HOME-001</td><td>启动已有存档并进入首页</td><td>显示 <code>color king</code>、胜利小狮子、开始关卡和新人引导</td><td>A+V+D</td><td>P0</td></tr><tr><td>HOME-002</td><td>点击开始关卡</td><td>进入当前应玩关卡；已完成关卡自动前进</td><td>A+M</td><td>P0</td></tr><tr><td>HOME-003</td><td>点击新人引导</td><td>重置教程完成状态并进入单张 5x5 教程</td><td>A+M</td><td>P0</td></tr><tr><td>HOME-004</td><td>检查首页全部入口</td><td>不显示金币、红心、排行榜、活动、宝箱和底部导航</td><td>A+V+D</td><td>P0</td></tr></tbody></table></div>
 <h3>8.3 关卡页与棋盘交互</h3>
-<div class="table-wrap"><table><thead><tr><th>编号</th><th>前置条件与操作</th><th>预期结果</th><th>验证</th><th>级别</th></tr></thead><tbody><tr><td>LEVEL-001</td><td>进入正式关卡</td><td>顶部显示首页、金币、红心、帮助、设置、选关；底部仅显示小狮子和提示</td><td>A+V+D</td><td>P0</td></tr><tr><td>LEVEL-002</td><td>在 540×960 及目标设备打开 5x5、9x9 关卡</td><td>页面不裁切；棋盘保持正方形且主要按钮可点击</td><td>A+V+D</td><td>P0</td></tr><tr><td>LEVEL-003</td><td>打开帮助、设置和选关弹窗</td><td>使用统一模态层；遮挡底层输入；关闭和返回键有效</td><td>A+M+D</td><td>P0</td></tr><tr><td>LEVEL-004</td><td>打开选关、翻页并点击数字关卡</td><td>每页最多 20 个大触控数字按钮；选中态清楚；确认按钮、顶部标题和存档均使用所选 <code>levelId</code></td><td>A+V+M+D</td><td>P0</td></tr><tr><td>BOARD-001</td><td>单击空格，再次单击同格</td><td>第一次添加普通 X，第二次取消</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-002</td><td>双击标准答案格</td><td>放置并锁定小狮子，播放弹性出现反馈</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-003</td><td>单击、双击或滑过已确认小狮子</td><td>小狮子保持不变</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-004</td><td>从空格开始连续滑动</td><td>沿途合法空格批量添加普通 X</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-005</td><td>从普通 X 开始连续滑动</td><td>沿途普通 X 批量取消，不改变锁定状态</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-006</td><td>双击非答案格</td><td>只扣 1 颗红心并生成锁定红 X，不扣道具或金币</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-007</td><td>在第 10、11、30、31 展示关进入/重试</td><td>红心上限依次按 3、2、2、1 设置</td><td>A</td><td>P0</td></tr><tr><td>BOARD-008</td><td>红心降至 0</td><td>棋盘锁定并进入失败页</td><td>A+V+D</td><td>P0</td></tr><tr><td>BOARD-009</td><td>制造同行、同列、同区域和相邻冲突</td><td>开启即时纠错时准确标出冲突，通关判定仍拒绝冲突</td><td>A</td><td>P0</td></tr><tr><td>BOARD-010</td><td>Android/触屏单击一次空格</td><td>只触发一次普通 X，不触发小狮子尝试</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-011</td><td>同一格两次完整点击，间隔在安全窗口内且移动距离很小</td><td>第一次点击立即给出普通 X 反馈，第二次点击升级为一次小狮子尝试</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-012</td><td>两次点击间隔过短、过长、跨格或移动距离过大</td><td>不触发双击，按各自合法单击处理</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-013</td><td>同一次触屏操作后收到 Android 兼容鼠标事件</td><td>只处理触屏输入，不重复触发单击或双击</td><td>A+D</td><td>P0</td></tr><tr><td>BOARD-014</td><td>从格子开始滑动到其它格子</td><td>只进入滑动批量 X 逻辑，不触发单击或双击</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-015</td><td>单击/双击已锁定小狮子、提示小狮子、开局小狮子或错误红 X</td><td>锁定状态完全不变，不触发新操作</td><td>A+M+D</td><td>P0</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>编号</th><th>前置条件与操作</th><th>预期结果</th><th>验证</th><th>级别</th></tr></thead><tbody><tr><td>LEVEL-001</td><td>进入正式关卡</td><td>顶部显示首页、金币、红心、帮助、设置、选关；底部仅显示小狮子和提示</td><td>A+V+D</td><td>P0</td></tr><tr><td>LEVEL-002</td><td>在 540×960 及目标设备打开 5x5、9x9 关卡</td><td>页面不裁切；棋盘保持正方形且主要按钮可点击</td><td>A+V+D</td><td>P0</td></tr><tr><td>LEVEL-003</td><td>打开帮助、设置和选关弹窗</td><td>使用统一模态层；遮挡底层输入；关闭和返回键有效</td><td>A+M+D</td><td>P0</td></tr><tr><td>LEVEL-004</td><td>打开选关、翻页并点击数字关卡</td><td>每页最多 20 个大触控数字按钮；选中态清楚；确认按钮、顶部标题和存档均使用所选 <code>levelId</code></td><td>A+V+M+D</td><td>P0</td></tr><tr><td>BOARD-001</td><td>单击空格，再次单击同格</td><td>第一次添加普通 X，第二次取消</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-002</td><td>双击标准答案格</td><td>放置并锁定小狮子，播放弹性出现反馈</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-003</td><td>单击、双击或滑过已确认小狮子</td><td>小狮子保持不变</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-004</td><td>从空格开始连续滑动</td><td>沿途合法空格批量添加普通 X</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-005</td><td>从普通 X 开始连续滑动</td><td>沿途普通 X 批量取消，不改变锁定状态</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-006</td><td>双击非答案格</td><td>只扣 1 颗红心并生成锁定红 X，不扣道具或金币</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-007</td><td>在第 10、11、30、31 展示关进入/重试</td><td>红心上限依次按 3、2、2、1 设置</td><td>A</td><td>P0</td></tr><tr><td>BOARD-008</td><td>红心降至 0</td><td>棋盘锁定，最后一个错误红 X 保持可见 1.5 秒后进入失败页</td><td>A+V+D</td><td>P0</td></tr><tr><td>BOARD-009</td><td>制造同行、同列、同区域和相邻冲突</td><td>开启即时纠错时准确标出冲突，通关判定仍拒绝冲突</td><td>A</td><td>P0</td></tr><tr><td>BOARD-010</td><td>Android/触屏单击一次空格</td><td>只触发一次普通 X，不触发小狮子尝试</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-011</td><td>同一格两次完整点击，间隔在安全窗口内且移动距离很小</td><td>第一次点击立即给出普通 X 反馈，第二次点击升级为一次小狮子尝试</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-012</td><td>两次点击间隔过短、过长、跨格或移动距离过大</td><td>不触发双击，按各自合法单击处理</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-013</td><td>同一次触屏操作后收到 Android 兼容鼠标事件</td><td>只处理触屏输入，不重复触发单击或双击</td><td>A+D</td><td>P0</td></tr><tr><td>BOARD-014</td><td>从格子开始滑动到其它格子</td><td>只进入滑动批量 X 逻辑，不触发单击或双击</td><td>A+M+D</td><td>P0</td></tr><tr><td>BOARD-015</td><td>单击/双击已锁定小狮子、提示小狮子、开局小狮子或错误红 X</td><td>锁定状态完全不变，不触发新操作</td><td>A+M+D</td><td>P0</td></tr></tbody></table></div>
 <h3>8.4 提示、道具与经济</h3>
-<div class="table-wrap"><table><thead><tr><th>编号</th><th>前置条件与操作</th><th>预期结果</th><th>验证</th><th>级别</th></tr></thead><tbody><tr><td>HINT-001</td><td>正式关卡使用提示</td><td>目标只包含可画普通 X 的非答案空格</td><td>A+M</td><td>P0</td></tr><tr><td>HINT-002</td><td>提示状态下点击目标和非目标</td><td>目标可画 X；非目标不可操作</td><td>A+M+D</td><td>P0</td></tr><tr><td>HINT-003</td><td>查看提示态</td><td>非目标覆盖白灰蒙层；目标与已有标记保持正常亮度；无文字、框、光环或闪烁</td><td>A+V+D</td><td>P0</td></tr><tr><td>HINT-004</td><td>当前没有合法排除目标时使用提示</td><td>不消耗免费次数或金币</td><td>A</td><td>P0</td></tr><tr><td>TOOL-001</td><td>使用前三次小狮子直找</td><td>每次直接放置一个锁定答案小狮子并扣 1 次免费次数</td><td>A+M</td><td>P0</td></tr><tr><td>TOOL-002</td><td>免费次数耗尽后使用道具</td><td>点击前显示价格；余额足够时正确扣款并刷新</td><td>A+M</td><td>P0</td></tr><tr><td>TOOL-003</td><td>金币不足时使用道具</td><td>弹窗显示价格、余额和缺口，不产生虚假到账</td><td>A+V</td><td>P1</td></tr><tr><td>ECON-001</td><td>完成不同尺寸、提示数量和错误次数的关卡</td><td>奖励和价格符合 <code>CoinEconomy</code> 规则，最低奖励不低于基础奖励的 50%</td><td>A</td><td>P0</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>编号</th><th>前置条件与操作</th><th>预期结果</th><th>验证</th><th>级别</th></tr></thead><tbody><tr><td>HINT-001</td><td>正式关卡使用提示</td><td>目标只包含可画普通 X 的非答案空格</td><td>A+M</td><td>P0</td></tr><tr><td>HINT-002</td><td>提示状态下点击目标和非目标</td><td>目标可画 X；非目标不可操作</td><td>A+M+D</td><td>P0</td></tr><tr><td>HINT-003</td><td>查看提示态</td><td>非目标覆盖白灰蒙层；目标与已有标记保持正常亮度；无文字、框、光环或闪烁</td><td>A+V+D</td><td>P0</td></tr><tr><td>HINT-004</td><td>当前没有合法排除目标时使用提示</td><td>不消耗免费次数或金币</td><td>A</td><td>P0</td></tr><tr><td>TOOL-001</td><td>使用前三次小狮子直找</td><td>每次直接放置一个锁定答案小狮子并扣 1 次免费次数</td><td>A+M</td><td>P0</td></tr><tr><td>TOOL-002</td><td>免费次数耗尽后使用道具</td><td>按钮显示 <code>×0</code>，点击弹出购买金币 / 观看激励广告获取积分入口，不直接执行道具</td><td>A+M</td><td>P0</td></tr><tr><td>TOOL-003</td><td>免费次数耗尽弹窗</td><td>弹窗展示获取入口，不产生虚假到账</td><td>A+V</td><td>P1</td></tr><tr><td>ECON-001</td><td>完成不同尺寸、提示数量和错误次数的关卡</td><td>奖励和价格符合 <code>CoinEconomy</code> 规则，最低奖励不低于基础奖励的 50%</td><td>A</td><td>P0</td></tr></tbody></table></div>
 <h3>8.5 教程、结果、存档与本地化</h3>
-<div class="table-wrap"><table><thead><tr><th>编号</th><th>前置条件与操作</th><th>预期结果</th><th>验证</th><th>级别</th></tr></thead><tbody><tr><td>TUTOR-001</td><td>删除存档后启动</td><td>自动进入单张 5x5 新手教程</td><td>A+V+D</td><td>P0</td></tr><tr><td>TUTOR-002</td><td>完成教程全部阶段</td><td>依次覆盖双击、无蒙层多格连续滑动排除、行列排除、提示、直找和全部小狮子；正式提示蒙层规则不受影响</td><td>A+V+M+D</td><td>P0</td></tr><tr><td>TUTOR-003</td><td>教程使用小狮子直找</td><td>放置锁定小狮子但不消耗正式次数或金币</td><td>A</td><td>P0</td></tr><tr><td>TUTOR-004</td><td>完成或确认跳过教程</td><td>保存完成状态并进入正式第 1 关</td><td>A+M</td><td>P0</td></tr><tr><td>RESULT-001</td><td>完成正式关卡</td><td>显示蓝色成功页、胜利小狮子、下一关和主菜单</td><td>A+V+D</td><td>P0</td></tr><tr><td>RESULT-002</td><td>红心耗尽</td><td>显示蓝色失败页、失败小狮子、重新挑战和返回首页，无金币复活</td><td>A+V+D</td><td>P0</td></tr><tr><td>SAVE-001</td><td>标记棋盘、修改资源后重启</td><td>当前关卡、棋盘、金币、次数和完成记录正确恢复；临时提示蒙层、拖动状态和弹窗不残留</td><td>A+M+D</td><td>P0</td></tr><tr><td>SAVE-002</td><td>使用上一存档版本启动</td><td>兼容迁移或安全回退，不丢失可保留进度</td><td>A+M</td><td>P0</td></tr><tr><td>SAVE-003</td><td>红心归零失败后重启并点击开始关卡</td><td>保留失败状态并显示失败页，可重新挑战或返回首页</td><td>A+M+D</td><td>P0</td></tr><tr><td>I18N-001</td><td>切换中、英、法、拉丁语</td><td>文案翻译且布局恢复 LTR，无缺字和裁切</td><td>A+V+D</td><td>P1</td></tr><tr><td>I18N-002</td><td>切换阿拉伯语</td><td>页面与弹窗使用 RTL，棋盘坐标和逻辑不镜像</td><td>A+V+D</td><td>P0</td></tr><tr><td>AUDIO-001</td><td>执行 X、取消、正确、错误、掉心、提示、直找和通关</td><td>每个事件只播放对应的短促反馈，设置开关有效</td><td>A+M+D</td><td>P1</td></tr><tr><td>MOTION-001</td><td>放置正确小狮子、错误红 X、停顿约 8 秒</td><td>分别播放弹性出现、短震动和轻微摇头，不持续干扰</td><td>A+M+D</td><td>P1</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>编号</th><th>前置条件与操作</th><th>预期结果</th><th>验证</th><th>级别</th></tr></thead><tbody><tr><td>TUTOR-001</td><td>删除存档后启动</td><td>自动进入单张 5x5 新手教程</td><td>A+V+D</td><td>P0</td></tr><tr><td>TUTOR-002</td><td>完成教程全部阶段</td><td>依次覆盖双击、无蒙层多格连续滑动排除、行列排除、提示、直找和全部小狮子；正式提示蒙层规则不受影响</td><td>A+V+M+D</td><td>P0</td></tr><tr><td>TUTOR-003</td><td>教程使用提示和小狮子直找</td><td>非教学阶段道具计数为空；引导点击时显示 <code>×1</code>；点击后显示 <code>×0</code>；直找放置锁定小狮子但不消耗正式次数或金币</td><td>A+V</td><td>P0</td></tr><tr><td>TUTOR-004</td><td>完成或确认跳过教程</td><td>保存完成状态并进入正式第 1 关</td><td>A+M</td><td>P0</td></tr><tr><td>RESULT-001</td><td>完成正式关卡</td><td>显示蓝色成功页、胜利小狮子、下一关和主菜单</td><td>A+V+D</td><td>P0</td></tr><tr><td>RESULT-002</td><td>红心耗尽</td><td>最后一个错误红 X 先停顿展示 1.5 秒，再显示蓝色失败页、失败小狮子、重新挑战和返回首页，无金币复活</td><td>A+V+D</td><td>P0</td></tr><tr><td>SAVE-001</td><td>标记棋盘、修改资源后重启</td><td>当前关卡、棋盘、金币、次数和完成记录正确恢复；临时提示蒙层、拖动状态和弹窗不残留</td><td>A+M+D</td><td>P0</td></tr><tr><td>SAVE-002</td><td>使用上一存档版本启动</td><td>兼容迁移或安全回退，不丢失可保留进度</td><td>A+M</td><td>P0</td></tr><tr><td>SAVE-003</td><td>红心归零失败后返回首页或重启并点击开始关卡</td><td>重新开始当前关卡，红心恢复，错误红 X 清空，不再次显示旧失败页</td><td>A+M+D</td><td>P0</td></tr><tr><td>I18N-001</td><td>切换中、英、法、拉丁语</td><td>文案翻译且布局恢复 LTR，无缺字和裁切</td><td>A+V+D</td><td>P1</td></tr><tr><td>I18N-002</td><td>切换阿拉伯语</td><td>页面与弹窗使用 RTL，棋盘坐标和逻辑不镜像</td><td>A+V+D</td><td>P0</td></tr><tr><td>AUDIO-001</td><td>执行 X、取消、正确、错误、掉心、提示、直找和通关</td><td>每个事件只播放对应的短促反馈，设置开关有效</td><td>A+M+D</td><td>P1</td></tr><tr><td>MOTION-001</td><td>放置正确小狮子、错误红 X、停顿约 8 秒</td><td>分别播放弹性出现、短震动和轻微摇头，不持续干扰</td><td>A+M+D</td><td>P1</td></tr></tbody></table></div>
 <h3>8.6 关卡数据与编辑器</h3>
 <div class="table-wrap"><table><thead><tr><th>编号</th><th>前置条件与操作</th><th>预期结果</th><th>验证</th><th>级别</th></tr></thead><tbody><tr><td>DATA-001</td><td>加载全部默认关卡</td><td>数据结构完整，尺寸为 5x5-9x9，难度值合法</td><td>A</td><td>P0</td></tr><tr><td>DATA-002</td><td>校验全部默认关卡</td><td>每关唯一解，标准答案满足全部规则</td><td>A</td><td>P0</td></tr><tr><td>DATA-003</td><td>校验推理数据</td><td>每关含 <code>logicStatus: no_guess</code>、<code>hintSteps</code> 和 <code>solveSteps</code></td><td>A</td><td>P0</td></tr><tr><td>EDITOR-001</td><td>打开编辑器、涂色并切换答案模式</td><td>场景正常加载，区域和答案编辑有效</td><td>A+M</td><td>P1</td></tr></tbody></table></div>
 <h2>9. 发布验证与执行命令</h2>

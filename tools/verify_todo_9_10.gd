@@ -28,7 +28,7 @@ func _run() -> void:
 	await _verify_resume_after_hint(31)
 	await _verify_resume_after_drag(31)
 	await _verify_resume_after_wrong_mark(11)
-	await _verify_resume_failed_overlay(31)
+	await _verify_start_after_failed_save_restarts_level(31)
 
 	_remove_save()
 	if failures.is_empty():
@@ -89,7 +89,10 @@ func _verify_high_level_failure_flow(game, display_level: int) -> void:
 		else:
 			failure_seen += 1
 			_check(game.is_failed, "Display level %d should fail when hearts reach zero" % display_level)
-			_check(game.completion_overlay.visible, "Display level %d should show failure overlay when hearts reach zero" % display_level)
+			_check(not game.completion_overlay.visible, "Display level %d should keep the wrong red X visible before the failure overlay" % display_level)
+			await create_timer(1.6).timeout
+			await _settle()
+			_check(game.completion_overlay.visible, "Display level %d should show failure overlay after the red X pause" % display_level)
 			_check(game.result_overlay_mode == "failure", "Display level %d should enter failure result mode" % display_level)
 			_check(game.completion_next_button.text == "重新挑战", "Display level %d failure primary button should retry" % display_level)
 			_check(game.completion_replay_button.text == "返回首页", "Display level %d failure secondary button should return home" % display_level)
@@ -166,7 +169,7 @@ func _verify_resume_after_wrong_mark(display_level: int) -> void:
 	await _dispose_game(restored)
 
 
-func _verify_resume_failed_overlay(display_level: int) -> void:
+func _verify_start_after_failed_save_restarts_level(display_level: int) -> void:
 	_remove_save()
 	var game = await _new_game()
 	_load_display_level(game, display_level)
@@ -174,17 +177,23 @@ func _verify_resume_failed_overlay(display_level: int) -> void:
 	game._on_cell_double_pressed(wrong.y, wrong.x)
 	await _settle()
 	_check(game.is_failed, "Display level %d should fail after one wrong mark at one-heart tiers" % display_level)
+	_check(not game.completion_overlay.visible, "Failed state should keep the wrong red X visible before the overlay")
+	await create_timer(1.6).timeout
+	await _settle()
 	_check(game.completion_overlay.visible, "Failed state should show the failure overlay before app exit")
 	await _dispose_game(game)
 
 	var restored = await _new_game()
 	await _settle()
-	_check(restored.is_failed, "Resume after failed level should preserve failed state")
+	_check(restored.is_failed, "Resume after failed level should preserve failed state until the player starts from home")
 	restored._start_current_flow()
 	await _settle()
-	_check(restored.completion_overlay.visible, "Starting a resumed failed level should show failure overlay")
-	_check(restored.result_overlay_mode == "failure", "Resume after failed level should remain in failure mode")
-	_check(restored.board.guide_cells.is_empty(), "Resume after failed level should not show a stale hint mask")
+	_check(restored.game_screen.visible, "Starting from home after a failed save should enter a fresh game")
+	_check(not restored.is_failed, "Starting from home after a failed save should clear the failed state")
+	_check(not restored.completion_overlay.visible, "Starting from home after a failed save should not show failure overlay")
+	_check(restored.heart_count == restored.current_heart_limit, "Starting from home after a failed save should restore hearts")
+	_check(restored.cell_states[wrong.y][wrong.x] != "wrong", "Starting from home after a failed save should clear locked wrong marks")
+	_check(restored.board.guide_cells.is_empty(), "Starting from home after a failed save should not show a stale hint mask")
 	await _dispose_game(restored)
 
 
