@@ -38,7 +38,7 @@ const LION_KING_VICTORY_FRAMES = [
 	LION_KING_VICTORY_FUNNY_ICON
 ]
 const SAVE_PATH := "user://color_queens_save.json"
-const SAVE_VERSION := 10
+const SAVE_VERSION := 11
 const INITIAL_HINT_COUNT := 3
 const INITIAL_HEART_COUNT := 3
 const INITIAL_CROWN_FIND_COUNT := 3
@@ -116,6 +116,7 @@ var resume_failed := false
 var formal_progress_snapshot: Dictionary = {}
 var home_composite_progress_snapshot: Dictionary = {}
 var home_composite_entry_active := false
+var home_composite_round := 0
 var resume_composite_state: Dictionary = {}
 var composite_mode := false
 var composite_phase := "crown"
@@ -1424,7 +1425,7 @@ func _prepare_composite_level(allow_resume: bool) -> void:
 
 	if not bool(active_schedule.get("assemblyEnabled", false)) or int(current_level.get("rows", 0)) < 6:
 		return
-	var seed := int(resume_composite_state.get("seed", 0)) if saved_matches else 0
+	var seed := int(resume_composite_state.get("seed", 0)) if saved_matches else int(active_schedule.get("assemblySeed", 0))
 	if seed == 0:
 		seed = int(current_level.get("levelId", 1)) * 1000003 + player_level_number * 9176 + 20260722
 	if saved_matches:
@@ -1733,6 +1734,8 @@ func _level_coach_text() -> String:
 
 
 func _display_level_title() -> String:
+	if home_composite_entry_active:
+		return _t("拼块挑战 · 第 %d 局", [maxi(1, home_composite_round)])
 	if bool(active_schedule.get("isMilestoneChallenge", false)):
 		return _t("关卡 %d · 难度挑战", [player_level_number])
 	return _t("关卡 %d", [player_level_number])
@@ -4374,7 +4377,7 @@ func _complete_level() -> void:
 func _prepare_success_result_page(reward: int = 0) -> void:
 	result_overlay_mode = "success"
 	completion_title.text = "太棒了！"
-	reward_label.text = "拼块挑战 已完成" if home_composite_entry_active else _t("第 %d 关 已完成", [player_level_number])
+	reward_label.text = _t("拼块挑战 · 第 %d 局完成", [maxi(1, home_composite_round)]) if home_composite_entry_active else _t("第 %d 关 已完成", [player_level_number])
 	if result_icon_label:
 		result_icon_label.hide()
 	if result_piece_icon:
@@ -4385,7 +4388,7 @@ func _prepare_success_result_page(reward: int = 0) -> void:
 	if result_tip_label:
 		result_tip_label.text = "主线进度保持不变" if home_composite_entry_active else ("金币 +%d" % reward if reward > 0 else "本关已完成，继续挑战")
 	if completion_next_button:
-		completion_next_button.text = "再玩一次" if home_composite_entry_active else "下一关"
+		completion_next_button.text = _t("下一局") if home_composite_entry_active else "下一关"
 	if completion_replay_button:
 		completion_replay_button.text = "主菜单"
 		completion_replay_button.show()
@@ -4396,7 +4399,7 @@ func _prepare_failure_result_page() -> void:
 	result_overlay_mode = "failure"
 	_stop_result_lion_animation()
 	completion_title.text = "挑战失败"
-	reward_label.text = "拼块挑战 未完成" if home_composite_entry_active else _t("第 %d 关 未完成", [player_level_number])
+	reward_label.text = _t("拼块挑战 · 第 %d 局未完成", [maxi(1, home_composite_round)]) if home_composite_entry_active else _t("第 %d 关 未完成", [player_level_number])
 	if result_icon_label:
 		result_icon_label.text = "♥"
 		result_icon_label.add_theme_color_override("font_color", Color("#F25D72"))
@@ -4535,8 +4538,11 @@ func _next_level() -> void:
 func _completion_primary_pressed() -> void:
 	if home_composite_entry_active:
 		completion_overlay.hide()
-		_replay_level()
-		_show_game()
+		if result_overlay_mode == "success":
+			_start_next_home_composite_round()
+		else:
+			_replay_level()
+			_show_game()
 		return
 	match result_overlay_mode:
 		"tutorial":
@@ -4874,6 +4880,7 @@ func _load_save() -> void:
 	var loaded_formal_snapshot = data.get("formalProgressSnapshot", {})
 	formal_progress_snapshot = loaded_formal_snapshot.duplicate(true) if loaded_formal_snapshot is Dictionary else {}
 	home_composite_entry_active = bool(data.get("homeCompositeEntryActive", false))
+	home_composite_round = maxi(0, int(data.get("homeCompositeRound", 0)))
 	var loaded_home_composite_snapshot = data.get("homeCompositeProgressSnapshot", {})
 	home_composite_progress_snapshot = loaded_home_composite_snapshot.duplicate(true) if loaded_home_composite_snapshot is Dictionary else {}
 	var loaded_composite_state = data.get("compositeState", {})
@@ -4967,12 +4974,14 @@ func _restore_home_composite_progress() -> bool:
 	if not _formal_progress_snapshot_is_valid(snapshot):
 		home_composite_progress_snapshot.clear()
 		home_composite_entry_active = false
+		home_composite_round = 0
 		return false
 	var preserved_tutorial_snapshot := formal_progress_snapshot.duplicate(true)
 	var tutorial_seen_in_entry := composite_tutorial_seen
 	formal_progress_snapshot = snapshot
 	home_composite_progress_snapshot.clear()
 	home_composite_entry_active = false
+	home_composite_round = 0
 	composite_intro_running = false
 	composite_intro_marks_seen = false
 	var restored := _restore_formal_progress_snapshot()
@@ -5013,6 +5022,7 @@ func _save_game() -> void:
 		"tutorialStepIndex": tutorial_step_index,
 		"formalProgressSnapshot": formal_progress_snapshot,
 		"homeCompositeEntryActive": home_composite_entry_active,
+		"homeCompositeRound": home_composite_round,
 		"homeCompositeProgressSnapshot": home_composite_progress_snapshot,
 		"compositeState": _composite_save_state(),
 		"compositeTutorialSeen": composite_tutorial_seen
@@ -5121,8 +5131,9 @@ func _update_hint_button() -> void:
 	if in_tutorial:
 		if hint_button_label:
 			hint_button_label.text = "提示"
-		_refresh_tool_button_visual(hint_button)
+			_refresh_tool_button_visual(hint_button)
 		return
+	hint_button.disabled = is_completed or is_failed or _is_assembly_phase()
 	if hint_count > 0:
 		if hint_button_label:
 			hint_button_label.text = _t("提示 ×%d", [hint_count])
@@ -5185,7 +5196,7 @@ func _start_home_composite_flow() -> void:
 	if not tutorial_completed:
 		_start_current_flow()
 		return
-	var candidate := _home_composite_candidate()
+	var candidate := _home_composite_candidate(1)
 	if candidate.is_empty():
 		_show_toast("暂时没有可用的 6×6 拼块关卡")
 		return
@@ -5195,6 +5206,7 @@ func _start_home_composite_flow() -> void:
 	home_composite_progress_snapshot = formal_progress_snapshot.duplicate(true)
 	formal_progress_snapshot.clear()
 	home_composite_entry_active = true
+	home_composite_round = 1
 	resume_level_id = -1
 	resume_states.clear()
 	resume_composite_state.clear()
@@ -5208,17 +5220,50 @@ func _start_home_composite_flow() -> void:
 	_save_game()
 
 
-func _home_composite_candidate() -> Dictionary:
+func _start_next_home_composite_round() -> void:
+	var next_round := home_composite_round + 1
+	var candidate := _home_composite_candidate(next_round)
+	if candidate.is_empty():
+		_show_toast("下一局生成失败，请重试")
+		completion_overlay.show()
+		return
+	home_composite_round = next_round
+	resume_level_id = -1
+	resume_states.clear()
+	resume_composite_state.clear()
+	_load_level(int(candidate["levelIndex"]), false, candidate["schedule"])
+	if not _is_assembly_phase():
+		home_composite_round -= 1
+		_show_toast("下一局生成失败，请重试")
+		completion_overlay.show()
+		return
+	_show_game()
+	_save_game()
+
+
+func _home_composite_candidate(round_number: int = 1) -> Dictionary:
+	var candidate_indices: Array[int] = []
 	for index in range(levels.size()):
 		var level: Dictionary = levels[index]
-		if int(level.get("rows", 0)) != 6 or int(level.get("cols", 0)) != 6:
-			continue
-		var schedule := LevelDirectorScript.manual_schedule_for_level(levels, index, 80, "home_composite")
-		schedule["assemblyEnabled"] = true
-		var seed := int(level.get("levelId", 1)) * 1000003 + 80 * 9176 + 20260722
+		if int(level.get("rows", 0)) == 6 and int(level.get("cols", 0)) == 6:
+			candidate_indices.append(index)
+	if candidate_indices.is_empty():
+		return {}
+	var safe_round := maxi(1, round_number)
+	var start_offset := posmod(safe_round - 1, candidate_indices.size())
+	for candidate_offset in range(candidate_indices.size()):
+		var index := candidate_indices[(start_offset + candidate_offset) % candidate_indices.size()]
+		var level: Dictionary = levels[index]
+		var seed := int(level.get("levelId", 1)) * 1000003 + safe_round * 7919 + 20260722
 		for seed_offset in range(12):
-			if not CompositeLevelScript.build(level, seed + seed_offset).is_empty():
-				return {"levelIndex": index, "schedule": schedule}
+			var resolved_seed := seed + seed_offset
+			if CompositeLevelScript.build(level, resolved_seed).is_empty():
+				continue
+			var schedule := LevelDirectorScript.manual_schedule_for_level(levels, index, 1, "home_composite")
+			schedule["assemblyEnabled"] = true
+			schedule["assemblySeed"] = resolved_seed
+			schedule["homeCompositeRound"] = safe_round
+			return {"levelIndex": index, "schedule": schedule}
 	return {}
 
 
@@ -5264,7 +5309,7 @@ func _update_tutorial_button() -> void:
 	if top_home_button:
 		top_home_button.show()
 	if level_select_button:
-		level_select_button.visible = not in_tutorial
+		level_select_button.visible = not in_tutorial and not home_composite_entry_active
 	if help_button:
 		help_button.show()
 	if level_heart_label:

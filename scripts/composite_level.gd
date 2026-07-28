@@ -3,8 +3,15 @@ extends RefCounted
 
 const MAX_VALID_LAYOUTS := 6
 const MAX_SEARCH_NODES := 60000
-const MIN_PIECE_CELLS := 2
+const MIN_REGION_CELLS := 3
+const MIN_STANDARD_PIECE_CELLS := 2
+const SPLIT_ATTEMPTS := 3
 const ORTHOGONAL := [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]
+const SURROUNDING := [
+	Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
+	Vector2i(-1, 0), Vector2i(1, 0),
+	Vector2i(-1, 1), Vector2i(0, 1), Vector2i(1, 1)
+]
 
 const SHAPE_TEMPLATES := [
 	{"family": "bar", "cells": [[0, 0], [0, 1]]},
@@ -14,7 +21,8 @@ const SHAPE_TEMPLATES := [
 	{"family": "l", "cells": [[0, 0], [1, 0], [1, 1]]},
 	{"family": "l", "cells": [[0, 0], [1, 0], [2, 0], [2, 1]]},
 	{"family": "t", "cells": [[0, 0], [0, 1], [0, 2], [1, 1]]},
-	{"family": "step", "cells": [[0, 0], [0, 1], [1, 1], [1, 2]]},
+	{"family": "z", "cells": [[0, 0], [0, 1], [1, 1], [1, 2]]},
+	{"family": "z", "cells": [[0, 1], [0, 2], [1, 0], [1, 1]]},
 	{"family": "irregular", "cells": [[0, 0], [1, 0], [1, 1], [2, 1], [2, 2]]}
 ]
 
@@ -30,23 +38,26 @@ static func build(level: Dictionary, seed: int) -> Dictionary:
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
+	var difficulty := _normalize_difficulty(str(level.get("difficulty", "medium")))
 	var region_cells := _cells_by_region(base_regions)
-	var selected_ids := _select_regions(region_cells, base_regions, rng)
+	var selected_ids := _select_regions(region_cells, base_regions, rng, difficulty)
 	if selected_ids.is_empty():
 		return {}
 
 	var pieces: Array = []
+	var clue_cells: Array = []
+	var construction_cells: Array = []
 	var next_piece_id := 0
 	for region_id in selected_ids:
 		var cells: Array = region_cells.get(int(region_id), [])
-		var desired_count := 3 if cells.size() >= 8 and rng.randf() < 0.48 else 2
-		var split := _split_region(cells, desired_count, rng, str(level.get("difficulty", "medium")))
+		var split_result := _split_region_with_clue(cells, rng, difficulty)
+		var split: Array = split_result.get("pieces", [])
 		if split.is_empty():
-			split = _split_region(cells, 2, rng, str(level.get("difficulty", "medium")))
-		if split.size() < 2:
 			return {}
+		clue_cells.append_array(split_result.get("clueCells", []))
 		for raw_piece in split:
 			var absolute_cells: Array = raw_piece
+			construction_cells.append_array(absolute_cells)
 			var normalized := _normalize_cells(absolute_cells)
 			pieces.append({
 				"pieceId": next_piece_id,
@@ -58,21 +69,23 @@ static func build(level: Dictionary, seed: int) -> Dictionary:
 			})
 			next_piece_id += 1
 
-	var construction_cells: Array = []
-	for region_id in selected_ids:
-		construction_cells.append_array(region_cells.get(int(region_id), []))
 	construction_cells.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		return a.y < b.y or (a.y == b.y and a.x < b.x)
+	)
+	clue_cells.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 		return a.y < b.y or (a.y == b.y and a.x < b.x)
 	)
 
 	var data := {
-		"version": 1,
+		"version": 3,
 		"seed": seed,
+		"difficulty": difficulty,
 		"rows": rows,
 		"cols": cols,
 		"baseRegions": base_regions.duplicate(true),
 		"lockedRegionIds": _locked_region_ids(region_cells, selected_ids),
 		"selectedRegionIds": selected_ids.duplicate(),
+		"clueCells": _cells_to_arrays(clue_cells),
 		"constructionCells": _cells_to_arrays(construction_cells),
 		"pieces": pieces,
 		"validLayouts": []
@@ -137,67 +150,251 @@ static func matching_layout(data: Dictionary, placements: Dictionary) -> Diction
 	return {}
 
 
-static func _select_regions(region_cells: Dictionary, regions: Array, rng: RandomNumberGenerator) -> Array:
-	var pair_candidates: Array = []
-	var seen_pairs := {}
+static func _select_regions(region_cells: Dictionary, regions: Array, rng: RandomNumberGenerator, raw_difficulty: String = "medium") -> Array:
+	var difficulty := _normalize_difficulty(raw_difficulty)
+	var eligible_ids: Array = []
+	for region_id in region_cells.keys():
+		if region_cells[region_id].size() >= MIN_REGION_CELLS:
+			eligible_ids.append(int(region_id))
+	if eligible_ids.is_empty():
+		return []
+	eligible_ids.sort()
+
+	if difficulty == "simple" and (eligible_ids.size() < 2 or rng.randf() < 0.55):
+		return [_largest_region_id(eligible_ids, region_cells, rng)]
+
+	var desired_count := 3 if difficulty == "hard" else 2
+	if eligible_ids.size() < desired_count:
+		return [_largest_region_id(eligible_ids, region_cells, rng)] if difficulty == "simple" else []
+	var adjacency := _region_adjacency(regions, eligible_ids)
+	var groups := _adjacent_region_groups(eligible_ids, adjacency, desired_count)
+	if groups.is_empty():
+		return [_largest_region_id(eligible_ids, region_cells, rng)] if difficulty == "simple" else []
+
+	var scored: Array = []
+	for ids in groups:
+		var coverage := 0
+		var combined: Array = []
+		var spread := 0.0
+		for region_id in ids:
+			coverage += region_cells[int(region_id)].size()
+			combined.append_array(region_cells[int(region_id)])
+		for first_index in range(ids.size()):
+			for second_index in range(first_index + 1, ids.size()):
+				spread += _cells_center(region_cells[int(ids[first_index])]).distance_to(
+					_cells_center(region_cells[int(ids[second_index])])
+				)
+		var bounds := _cell_bounds(combined)
+		spread += float(bounds.size.x + bounds.size.y)
+		scored.append({"ids": ids.duplicate(), "coverage": coverage, "score": float(coverage) + spread})
+
+	if difficulty == "simple":
+		scored.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return int(a["coverage"]) < int(b["coverage"])
+		)
+		var minimum_coverage := int(scored[0]["coverage"])
+		var smallest: Array = scored.filter(func(candidate: Dictionary) -> bool:
+			return int(candidate["coverage"]) == minimum_coverage
+		)
+		return smallest[rng.randi_range(0, smallest.size() - 1)]["ids"]
+
+	scored.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a["score"]) > float(b["score"])
+	)
+	var best_score := float(scored[0]["score"])
+	var best: Array = scored.filter(func(candidate: Dictionary) -> bool:
+		return is_equal_approx(float(candidate["score"]), best_score)
+	)
+	return best[rng.randi_range(0, best.size() - 1)]["ids"]
+
+
+static func _largest_region_id(region_ids: Array, region_cells: Dictionary, rng: RandomNumberGenerator) -> int:
+	var largest_size := 0
+	var largest_ids: Array = []
+	for region_id in region_ids:
+		var cell_count: int = region_cells[int(region_id)].size()
+		if cell_count > largest_size:
+			largest_size = cell_count
+			largest_ids = [int(region_id)]
+		elif cell_count == largest_size:
+			largest_ids.append(int(region_id))
+	return int(largest_ids[rng.randi_range(0, largest_ids.size() - 1)])
+
+
+static func _region_adjacency(regions: Array, eligible_ids: Array) -> Dictionary:
+	var eligible := {}
+	var adjacency := {}
+	for region_id in eligible_ids:
+		eligible[int(region_id)] = true
+		adjacency[int(region_id)] = {}
 	for row in range(regions.size()):
 		for col in range(regions[row].size()):
 			var first := int(regions[row][col])
-			for offset in [Vector2i(1, 0), Vector2i(0, 1)]:
+			if not eligible.has(first):
+				continue
+			for offset in [Vector2i.RIGHT, Vector2i.DOWN]:
 				var neighbor: Vector2i = Vector2i(col, row) + offset
 				if neighbor.y >= regions.size() or neighbor.x >= regions[neighbor.y].size():
 					continue
 				var second := int(regions[neighbor.y][neighbor.x])
-				if first == second:
+				if first == second or not eligible.has(second):
 					continue
-				var low := mini(first, second)
-				var high := maxi(first, second)
-				var key := "%d:%d" % [low, high]
-				if seen_pairs.has(key):
-					continue
-				seen_pairs[key] = true
-				if region_cells.get(low, []).size() >= 4 and region_cells.get(high, []).size() >= 4:
-					pair_candidates.append([low, high])
-	if not pair_candidates.is_empty() and rng.randf() < 0.78:
-		return pair_candidates[rng.randi_range(0, pair_candidates.size() - 1)]
+				adjacency[first][second] = true
+				adjacency[second][first] = true
+	return adjacency
 
-	var single_candidates: Array = []
-	for region_id in region_cells.keys():
-		if region_cells[region_id].size() >= 4:
-			single_candidates.append(int(region_id))
-	if single_candidates.is_empty():
+
+static func _adjacent_region_groups(region_ids: Array, adjacency: Dictionary, desired_count: int) -> Array:
+	var combinations: Array = []
+	_collect_region_combinations(region_ids, desired_count, 0, [], combinations)
+	var result: Array = []
+	for ids in combinations:
+		if _region_group_connected(ids, adjacency):
+			result.append(ids)
+	return result
+
+
+static func _collect_region_combinations(values: Array, desired_count: int, start: int, current: Array, result: Array) -> void:
+	if current.size() == desired_count:
+		result.append(current.duplicate())
+		return
+	var remaining_needed := desired_count - current.size()
+	for index in range(start, values.size() - remaining_needed + 1):
+		current.append(int(values[index]))
+		_collect_region_combinations(values, desired_count, index + 1, current, result)
+		current.pop_back()
+
+
+static func _region_group_connected(region_ids: Array, adjacency: Dictionary) -> bool:
+	if region_ids.is_empty():
+		return false
+	var allowed := {}
+	for region_id in region_ids:
+		allowed[int(region_id)] = true
+	var visited := {int(region_ids[0]): true}
+	var queue: Array = [int(region_ids[0])]
+	while not queue.is_empty():
+		var current := int(queue.pop_front())
+		for raw_neighbor in adjacency.get(current, {}).keys():
+			var neighbor := int(raw_neighbor)
+			if allowed.has(neighbor) and not visited.has(neighbor):
+				visited[neighbor] = true
+				queue.append(neighbor)
+	return visited.size() == allowed.size()
+
+
+static func _select_clue_cell(cells: Array, raw_difficulty: String, rng: RandomNumberGenerator) -> Vector2i:
+	var difficulty := _normalize_difficulty(raw_difficulty)
+	var cell_set := _cell_set(cells)
+	var edge_cells: Array = []
+	var interior_cells: Array = []
+	for cell in cells:
+		var interior := true
+		for direction in ORTHOGONAL:
+			if not cell_set.has(_cell_key(cell + direction)):
+				interior = false
+				break
+		if interior:
+			interior_cells.append(cell)
+		else:
+			edge_cells.append(cell)
+
+	var interior_probability := 0.0
+	if difficulty == "medium":
+		interior_probability = 0.40
+	elif difficulty == "hard":
+		interior_probability = 0.70
+	var candidates: Array = interior_cells if not interior_cells.is_empty() and rng.randf() < interior_probability else edge_cells
+	if candidates.is_empty():
+		candidates = interior_cells if not interior_cells.is_empty() else cells
+
+	var best_score := -1
+	var best: Array = []
+	for cell in candidates:
+		var score := _same_color_neighbor_count(cell, cell_set)
+		if score > best_score:
+			best_score = score
+			best = [cell]
+		elif score == best_score:
+			best.append(cell)
+	return best[rng.randi_range(0, best.size() - 1)]
+
+
+static func _same_color_neighbor_count(cell: Vector2i, cell_set: Dictionary) -> int:
+	var result := 0
+	for direction in SURROUNDING:
+		if cell_set.has(_cell_key(cell + direction)):
+			result += 1
+	return result
+
+
+static func _desired_piece_count(cell_count: int, raw_difficulty: String, rng: RandomNumberGenerator) -> int:
+	var difficulty := _normalize_difficulty(raw_difficulty)
+	var desired := 1
+	if difficulty == "simple":
+		if cell_count >= 4 and rng.randf() < 0.45:
+			desired = 2
+	elif difficulty == "medium":
+		desired = 2
+		if cell_count >= 7 and rng.randf() < 0.35:
+			desired = 3
+	else:
+		desired = 3 if cell_count >= 6 else 2
+	var maximum_without_unit := maxi(1, floori(float(cell_count) / float(MIN_STANDARD_PIECE_CELLS)))
+	return clampi(desired, 1, maximum_without_unit)
+
+
+static func _split_region_with_clue(cells: Array, rng: RandomNumberGenerator, difficulty: String) -> Dictionary:
+	if cells.size() < MIN_REGION_CELLS:
+		return {}
+	var clue := _select_clue_cell(cells, difficulty, rng)
+	var remaining := _subtract_cells(cells, [clue])
+	var desired_count := _desired_piece_count(remaining.size(), difficulty, rng)
+	for _attempt in range(SPLIT_ATTEMPTS):
+		var split := _split_region_from_clue(remaining, clue, desired_count, rng, difficulty, false)
+		if not split.is_empty():
+			return {"clueCells": [clue], "pieces": split}
+	var singleton_fallback := _split_region_from_clue(remaining, clue, desired_count, rng, difficulty, true)
+	if singleton_fallback.is_empty():
+		singleton_fallback = [remaining]
+	return {"clueCells": [clue], "pieces": singleton_fallback}
+
+
+static func _split_region_from_clue(
+	cells: Array,
+	clue: Vector2i,
+	piece_count: int,
+	rng: RandomNumberGenerator,
+	difficulty: String,
+	allow_singleton: bool
+) -> Array:
+	if cells.is_empty() or piece_count < 1:
 		return []
-	single_candidates.sort()
-	return [single_candidates[rng.randi_range(0, single_candidates.size() - 1)]]
-
-
-static func _split_region(cells: Array, piece_count: int, rng: RandomNumberGenerator, difficulty: String) -> Array:
-	if piece_count < 2 or cells.size() < piece_count * MIN_PIECE_CELLS:
-		return []
+	if piece_count == 1:
+		return [cells.duplicate()]
 	var remaining: Array = cells.duplicate()
 	var result: Array = []
+	var filled: Array = [clue]
 	for index in range(piece_count - 1):
-		var remaining_piece_count := piece_count - index - 1
-		var max_take := remaining.size() - remaining_piece_count * MIN_PIECE_CELLS
-		var candidates := _template_cut_candidates(remaining, max_take, difficulty)
+		if remaining.size() <= 1:
+			break
+		var candidates := _template_cut_candidates(remaining, filled, difficulty)
 		if candidates.is_empty():
-			var fallback := _random_connected_cut(remaining, max_take, rng)
+			var fallback := _random_growth_cut(remaining, filled, rng)
 			if fallback.is_empty():
 				return []
 			candidates.append(fallback)
 		var picked: Array = candidates[_weighted_candidate_index(candidates, difficulty, rng)].get("cells", [])
 		result.append(picked)
 		remaining = _subtract_cells(remaining, picked)
-	if remaining.size() < MIN_PIECE_CELLS or not _cells_connected(remaining):
+		filled.append_array(picked)
+	if remaining.is_empty() or (remaining.size() == 1 and not allow_singleton):
 		return []
 	result.append(remaining)
-	for piece in result:
-		if _cells_have_hole(piece):
-			return []
 	return result
 
 
-static func _template_cut_candidates(remaining: Array, max_take: int, difficulty: String) -> Array:
+static func _template_cut_candidates(remaining: Array, filled: Array, difficulty: String) -> Array:
 	var remaining_set := _cell_set(remaining)
 	var min_row := 999
 	var min_col := 999
@@ -213,7 +410,7 @@ static func _template_cut_candidates(remaining: Array, max_take: int, difficulty
 	for template in SHAPE_TEMPLATES:
 		var family := str(template.get("family", "irregular"))
 		for rotated in _rotations(_arrays_to_cells(template.get("cells", []))):
-			if rotated.size() > max_take:
+			if rotated.size() >= remaining.size():
 				continue
 			var bounds := _cell_bounds(rotated)
 			for row in range(min_row - int(bounds.position.y), max_row - int(bounds.end.y) + 2):
@@ -228,8 +425,7 @@ static func _template_cut_candidates(remaining: Array, max_take: int, difficulty
 						placed.append(absolute)
 					if not fits:
 						continue
-					var leftover := _subtract_cells(remaining, placed)
-					if leftover.size() < MIN_PIECE_CELLS or not _cells_connected(leftover):
+					if not _touches_any(placed, filled):
 						continue
 					var key := _cells_signature(placed)
 					if seen.has(key):
@@ -239,10 +435,19 @@ static func _template_cut_candidates(remaining: Array, max_take: int, difficulty
 	return candidates
 
 
-static func _random_connected_cut(remaining: Array, max_take: int, rng: RandomNumberGenerator) -> Dictionary:
+static func _random_growth_cut(remaining: Array, filled: Array, rng: RandomNumberGenerator) -> Dictionary:
 	for _attempt in range(80):
-		var target_size := rng.randi_range(MIN_PIECE_CELLS, maxi(MIN_PIECE_CELLS, max_take))
-		var selected: Array = [remaining[rng.randi_range(0, remaining.size() - 1)]]
+		var starts: Array = []
+		for cell in remaining:
+			if _touches_any([cell], filled):
+				starts.append(cell)
+		if starts.is_empty():
+			return {}
+		var maximum := remaining.size() - 1
+		if maximum < MIN_STANDARD_PIECE_CELLS:
+			return {}
+		var target_size := rng.randi_range(MIN_STANDARD_PIECE_CELLS, maximum)
+		var selected: Array = [starts[rng.randi_range(0, starts.size() - 1)]]
 		var selected_set := _cell_set(selected)
 		while selected.size() < target_size:
 			var frontier: Array = []
@@ -256,10 +461,18 @@ static func _random_connected_cut(remaining: Array, max_take: int, rng: RandomNu
 			var next: Vector2i = frontier[rng.randi_range(0, frontier.size() - 1)]
 			selected.append(next)
 			selected_set[_cell_key(next)] = true
-		var leftover := _subtract_cells(remaining, selected)
-		if selected.size() >= MIN_PIECE_CELLS and leftover.size() >= MIN_PIECE_CELLS and _cells_connected(leftover):
+		if selected.size() >= MIN_STANDARD_PIECE_CELLS and selected.size() < remaining.size():
 			return {"cells": selected, "family": "irregular", "weight": 1.0}
 	return {}
+
+
+static func _touches_any(cells: Array, other_cells: Array) -> bool:
+	var other_set := _cell_set(other_cells)
+	for cell in cells:
+		for direction in ORTHOGONAL:
+			if other_set.has(_cell_key(cell + direction)):
+				return true
+	return false
 
 
 static func _enumerate_valid_layouts(data: Dictionary, original_solution: Array) -> Array:
@@ -511,6 +724,15 @@ static func _cells_by_region(regions: Array) -> Dictionary:
 	return result
 
 
+static func _cells_center(cells: Array) -> Vector2:
+	if cells.is_empty():
+		return Vector2.ZERO
+	var total := Vector2.ZERO
+	for cell in cells:
+		total += Vector2(cell.x, cell.y)
+	return total / float(cells.size())
+
+
 static func _locked_region_ids(region_cells: Dictionary, selected_ids: Array) -> Array:
 	var result: Array = []
 	for region_id in region_cells.keys():
@@ -546,33 +768,6 @@ static func _cells_connected(cells: Array) -> bool:
 	return visited.size() == allowed.size()
 
 
-static func _cells_have_hole(cells: Array) -> bool:
-	if cells.size() < 8:
-		return false
-	var occupied := _cell_set(cells)
-	var bounds := _cell_bounds(cells).grow(1)
-	var start := Vector2i(bounds.position.x, bounds.position.y)
-	var visited := {_cell_key(start): true}
-	var queue: Array[Vector2i] = [start]
-	while not queue.is_empty():
-		var cell: Vector2i = queue.pop_front()
-		for direction in ORTHOGONAL:
-			var neighbor: Vector2i = cell + direction
-			if not bounds.has_point(neighbor):
-				continue
-			var key := _cell_key(neighbor)
-			if not occupied.has(key) and not visited.has(key):
-				visited[key] = true
-				queue.append(neighbor)
-	for row in range(bounds.position.y, bounds.end.y):
-		for col in range(bounds.position.x, bounds.end.x):
-			var cell := Vector2i(col, row)
-			var key := _cell_key(cell)
-			if not occupied.has(key) and not visited.has(key):
-				return true
-	return false
-
-
 static func _normalize_cells(cells: Array) -> Dictionary:
 	var min_col := 999
 	var min_row := 999
@@ -606,6 +801,14 @@ static func _rotations(cells: Array) -> Array:
 
 
 static func _shape_family(cells: Array) -> String:
+	var normalized_signature := _cells_signature(_normalize_cells(cells)["cells"])
+	for template in SHAPE_TEMPLATES:
+		var family := str(template.get("family", "irregular"))
+		if family != "z":
+			continue
+		for rotation in _rotations(_arrays_to_cells(template.get("cells", []))):
+			if _cells_signature(rotation) == normalized_signature:
+				return "z"
 	var bounds := _cell_bounds(cells)
 	if cells.size() == int(bounds.size.x * bounds.size.y):
 		return "rectangle" if bounds.size.x > 1 and bounds.size.y > 1 else "bar"
@@ -628,9 +831,18 @@ static func _shape_family(cells: Array) -> String:
 static func _family_weight(family: String, difficulty: String) -> float:
 	if difficulty == "simple":
 		return 4.0 if family == "rectangle" or family == "bar" else 1.2
+	if difficulty == "hard":
+		return 3.4 if family == "l" or family == "z" or family == "irregular" else 1.4
+	return 2.6 if family == "l" or family == "z" else 2.0
+
+
+static func _normalize_difficulty(raw_difficulty: String) -> String:
+	var difficulty := raw_difficulty.to_lower()
+	if difficulty == "simple":
+		return "simple"
 	if difficulty == "hard" or difficulty == "challenge":
-		return 3.4 if family == "l" or family == "step" or family == "irregular" else 1.4
-	return 2.6 if family == "l" or family == "step" else 2.0
+		return "hard"
+	return "medium"
 
 
 static func _weighted_candidate_index(candidates: Array, difficulty: String, rng: RandomNumberGenerator) -> int:

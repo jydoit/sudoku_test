@@ -46,13 +46,39 @@ func _run() -> void:
 	assert(not level.is_empty(), "Composite test requires a 6x6 or larger level")
 	assert(not composite.is_empty(), "A supported level should produce a composite assembly")
 	assert(int(composite["rows"]) >= 6, "Composite gameplay must start at 6x6")
-	assert(composite["selectedRegionIds"].size() >= 1 and composite["selectedRegionIds"].size() <= 2, "Assembly should remove one or two regions")
-	assert(composite["pieces"].size() >= 2, "Removed regions should split into multiple pieces")
-	assert(composite["validLayouts"].size() >= 2, "The runtime generator should retain multiple valid color layouts for dynamic crown calibration")
+	var composite_difficulty := str(composite.get("difficulty", "medium"))
+	var selected_count: int = composite["selectedRegionIds"].size()
+	if composite_difficulty == "simple":
+		assert(selected_count == 1 or selected_count == 2, "Simple assembly should use one or two color regions")
+	elif composite_difficulty == "medium":
+		assert(selected_count == 2, "Medium assembly should use exactly two color regions")
+	else:
+		assert(selected_count == 3, "Hard assembly should use exactly three color regions")
+	assert(composite["pieces"].size() >= selected_count, "Every selected color region should contribute at least one piece")
+	assert(composite["validLayouts"].size() >= 1, "The runtime generator should retain at least one uniquely solvable color layout")
+	assert(composite.get("clueCells", []).size() == composite["selectedRegionIds"].size(), "Each selected color region should retain one locked clue cell")
+	var construction_keys := {}
+	for raw in composite["constructionCells"]:
+		construction_keys["%d,%d" % [int(raw[0]), int(raw[1])]] = true
+	var clue_region_ids := {}
+	for raw in composite.get("clueCells", []):
+		var clue_key := "%d,%d" % [int(raw[0]), int(raw[1])]
+		assert(not construction_keys.has(clue_key), "Locked color clues must stay outside the construction wells")
+		clue_region_ids[int(composite["baseRegions"][int(raw[0])][int(raw[1])])] = true
+	for region_id in composite["selectedRegionIds"]:
+		assert(clue_region_ids.has(int(region_id)), "Every construction color should remain visible as a board clue")
 
 	for piece in composite["pieces"]:
-		assert(piece["cells"].size() >= 2, "Every assembly piece must contain at least two cells")
-		assert(_cells_connected(piece["cells"]), "Every assembly piece must stay connected")
+		assert(piece["cells"].size() >= 1, "Three failed cuts may fall back to a one-cell assembly piece")
+
+	_test_difficulty_region_selection()
+	_test_clue_selection()
+	_test_difficulty_builds(levels)
+	var template_families: Array = CompositeLevelScript.SHAPE_TEMPLATES.map(func(template: Dictionary) -> String:
+		return str(template.get("family", ""))
+	)
+	assert(template_families.has("z"), "The assembly template pool should include Z pieces")
+	assert(template_families.has("rectangle"), "The assembly template pool should include the 2x2 square")
 
 	var layout: Dictionary = composite["validLayouts"][0]
 	var placements: Dictionary = layout["placements"].duplicate(true)
@@ -70,6 +96,8 @@ func _run() -> void:
 	game.tutorial_started = false
 	game.in_tutorial = false
 	game.composite_tutorial_seen = true
+	if int(game.current_level.get("levelId", -1)) < 0:
+		game._load_level(0, false, LevelDirectorScript.manual_schedule_for_level(game.levels, 0, 1))
 	var formal_index: int = game.current_level_index
 	var formal_display: int = game.player_level_number
 	var formal_states: Array = game.cell_states.duplicate(true)
@@ -80,6 +108,13 @@ func _run() -> void:
 	assert(game.home_composite_entry_active, "Home block entry should start an isolated experience")
 	assert(game._is_assembly_phase() and int(game.current_level.get("rows", 0)) == 6, "Home block entry should open a 6x6 assembly")
 	assert(not game.home_composite_progress_snapshot.is_empty(), "Home block entry should snapshot formal progress")
+	assert(game.home_composite_round == 1 and game.level_label.text == game._t("拼块挑战 · 第 %d 局", [1]), "The isolated entry should not display a fake formal level number")
+	assert(not game.level_select_button.visible, "The isolated block challenge should hide formal level selection")
+	var first_home_seed := int(game.composite_data.get("seed", 0))
+	game._start_next_home_composite_round()
+	await process_frame
+	assert(game.home_composite_round == 2 and game.level_label.text == game._t("拼块挑战 · 第 %d 局", [2]), "The home challenge should continue into a numbered next round")
+	assert(game._is_assembly_phase() and int(game.composite_data.get("seed", 0)) != first_home_seed, "The next round should generate a different assembly")
 	game._save_game()
 	game.queue_free()
 	await process_frame
@@ -87,7 +122,7 @@ func _run() -> void:
 	root.add_child(game)
 	await process_frame
 	await process_frame
-	assert(not game.home_composite_entry_active, "Restarting from the isolated experience should return to formal progress")
+	assert(not game.home_composite_entry_active and game.home_composite_round == 0, "Restarting from the isolated experience should return to formal progress")
 	assert(game.current_level_index == formal_index and game.player_level_number == formal_display, "Restarting should restore the formal level")
 	assert(game.cell_states == formal_states and game.coin_count == formal_coins, "Restarting should restore the formal board and resources")
 	game.composite_tutorial_seen = false
@@ -159,8 +194,13 @@ func _run() -> void:
 	await create_timer(1.05).timeout
 	assert(game.composite_phase == "crown", "Completing the construction zone should enter the crown phase")
 	assert(game.progress_row.visible and game.clear_button.visible and game.crown_find_button.visible and game.hint_button.visible, "Crown UI should return after the transition")
+	assert(not game.hint_button.disabled, "Formal Hint must be re-enabled after leaving the assembly phase")
 	assert(not game.assembly_view.visible, "Assembly view should leave after conversion")
 	assert(not game._build_best_next_hint().is_empty(), "The generated crown phase should provide a formal X hint")
+	game.hint_count = 1
+	game._update_hint_button()
+	game._use_hint()
+	assert(game.hint_count == 0 and not game.board.guide_cells.is_empty(), "Formal Hint should remain usable and draw its X-only guide after conversion")
 	var final_signature := str(game.active_schedule.get("assemblyLayoutSignature", ""))
 	assert(not final_signature.is_empty(), "Final assembly signature should be locked")
 	game._save_game()
@@ -186,19 +226,91 @@ func _run() -> void:
 	quit(0)
 
 
-func _cells_connected(raw_cells: Array) -> bool:
-	if raw_cells.is_empty():
-		return false
-	var allowed := {}
-	for raw in raw_cells:
-		allowed[Vector2i(int(raw[1]), int(raw[0]))] = true
-	var queue: Array[Vector2i] = [allowed.keys()[0]]
-	var visited := {queue[0]: true}
-	while not queue.is_empty():
-		var cell: Vector2i = queue.pop_front()
-		for direction in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-			var neighbor: Vector2i = cell + direction
-			if allowed.has(neighbor) and not visited.has(neighbor):
-				visited[neighbor] = true
-				queue.append(neighbor)
-	return visited.size() == allowed.size()
+func _test_difficulty_region_selection() -> void:
+	var regions := [
+		[0, 0, 0, 0, 1, 1],
+		[0, 0, 0, 0, 1, 1],
+		[2, 2, 2, 3, 3, 3],
+		[2, 2, 2, 3, 3, 3],
+		[4, 4, 4, 4, 5, 5],
+		[4, 4, 4, 4, 5, 5]
+	]
+	var region_cells := {}
+	for row in range(regions.size()):
+		for col in range(regions[row].size()):
+			var region_id := int(regions[row][col])
+			if not region_cells.has(region_id):
+				region_cells[region_id] = []
+			region_cells[region_id].append(Vector2i(col, row))
+
+	var single_count := 0
+	for seed in range(400):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = seed
+		var selected: Array = CompositeLevelScript._select_regions(region_cells, regions, rng, "simple")
+		if selected.size() == 1:
+			single_count += 1
+			assert([0, 4].has(int(selected[0])), "Simple single-region mode should select a largest region")
+		else:
+			assert(selected.has(3) and (selected.has(1) or selected.has(5)), "Simple two-region mode should select a smallest adjacent legal pair")
+	assert(single_count >= 180 and single_count <= 260, "Simple region count should stay near the requested 55/45 distribution")
+
+	var medium_rng := RandomNumberGenerator.new()
+	medium_rng.seed = 17
+	assert(CompositeLevelScript._select_regions(region_cells, regions, medium_rng, "medium").size() == 2, "Medium must select two adjacent regions")
+	var hard_rng := RandomNumberGenerator.new()
+	hard_rng.seed = 17
+	assert(CompositeLevelScript._select_regions(region_cells, regions, hard_rng, "hard").size() == 3, "Hard must select three adjacent regions")
+
+
+func _test_clue_selection() -> void:
+	var square: Array = []
+	for row in range(5):
+		for col in range(5):
+			square.append(Vector2i(col, row))
+	var simple_rng := RandomNumberGenerator.new()
+	simple_rng.seed = 23
+	var simple_clue: Vector2i = CompositeLevelScript._select_clue_cell(square, "simple", simple_rng)
+	assert(simple_clue.x == 0 or simple_clue.x == 4 or simple_clue.y == 0 or simple_clue.y == 4, "Simple clue should come from the region edge")
+
+	var hard_interior_count := 0
+	var medium_interior_count := 0
+	for seed in range(200):
+		var medium_rng := RandomNumberGenerator.new()
+		medium_rng.seed = seed
+		var medium_clue: Vector2i = CompositeLevelScript._select_clue_cell(square, "medium", medium_rng)
+		if medium_clue.x > 0 and medium_clue.x < 4 and medium_clue.y > 0 and medium_clue.y < 4:
+			medium_interior_count += 1
+		var hard_rng := RandomNumberGenerator.new()
+		hard_rng.seed = seed
+		var hard_clue: Vector2i = CompositeLevelScript._select_clue_cell(square, "hard", hard_rng)
+		if hard_clue.x > 0 and hard_clue.x < 4 and hard_clue.y > 0 and hard_clue.y < 4:
+			hard_interior_count += 1
+	assert(medium_interior_count >= 60 and medium_interior_count <= 100, "Medium clues should use surrounded cells about 40 percent of the time")
+	assert(hard_interior_count >= 120 and hard_interior_count <= 160, "Hard clues should use surrounded cells about 70 percent of the time")
+
+
+func _test_difficulty_builds(levels: Array) -> void:
+	for difficulty in ["simple", "medium", "hard"]:
+		var generated: Dictionary = {}
+		for level in levels:
+			if int(level.get("rows", 0)) < 6 or CompositeLevelScript._normalize_difficulty(str(level.get("difficulty", ""))) != difficulty:
+				continue
+			for seed_offset in range(18):
+				generated = CompositeLevelScript.build(level, 20260728 + seed_offset)
+				if not generated.is_empty():
+					break
+			if not generated.is_empty():
+				break
+		assert(not generated.is_empty(), "Every composite difficulty should generate on a supported default level")
+		var expected_counts := {"medium": 2, "hard": 3}
+		if difficulty == "simple":
+			assert([1, 2].has(generated["selectedRegionIds"].size()), "Simple generated levels should use one or two regions")
+		else:
+			assert(generated["selectedRegionIds"].size() == int(expected_counts[difficulty]), "Generated region count should match the composite difficulty")
+		for region_id in generated["selectedRegionIds"]:
+			var piece_count := 0
+			for piece in generated["pieces"]:
+				if int(piece["regionId"]) == int(region_id):
+					piece_count += 1
+			assert(piece_count >= 1, "Every generated construction color should provide at least one movable piece")
