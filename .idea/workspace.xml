@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="84d6814b-ad71-4b9a-b35d-f354c6142d90" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/docs/PRODUCT_REQUIREMENTS.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/PRODUCT_REQUIREMENTS.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/UI_DESIGN_GUIDE.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/UI_DESIGN_GUIDE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/assembly_view.gd" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/assembly_view.gd" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/composite_level.gd" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/composite_level.gd" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/localization_controller.gd" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/localization_controller.gd" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/main.gd" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/main.gd" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/composite_smoke_test.gd" beforeDir="false" afterPath="$PROJECT_DIR$/tests/composite_smoke_test.gd" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 8,
+  "fromUser": false
+}]]></component>
+  <component name="ProjectId" id="3HASTL1BP7IXN2m9bslE8YGTflo" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "git-widget-placeholder": "codex/composite-block-assembly",
+    "last_opened_file_path": "/Users/jy/Documents/GitHub/sudoku_test",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-python-sdk-6fa658e1df1a-5bd6d13a2a75-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-262.8665.369" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="84d6814b-ad71-4b9a-b35d-f354c6142d90" name="Changes" comment="" />
+      <created>1785309386761</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1785309386761</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+</project>
