@@ -6,6 +6,11 @@ const MAX_SEARCH_NODES := 60000
 const MIN_REGION_CELLS := 3
 const MIN_STANDARD_PIECE_CELLS := 2
 const SPLIT_ATTEMPTS := 3
+const PIECE_COUNT_FACTORS := {
+	"simple": 0.5,
+	"medium": 0.6,
+	"hard": 0.8
+}
 const ORTHOGONAL := [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]
 const SURROUNDING := [
 	Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
@@ -27,7 +32,12 @@ const SHAPE_TEMPLATES := [
 ]
 
 
-static func build(level: Dictionary, seed: int) -> Dictionary:
+static func build(
+	level: Dictionary,
+	seed: int,
+	raw_difficulty_pattern: String = "",
+	max_valid_layouts: int = MAX_VALID_LAYOUTS
+) -> Dictionary:
 	var rows := int(level.get("rows", 0))
 	var cols := int(level.get("cols", 0))
 	if rows < 6 or rows != cols:
@@ -38,7 +48,8 @@ static func build(level: Dictionary, seed: int) -> Dictionary:
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
-	var difficulty := _normalize_difficulty(str(level.get("difficulty", "medium")))
+	var difficulty_source := raw_difficulty_pattern if not raw_difficulty_pattern.is_empty() else str(level.get("difficulty", "medium"))
+	var difficulty := _normalize_difficulty(difficulty_source)
 	var region_cells := _cells_by_region(base_regions)
 	var selected_ids := _select_regions(region_cells, base_regions, rng, difficulty)
 	if selected_ids.is_empty():
@@ -50,7 +61,7 @@ static func build(level: Dictionary, seed: int) -> Dictionary:
 	var next_piece_id := 0
 	for region_id in selected_ids:
 		var cells: Array = region_cells.get(int(region_id), [])
-		var split_result := _split_region_with_clue(cells, rng, difficulty)
+		var split_result := _split_region_with_clue(cells, base_regions, int(region_id), rng, difficulty)
 		var split: Array = split_result.get("pieces", [])
 		if split.is_empty():
 			return {}
@@ -77,7 +88,7 @@ static func build(level: Dictionary, seed: int) -> Dictionary:
 	)
 
 	var data := {
-		"version": 3,
+		"version": 8,
 		"seed": seed,
 		"difficulty": difficulty,
 		"rows": rows,
@@ -90,7 +101,8 @@ static func build(level: Dictionary, seed: int) -> Dictionary:
 		"pieces": pieces,
 		"validLayouts": []
 	}
-	data["validLayouts"] = _enumerate_valid_layouts(data, level.get("solution", []))
+	_prepare_runtime_cache(data)
+	data["validLayouts"] = _enumerate_valid_layouts(data, level.get("solution", []), max_valid_layouts)
 	if data["validLayouts"].is_empty():
 		return {}
 	return data
@@ -98,6 +110,37 @@ static func build(level: Dictionary, seed: int) -> Dictionary:
 
 static func empty_placements() -> Dictionary:
 	return {}
+
+
+static func sanitize_tray_slots(data: Dictionary, placements: Dictionary, raw_slots = []) -> Array:
+	var pieces: Array = data.get("pieces", [])
+	var piece_ids := {}
+	for piece in pieces:
+		piece_ids[int(piece.get("pieceId", -1))] = true
+	var result: Array = []
+	result.resize(pieces.size())
+	result.fill(-1)
+	var seen := {}
+	if raw_slots is Array and raw_slots.size() == pieces.size():
+		for slot_index in range(raw_slots.size()):
+			var piece_id := int(raw_slots[slot_index])
+			if piece_id >= 0 and piece_ids.has(piece_id) and not placements.has(str(piece_id)) and not seen.has(piece_id):
+				result[slot_index] = piece_id
+				seen[piece_id] = true
+	var missing: Array = []
+	for piece in pieces:
+		var piece_id := int(piece.get("pieceId", -1))
+		if not placements.has(str(piece_id)) and not seen.has(piece_id):
+			missing.append(piece_id)
+	missing.sort_custom(func(a: int, b: int) -> bool:
+		return int(_piece_by_id(pieces, a).get("trayIndex", a)) < int(_piece_by_id(pieces, b).get("trayIndex", b))
+	)
+	for piece_id in missing:
+		var empty_slot := result.find(-1)
+		if empty_slot < 0:
+			break
+		result[empty_slot] = piece_id
+	return result
 
 
 static func sanitize_placements(data: Dictionary, raw_placements) -> Dictionary:
@@ -113,26 +156,17 @@ static func sanitize_placements(data: Dictionary, raw_placements) -> Dictionary:
 
 
 static func allowed_origins(data: Dictionary, placements: Dictionary, piece_id: int) -> Array:
-	var result: Array = []
-	var seen := {}
-	var piece_key := str(piece_id)
-	for layout in data.get("validLayouts", []):
-		var layout_placements: Dictionary = layout.get("placements", {})
-		var compatible := true
-		for placed_key in placements.keys():
-			if str(placed_key) == piece_key:
-				continue
-			if not layout_placements.has(str(placed_key)) or not _origins_equal(layout_placements[str(placed_key)], placements[placed_key]):
-				compatible = false
-				break
-		if not compatible or not layout_placements.has(piece_key):
-			continue
-		var origin: Array = layout_placements[piece_key]
-		var origin_key := _array_origin_key(origin)
-		if not seen.has(origin_key):
-			seen[origin_key] = true
-			result.append([int(origin[0]), int(origin[1])])
-	return result
+	var occupancy := _placement_occupancy(data, placements)
+	if not bool(occupancy.get("valid", false)):
+		return []
+	return _allowed_origins_from_occupancy(data, piece_id, occupancy.get("owners", {}))
+
+
+static func allowed_origins_for_all(data: Dictionary, placements: Dictionary) -> Dictionary:
+	var occupancy := _placement_occupancy(data, placements)
+	if not bool(occupancy.get("valid", false)):
+		return {}
+	return _allowed_origins_for_all_from_occupancy(data, occupancy.get("owners", {}))
 
 
 static func matching_layout(data: Dictionary, placements: Dictionary) -> Dictionary:
@@ -147,10 +181,260 @@ static func matching_layout(data: Dictionary, placements: Dictionary) -> Diction
 				break
 		if matches:
 			return layout.duplicate(true)
-	return {}
+	return _make_layout(data, placements, [])
 
 
-static func _select_regions(region_cells: Dictionary, regions: Array, rng: RandomNumberGenerator, raw_difficulty: String = "medium") -> Array:
+static func has_valid_completion(data: Dictionary, placements: Dictionary) -> bool:
+	var evaluation := evaluate_placement_state(data, placements, false)
+	return bool(evaluation.get("valid", false)) and not bool(evaluation.get("deadlocked", true))
+
+
+static func evaluate_placement_state(
+	data: Dictionary,
+	placements: Dictionary,
+	include_allowed_origins: bool = true
+) -> Dictionary:
+	var pieces: Array = data.get("pieces", [])
+	var occupancy := _placement_occupancy(data, placements)
+	if not bool(occupancy.get("valid", false)):
+		return {"valid": false, "deadlocked": false, "layout": {}, "allowedByPiece": {}}
+	var owners: Dictionary = occupancy.get("owners", {})
+	var regions: Dictionary = occupancy.get("regions", {})
+	var remaining: Array = []
+	for piece in pieces:
+		var piece_id := int(piece.get("pieceId", -1))
+		var key := str(piece_id)
+		if not placements.has(key):
+			remaining.append(piece)
+	if remaining.is_empty():
+		var layout := matching_layout(data, placements)
+		return {
+			"valid": true,
+			"deadlocked": layout.is_empty(),
+			"layout": layout,
+			"allowedByPiece": {}
+		}
+
+	if not _placed_regions_can_still_connect(data, regions):
+		return {"valid": true, "deadlocked": true, "layout": {}, "allowedByPiece": {}}
+	var allowed := {}
+	if include_allowed_origins:
+		allowed = _allowed_origins_for_all_from_occupancy(data, owners)
+		for piece in remaining:
+			var piece_key := str(int(piece.get("pieceId", -1)))
+			if allowed.get(piece_key, []).is_empty():
+				return {"valid": true, "deadlocked": true, "layout": {}, "allowedByPiece": allowed}
+	else:
+		for piece in remaining:
+			var has_space := false
+			var piece_id := int(piece.get("pieceId", -1))
+			for origin in _piece_candidate_origins(piece, data.get("constructionCells", [])):
+				if _candidate_fits_occupancy(data, piece, origin, owners, piece_id):
+					has_space = true
+					break
+			if not has_space:
+				return {"valid": true, "deadlocked": true, "layout": {}, "allowedByPiece": {}}
+	return {"valid": true, "deadlocked": false, "layout": {}, "allowedByPiece": allowed}
+static func _placed_regions_can_still_connect(data: Dictionary, occupied_regions: Dictionary) -> bool:
+	var base_regions: Array = data.get("baseRegions", [])
+	var rows := int(data.get("rows", base_regions.size()))
+	var cols := int(data.get("cols", base_regions[0].size() if not base_regions.is_empty() else 0))
+	var construction_set: Dictionary = data.get("constructionIndexSet", {})
+	if construction_set.is_empty():
+		construction_set = _construction_index_set(data)
+	var fixed_by_region: Dictionary = data.get("fixedIndicesBySelectedRegion", {})
+	if fixed_by_region.is_empty():
+		for raw_region_id in data.get("selectedRegionIds", []):
+			fixed_by_region[str(int(raw_region_id))] = []
+		for row in range(base_regions.size()):
+			for col in range(base_regions[row].size()):
+				var region_id := int(base_regions[row][col])
+				var key := str(region_id)
+				var index := row * cols + col
+				if fixed_by_region.has(key) and not construction_set.has(index):
+					fixed_by_region[key].append(index)
+	for raw_region_id in data.get("selectedRegionIds", []):
+		var region_id := int(raw_region_id)
+		var mandatory: Array = fixed_by_region.get(str(region_id), []).duplicate()
+		var passable := {}
+		for index in mandatory:
+			passable[int(index)] = true
+		for raw_index in construction_set.keys():
+			var index := int(raw_index)
+			if not occupied_regions.has(index) or int(occupied_regions[index]) == region_id:
+				passable[index] = true
+			if occupied_regions.has(index) and int(occupied_regions[index]) == region_id:
+				mandatory.append(index)
+		if mandatory.size() <= 1:
+			continue
+		var visited := {int(mandatory[0]): true}
+		var queue: Array = [int(mandatory[0])]
+		var cursor := 0
+		while cursor < queue.size():
+			var current := int(queue[cursor])
+			cursor += 1
+			var row := int(current / cols)
+			var col := current % cols
+			var neighbors: Array = []
+			if row > 0:
+				neighbors.append(current - cols)
+			if row + 1 < rows:
+				neighbors.append(current + cols)
+			if col > 0:
+				neighbors.append(current - 1)
+			if col + 1 < cols:
+				neighbors.append(current + 1)
+			for neighbor in neighbors:
+				var neighbor_index := int(neighbor)
+				if passable.has(neighbor_index) and not visited.has(neighbor_index):
+					visited[neighbor_index] = true
+					queue.append(neighbor_index)
+		for index in mandatory:
+			if not visited.has(int(index)):
+				return false
+	return true
+
+
+static func _prepare_runtime_cache(data: Dictionary) -> void:
+	var cols := int(data.get("cols", 0))
+	var construction_set := _construction_index_set(data)
+	data["constructionIndexSet"] = construction_set
+	var fixed_by_region := {}
+	var selected := {}
+	for raw_region_id in data.get("selectedRegionIds", []):
+		var region_id := int(raw_region_id)
+		selected[region_id] = true
+		fixed_by_region[str(region_id)] = []
+	var base_regions: Array = data.get("baseRegions", [])
+	for row in range(base_regions.size()):
+		for col in range(base_regions[row].size()):
+			var region_id := int(base_regions[row][col])
+			var index := row * cols + col
+			if selected.has(region_id) and not construction_set.has(index):
+				fixed_by_region[str(region_id)].append(index)
+	data["fixedIndicesBySelectedRegion"] = fixed_by_region
+
+	var pieces: Array = data.get("pieces", [])
+	for piece_index in range(pieces.size()):
+		var piece: Dictionary = pieces[piece_index]
+		var origins := _compute_piece_candidate_origins(piece, data.get("constructionCells", []))
+		var cells_by_origin := {}
+		for origin in origins:
+			var indices: Array = []
+			for cell in _piece_absolute_cells(piece, origin):
+				indices.append(_cell_index(cell, cols))
+			cells_by_origin[_array_origin_key(origin)] = indices
+		piece["candidateOrigins"] = origins
+		piece["candidateCellIndices"] = cells_by_origin
+		pieces[piece_index] = piece
+	data["pieces"] = pieces
+
+
+static func _construction_index_set(data: Dictionary) -> Dictionary:
+	var cols := int(data.get("cols", 0))
+	var result := {}
+	for cell in _arrays_to_cells(data.get("constructionCells", [])):
+		result[_cell_index(cell, cols)] = true
+	return result
+
+
+static func _placement_occupancy(data: Dictionary, placements: Dictionary) -> Dictionary:
+	var owners := {}
+	var regions := {}
+	var placed_piece_count := 0
+	for piece in data.get("pieces", []):
+		var piece_id := int(piece.get("pieceId", -1))
+		var key := str(piece_id)
+		if not placements.has(key):
+			continue
+		var origin = placements[key]
+		if not origin is Array or origin.size() < 2:
+			return {"valid": false}
+		var indices := _candidate_indices_for_origin(data, piece, origin)
+		if indices.is_empty():
+			return {"valid": false}
+		for raw_index in indices:
+			var index := int(raw_index)
+			if owners.has(index):
+				return {"valid": false}
+			owners[index] = piece_id
+			regions[index] = int(piece.get("regionId", -1))
+		placed_piece_count += 1
+	if placed_piece_count != placements.size():
+		return {"valid": false}
+	return {
+		"valid": true,
+		"owners": owners,
+		"regions": regions
+	}
+
+
+static func _allowed_origins_for_all_from_occupancy(data: Dictionary, owners: Dictionary) -> Dictionary:
+	var result := {}
+	for piece in data.get("pieces", []):
+		var piece_id := int(piece.get("pieceId", -1))
+		result[str(piece_id)] = _allowed_origins_from_occupancy(data, piece_id, owners)
+	return result
+
+
+static func _allowed_origins_from_occupancy(data: Dictionary, piece_id: int, owners: Dictionary) -> Array:
+	var piece := _piece_by_id(data.get("pieces", []), piece_id)
+	if piece.is_empty():
+		return []
+	var result: Array = []
+	for origin in _piece_candidate_origins(piece, data.get("constructionCells", [])):
+		if _candidate_fits_occupancy(data, piece, origin, owners, piece_id):
+			result.append([int(origin[0]), int(origin[1])])
+	return result
+
+
+static func _candidate_fits_occupancy(
+	data: Dictionary,
+	piece: Dictionary,
+	origin: Array,
+	owners: Dictionary,
+	piece_id: int
+) -> bool:
+	var indices := _candidate_indices_for_origin(data, piece, origin)
+	if indices.is_empty():
+		return false
+	for raw_index in indices:
+		var index := int(raw_index)
+		if owners.has(index) and int(owners[index]) != piece_id:
+			return false
+	return true
+
+
+static func _candidate_indices_for_origin(data: Dictionary, piece: Dictionary, origin: Array) -> Array:
+	if not origin is Array or origin.size() < 2:
+		return []
+	var cached = piece.get("candidateCellIndices", {})
+	var key := _array_origin_key(origin)
+	if cached is Dictionary and cached.has(key):
+		return cached[key]
+	var construction_set: Dictionary = data.get("constructionIndexSet", {})
+	if construction_set.is_empty():
+		construction_set = _construction_index_set(data)
+	var cols := int(data.get("cols", 0))
+	var result: Array = []
+	for cell in _piece_absolute_cells(piece, origin):
+		var index := _cell_index(cell, cols)
+		if not construction_set.has(index):
+			return []
+		result.append(index)
+	return result
+
+
+static func _cell_index(cell: Vector2i, cols: int) -> int:
+	return cell.y * cols + cell.x
+
+
+static func _select_regions(
+	region_cells: Dictionary,
+	regions: Array,
+	rng: RandomNumberGenerator,
+	raw_difficulty: String = "medium"
+) -> Array:
 	var difficulty := _normalize_difficulty(raw_difficulty)
 	var eligible_ids: Array = []
 	for region_id in region_cells.keys():
@@ -283,41 +567,51 @@ static func _region_group_connected(region_ids: Array, adjacency: Dictionary) ->
 	return visited.size() == allowed.size()
 
 
-static func _select_clue_cell(cells: Array, raw_difficulty: String, rng: RandomNumberGenerator) -> Vector2i:
-	var difficulty := _normalize_difficulty(raw_difficulty)
+static func _select_clue_cell(cells: Array, regions: Array, region_id: int, rng: RandomNumberGenerator) -> Vector2i:
 	var cell_set := _cell_set(cells)
 	var edge_cells: Array = []
-	var interior_cells: Array = []
 	for cell in cells:
-		var interior := true
+		var is_edge := false
 		for direction in ORTHOGONAL:
 			if not cell_set.has(_cell_key(cell + direction)):
-				interior = false
+				is_edge = true
 				break
-		if interior:
-			interior_cells.append(cell)
-		else:
+		if is_edge and not _is_articulation_cell(cells, cell):
 			edge_cells.append(cell)
-
-	var interior_probability := 0.0
-	if difficulty == "medium":
-		interior_probability = 0.40
-	elif difficulty == "hard":
-		interior_probability = 0.70
-	var candidates: Array = interior_cells if not interior_cells.is_empty() and rng.randf() < interior_probability else edge_cells
-	if candidates.is_empty():
-		candidates = interior_cells if not interior_cells.is_empty() else cells
+	if edge_cells.is_empty():
+		return Vector2i(-1, -1)
+	var candidates: Array = edge_cells
 
 	var best_score := -1
+	var best_same_color_score := -1
 	var best: Array = []
 	for cell in candidates:
-		var score := _same_color_neighbor_count(cell, cell_set)
-		if score > best_score:
+		var score := _row_column_different_color_max(cell, regions, region_id)
+		var same_color_score := _same_color_neighbor_count(cell, cell_set)
+		if score > best_score or (score == best_score and same_color_score > best_same_color_score):
 			best_score = score
+			best_same_color_score = same_color_score
 			best = [cell]
-		elif score == best_score:
+		elif score == best_score and same_color_score == best_same_color_score:
 			best.append(cell)
 	return best[rng.randi_range(0, best.size() - 1)]
+
+
+static func _is_articulation_cell(cells: Array, cell: Vector2i) -> bool:
+	var remaining := _subtract_cells(cells, [cell])
+	return not remaining.is_empty() and not _cells_connected(remaining)
+
+
+static func _row_column_different_color_max(cell: Vector2i, regions: Array, region_id: int) -> int:
+	var row_count := 0
+	for col in range(regions[cell.y].size()):
+		if col != cell.x and int(regions[cell.y][col]) != region_id:
+			row_count += 1
+	var column_count := 0
+	for row in range(regions.size()):
+		if row != cell.y and cell.x < regions[row].size() and int(regions[row][cell.x]) != region_id:
+			column_count += 1
+	return maxi(row_count, column_count)
 
 
 static func _same_color_neighbor_count(cell: Vector2i, cell_set: Dictionary) -> int:
@@ -328,28 +622,30 @@ static func _same_color_neighbor_count(cell: Vector2i, cell_set: Dictionary) -> 
 	return result
 
 
-static func _desired_piece_count(cell_count: int, raw_difficulty: String, rng: RandomNumberGenerator) -> int:
+static func _desired_piece_count(cell_count: int, raw_difficulty: String) -> int:
+	if cell_count <= 0:
+		return 0
 	var difficulty := _normalize_difficulty(raw_difficulty)
-	var desired := 1
-	if difficulty == "simple":
-		if cell_count >= 4 and rng.randf() < 0.45:
-			desired = 2
-	elif difficulty == "medium":
-		desired = 2
-		if cell_count >= 7 and rng.randf() < 0.35:
-			desired = 3
-	else:
-		desired = 3 if cell_count >= 6 else 2
+	var factor := float(PIECE_COUNT_FACTORS[difficulty])
+	var desired := ceili((float(cell_count) / float(MIN_STANDARD_PIECE_CELLS)) * factor)
 	var maximum_without_unit := maxi(1, floori(float(cell_count) / float(MIN_STANDARD_PIECE_CELLS)))
 	return clampi(desired, 1, maximum_without_unit)
 
 
-static func _split_region_with_clue(cells: Array, rng: RandomNumberGenerator, difficulty: String) -> Dictionary:
+static func _split_region_with_clue(
+	cells: Array,
+	regions: Array,
+	region_id: int,
+	rng: RandomNumberGenerator,
+	difficulty: String
+) -> Dictionary:
 	if cells.size() < MIN_REGION_CELLS:
 		return {}
-	var clue := _select_clue_cell(cells, difficulty, rng)
+	var clue := _select_clue_cell(cells, regions, region_id, rng)
+	if clue.x < 0 or clue.y < 0:
+		return {}
 	var remaining := _subtract_cells(cells, [clue])
-	var desired_count := _desired_piece_count(remaining.size(), difficulty, rng)
+	var desired_count := _desired_piece_count(remaining.size(), difficulty)
 	for _attempt in range(SPLIT_ATTEMPTS):
 		var split := _split_region_from_clue(remaining, clue, desired_count, rng, difficulty, false)
 		if not split.is_empty():
@@ -371,16 +667,21 @@ static func _split_region_from_clue(
 	if cells.is_empty() or piece_count < 1:
 		return []
 	if piece_count == 1:
-		return [cells.duplicate()]
+		return [cells.duplicate()] if _cells_connected(cells) else []
 	var remaining: Array = cells.duplicate()
 	var result: Array = []
 	var filled: Array = [clue]
 	for index in range(piece_count - 1):
-		if remaining.size() <= 1:
-			break
-		var candidates := _template_cut_candidates(remaining, filled, difficulty)
+		var remaining_piece_count := piece_count - index - 1
+		var minimum_remaining := remaining_piece_count * MIN_STANDARD_PIECE_CELLS
+		if allow_singleton:
+			minimum_remaining -= 1
+		var max_take := remaining.size() - minimum_remaining
+		if max_take < MIN_STANDARD_PIECE_CELLS:
+			return []
+		var candidates := _template_cut_candidates(remaining, filled, difficulty, max_take)
 		if candidates.is_empty():
-			var fallback := _random_growth_cut(remaining, filled, rng)
+			var fallback := _random_growth_cut(remaining, filled, max_take, rng)
 			if fallback.is_empty():
 				return []
 			candidates.append(fallback)
@@ -390,11 +691,13 @@ static func _split_region_from_clue(
 		filled.append_array(picked)
 	if remaining.is_empty() or (remaining.size() == 1 and not allow_singleton):
 		return []
+	if not _cells_connected(remaining):
+		return []
 	result.append(remaining)
 	return result
 
 
-static func _template_cut_candidates(remaining: Array, filled: Array, difficulty: String) -> Array:
+static func _template_cut_candidates(remaining: Array, filled: Array, difficulty: String, max_take: int) -> Array:
 	var remaining_set := _cell_set(remaining)
 	var min_row := 999
 	var min_col := 999
@@ -410,7 +713,7 @@ static func _template_cut_candidates(remaining: Array, filled: Array, difficulty
 	for template in SHAPE_TEMPLATES:
 		var family := str(template.get("family", "irregular"))
 		for rotated in _rotations(_arrays_to_cells(template.get("cells", []))):
-			if rotated.size() >= remaining.size():
+			if rotated.size() > max_take:
 				continue
 			var bounds := _cell_bounds(rotated)
 			for row in range(min_row - int(bounds.position.y), max_row - int(bounds.end.y) + 2):
@@ -435,7 +738,7 @@ static func _template_cut_candidates(remaining: Array, filled: Array, difficulty
 	return candidates
 
 
-static func _random_growth_cut(remaining: Array, filled: Array, rng: RandomNumberGenerator) -> Dictionary:
+static func _random_growth_cut(remaining: Array, filled: Array, max_take: int, rng: RandomNumberGenerator) -> Dictionary:
 	for _attempt in range(80):
 		var starts: Array = []
 		for cell in remaining:
@@ -443,7 +746,7 @@ static func _random_growth_cut(remaining: Array, filled: Array, rng: RandomNumbe
 				starts.append(cell)
 		if starts.is_empty():
 			return {}
-		var maximum := remaining.size() - 1
+		var maximum := mini(max_take, remaining.size() - 1)
 		if maximum < MIN_STANDARD_PIECE_CELLS:
 			return {}
 		var target_size := rng.randi_range(MIN_STANDARD_PIECE_CELLS, maximum)
@@ -475,7 +778,12 @@ static func _touches_any(cells: Array, other_cells: Array) -> bool:
 	return false
 
 
-static func _enumerate_valid_layouts(data: Dictionary, original_solution: Array) -> Array:
+static func _enumerate_valid_layouts(
+	data: Dictionary,
+	original_solution: Array,
+	max_valid_layouts: int = MAX_VALID_LAYOUTS
+) -> Array:
+	var layout_limit := clampi(max_valid_layouts, 1, MAX_VALID_LAYOUTS)
 	var layouts: Array = []
 	var initial_placements := {}
 	for piece in data.get("pieces", []):
@@ -491,7 +799,12 @@ static func _enumerate_valid_layouts(data: Dictionary, original_solution: Array)
 	order.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return candidate_origins[str(int(a["pieceId"]))].size() < candidate_origins[str(int(b["pieceId"]))].size()
 	)
-	var state := {"nodes": 0, "signatures": {}}
+	var state := {
+		"nodes": 0,
+		"signatures": {},
+		"maxLayouts": layout_limit,
+		"maxNodes": MAX_SEARCH_NODES
+	}
 	for layout in layouts:
 		state["signatures"][str(layout.get("signature", ""))] = true
 	_search_layouts(data, order, 0, {}, {}, candidate_origins, layouts, state)
@@ -508,7 +821,9 @@ static func _search_layouts(
 	layouts: Array,
 	state: Dictionary
 ) -> void:
-	if layouts.size() >= MAX_VALID_LAYOUTS or int(state["nodes"]) >= MAX_SEARCH_NODES:
+	var layout_limit := int(state.get("maxLayouts", MAX_VALID_LAYOUTS))
+	var node_limit := int(state.get("maxNodes", MAX_SEARCH_NODES))
+	if layouts.size() >= layout_limit or int(state["nodes"]) >= node_limit:
 		return
 	state["nodes"] = int(state["nodes"]) + 1
 	if index >= order.size():
@@ -539,7 +854,7 @@ static func _search_layouts(
 		for cell in occupied_cells:
 			occupied.erase(_cell_key(cell))
 		placements.erase(piece_key)
-		if layouts.size() >= MAX_VALID_LAYOUTS:
+		if layouts.size() >= layout_limit:
 			return
 
 
@@ -657,6 +972,12 @@ static func _search_crowns(regions: Array, state: Dictionary, depth: int) -> voi
 
 
 static func _piece_candidate_origins(piece: Dictionary, construction_arrays: Array) -> Array:
+	if piece.has("candidateOrigins"):
+		return piece.get("candidateOrigins", [])
+	return _compute_piece_candidate_origins(piece, construction_arrays)
+
+
+static func _compute_piece_candidate_origins(piece: Dictionary, construction_arrays: Array) -> Array:
 	var construction := _arrays_to_cells(construction_arrays)
 	var construction_set := _cell_set(construction)
 	var local_cells := _arrays_to_cells(piece.get("cells", []))
@@ -676,6 +997,13 @@ static func _piece_candidate_origins(piece: Dictionary, construction_arrays: Arr
 					seen[key] = true
 					result.append([origin.y, origin.x])
 	return result
+
+
+static func _piece_by_id(pieces: Array, piece_id: int) -> Dictionary:
+	for piece in pieces:
+		if int(piece.get("pieceId", -1)) == piece_id:
+			return piece
+	return {}
 
 
 static func _piece_absolute_cells(piece: Dictionary, origin_array: Array) -> Array:

@@ -2,7 +2,7 @@ class_name AssemblyView
 extends Control
 
 signal placement_requested(piece_id: int, origin: Array)
-signal return_requested(piece_id: int)
+signal return_requested(piece_id: int, slot_index: int)
 signal intro_finished()
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
@@ -11,12 +11,18 @@ const TRAY_CELL_SIZE := 21.0
 const TRAY_SLOT_MIN_WIDTH := 96.0
 const TRAY_SLOT_MAX_WIDTH := 180.0
 const DRAG_THRESHOLD := 10.0
+const SCROLL_DIRECTION_BIAS := 0.78
+const WHEEL_SCROLL_STEP := 54.0
+const PAN_SCROLL_SCALE := 42.0
+const RETURN_FOCUS_DURATION := 0.18
+const RETURN_HOTZONE_MARGIN := 12.0
 const DRAG_LIFT_CELLS := 0.72
 const SNAP_RADIUS_CELLS := 0.95
 
 var assembly_data: Dictionary = {}
 var placements: Dictionary = {}
 var allowed_by_piece: Dictionary = {}
+var tray_slot_piece_ids: Array = []
 var region_colors: Array = []
 var board_target: Control
 var tray_target: Control
@@ -35,6 +41,7 @@ var _drag_piece_id := -1
 var _drag_source := ""
 var _interaction_mode := ""
 var _preview_origin := Vector2i(-99, -99)
+var _return_slot_index := -1
 var _demo_piece_id := -1
 var _demo_origin := Vector2i(-99, -99)
 var _intro_dragging_piece := false
@@ -42,6 +49,7 @@ var _intro_dragging_piece := false
 var _intro_caption: Label
 var _intro_hand: Label
 var _intro_tween: Tween
+var _tray_focus_tween: Tween
 var _intro_token := 0
 
 
@@ -69,11 +77,18 @@ func bind_targets(board_control: Control, tray_control: Control) -> void:
 	queue_redraw()
 
 
-func configure(data: Dictionary, current_placements: Dictionary, colors: Array, allowed: Dictionary) -> void:
-	assembly_data = data.duplicate(true)
+func configure(
+	data: Dictionary,
+	current_placements: Dictionary,
+	colors: Array,
+	allowed: Dictionary,
+	tray_slots: Array = []
+) -> void:
+	assembly_data = data
 	placements = current_placements.duplicate(true)
 	region_colors = colors.duplicate()
-	allowed_by_piece = allowed.duplicate(true)
+	allowed_by_piece = allowed.duplicate()
+	tray_slot_piece_ids = CompositeLevel.sanitize_tray_slots(assembly_data, placements, tray_slots)
 	tray_scroll = 0.0
 	flatten_amount = 0.0
 	active = not assembly_data.is_empty()
@@ -83,9 +98,10 @@ func configure(data: Dictionary, current_placements: Dictionary, colors: Array, 
 	queue_redraw()
 
 
-func update_state(current_placements: Dictionary, allowed: Dictionary) -> void:
+func update_state(current_placements: Dictionary, allowed: Dictionary, tray_slots: Array = []) -> void:
 	placements = current_placements.duplicate(true)
-	allowed_by_piece = allowed.duplicate(true)
+	allowed_by_piece = allowed.duplicate()
+	tray_slot_piece_ids = CompositeLevel.sanitize_tray_slots(assembly_data, placements, tray_slots)
 	queue_redraw()
 
 
@@ -93,6 +109,8 @@ func deactivate() -> void:
 	_intro_token += 1
 	if _intro_tween and _intro_tween.is_valid():
 		_intro_tween.kill()
+	if _tray_focus_tween and _tray_focus_tween.is_valid():
+		_tray_focus_tween.kill()
 	active = false
 	input_locked = false
 	_reset_pointer()
@@ -282,21 +300,12 @@ func _draw_tray() -> void:
 	draw_rect(tray_rect, tray_color, true)
 	draw_rect(tray_rect, tray_edge, false, 3.0)
 
-	var pieces: Array = assembly_data.get("pieces", [])
-	var content_width := 14.0
-	var slots: Array = []
-	for piece in pieces:
-		var bounds := _piece_bounds(piece)
-		var width := clampf(float(bounds.size.x) * TRAY_CELL_SIZE + 32.0, TRAY_SLOT_MIN_WIDTH, TRAY_SLOT_MAX_WIDTH)
-		slots.append({"piece": piece, "x": content_width, "width": width})
-		content_width += width + 10.0
-	content_width += 4.0
-	var max_scroll := maxf(0.0, content_width - tray_rect.size.x)
+	var slots := _tray_slot_layout()
+	var max_scroll := _tray_max_scroll()
 	tray_scroll = clampf(tray_scroll, 0.0, max_scroll)
 
 	for slot in slots:
-		var piece: Dictionary = slot["piece"]
-		var piece_id := int(piece["pieceId"])
+		var slot_index := int(slot["index"])
 		var slot_rect := Rect2(
 			tray_rect.position.x + float(slot["x"]) - tray_scroll,
 			tray_rect.position.y + 10.0,
@@ -307,11 +316,23 @@ func _draw_tray() -> void:
 			continue
 		var slot_color := Color(1.0, 1.0, 1.0, 0.09 * tray_alpha)
 		draw_rect(slot_rect.grow(-3.0), slot_color, true)
-		_piece_hit_rects[piece_id] = slot_rect
-		if placements.has(str(piece_id)) or piece_id == _drag_piece_id:
+		var piece_id := int(tray_slot_piece_ids[slot_index]) if slot_index < tray_slot_piece_ids.size() else -1
+		if slot_index == _return_slot_index and _drag_source == "board" and _drag_piece_id >= 0:
+			var focus_color := Color(0.45, 0.82, 1.0, 0.92 * tray_alpha)
+			draw_rect(slot_rect.grow(-4.0), focus_color, false, 3.0)
+			_draw_piece_preview(_piece_by_id(_drag_piece_id), slot_rect, 0.72 * tray_alpha)
+			continue
+		if piece_id < 0:
 			draw_rect(slot_rect.grow(-10.0), Color(1.0, 1.0, 1.0, 0.12 * tray_alpha), false, 2.0)
 			continue
-		_draw_piece_preview(piece, slot_rect, tray_alpha)
+		var piece := _piece_by_id(piece_id)
+		if piece.is_empty() or placements.has(str(piece_id)):
+			continue
+		_piece_hit_rects[piece_id] = slot_rect
+		if piece_id == _drag_piece_id:
+			draw_rect(slot_rect.grow(-10.0), Color(1.0, 1.0, 1.0, 0.12 * tray_alpha), false, 2.0)
+		else:
+			_draw_piece_preview(piece, slot_rect, tray_alpha)
 
 	if max_scroll > 0.0:
 		var hint_color := Color(1.0, 1.0, 1.0, 0.58 * tray_alpha)
@@ -335,6 +356,8 @@ func _draw_dragging_piece() -> void:
 	var piece := _piece_by_id(_drag_piece_id)
 	if piece.is_empty():
 		return
+	if _drag_source == "board" and _return_slot_index >= 0 and _tray_rect().grow(RETURN_HOTZONE_MARGIN).has_point(_last_pointer):
+		return
 	var geometry := _board_geometry()
 	var cell_size: float = geometry["cellSize"]
 	var bounds := _piece_bounds(piece)
@@ -352,15 +375,30 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mouse_event := event as InputEventMouseButton
 		var position := _canvas_to_local(mouse_event.position)
-		if mouse_event.button_index == MOUSE_BUTTON_WHEEL_LEFT and mouse_event.pressed:
-			_scroll_tray(-46.0)
-		elif mouse_event.button_index == MOUSE_BUTTON_WHEEL_RIGHT and mouse_event.pressed:
-			_scroll_tray(46.0)
+		var pointer_over_tray := _tray_rect().has_point(position)
+		if pointer_over_tray and mouse_event.pressed and (
+			mouse_event.button_index == MOUSE_BUTTON_WHEEL_LEFT
+			or mouse_event.button_index == MOUSE_BUTTON_WHEEL_UP
+		):
+			_scroll_tray(-WHEEL_SCROLL_STEP)
+			get_viewport().set_input_as_handled()
+		elif pointer_over_tray and mouse_event.pressed and (
+			mouse_event.button_index == MOUSE_BUTTON_WHEEL_RIGHT
+			or mouse_event.button_index == MOUSE_BUTTON_WHEEL_DOWN
+		):
+			_scroll_tray(WHEEL_SCROLL_STEP)
+			get_viewport().set_input_as_handled()
 		elif mouse_event.button_index == MOUSE_BUTTON_LEFT:
 			if mouse_event.pressed:
 				_pointer_pressed(position, -1)
 			else:
 				_pointer_released(position, -1)
+	elif event is InputEventPanGesture:
+		var pan := event as InputEventPanGesture
+		var pan_position := _canvas_to_local(pan.position)
+		if _tray_rect().has_point(pan_position):
+			_scroll_tray(-pan.delta.x * PAN_SCROLL_SCALE)
+			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _pointer_down and _pointer_id == -1:
 		_pointer_moved(_canvas_to_local((event as InputEventMouseMotion).position), -1)
 	elif event is InputEventScreenTouch:
@@ -409,9 +447,17 @@ func _pointer_moved(position: Vector2, pointer_id: int) -> void:
 		return
 	var delta := position - _press_position
 	if _interaction_mode == "pending":
-		if _drag_source == "tray" and (absf(delta.x) > DRAG_THRESHOLD and absf(delta.x) > absf(delta.y)):
+		var horizontal_scroll := (
+			_drag_source == "tray"
+			and absf(delta.x) > DRAG_THRESHOLD
+			and absf(delta.x) >= absf(delta.y) * SCROLL_DIRECTION_BIAS
+		)
+		if horizontal_scroll:
 			_interaction_mode = "scroll"
-		elif _press_piece_id >= 0 and delta.length() > DRAG_THRESHOLD and (_drag_source == "board" or delta.y < -DRAG_THRESHOLD * 0.55):
+		elif _press_piece_id >= 0 and delta.length() > DRAG_THRESHOLD and (
+			_drag_source == "board"
+			or (delta.y < -DRAG_THRESHOLD * 0.55 and absf(delta.y) > absf(delta.x))
+		):
 			_start_drag(_press_piece_id)
 		elif _drag_source == "tray" and _press_piece_id < 0 and absf(delta.x) > DRAG_THRESHOLD:
 			_interaction_mode = "scroll"
@@ -419,7 +465,11 @@ func _pointer_moved(position: Vector2, pointer_id: int) -> void:
 		_scroll_tray(_last_pointer.x - position.x)
 	elif _interaction_mode == "drag":
 		_last_pointer = position
-		_preview_origin = _origin_for_pointer(position)
+		if _drag_source == "board" and _tray_rect().grow(RETURN_HOTZONE_MARGIN).has_point(position):
+			_prepare_return_slot_focus()
+		else:
+			_return_slot_index = -1
+			_preview_origin = _origin_for_pointer(position)
 		queue_redraw()
 	_last_pointer = position
 	get_viewport().set_input_as_handled()
@@ -429,8 +479,8 @@ func _pointer_released(position: Vector2, pointer_id: int) -> void:
 	if not _pointer_down or pointer_id != _pointer_id:
 		return
 	if _interaction_mode == "drag" and _drag_piece_id >= 0:
-		if _drag_source == "board" and _tray_rect().has_point(position):
-			return_requested.emit(_drag_piece_id)
+		if _drag_source == "board" and _return_slot_index >= 0 and _tray_rect().grow(RETURN_HOTZONE_MARGIN).has_point(position):
+			return_requested.emit(_drag_piece_id, _return_slot_index)
 		elif _origin_allowed(_drag_piece_id, _preview_origin):
 			placement_requested.emit(_drag_piece_id, [_preview_origin.y, _preview_origin.x])
 	_reset_pointer()
@@ -453,6 +503,7 @@ func _reset_pointer() -> void:
 	_drag_source = ""
 	_interaction_mode = ""
 	_preview_origin = Vector2i(-99, -99)
+	_return_slot_index = -1
 	_intro_dragging_piece = false
 	_demo_piece_id = -1
 	_demo_origin = Vector2i(-99, -99)
@@ -497,7 +548,78 @@ func _origin_allowed(piece_id: int, origin: Vector2i) -> bool:
 
 
 func _scroll_tray(delta: float) -> void:
-	tray_scroll = maxf(0.0, tray_scroll + delta)
+	if _tray_focus_tween and _tray_focus_tween.is_valid():
+		_tray_focus_tween.kill()
+	tray_scroll = clampf(tray_scroll + delta, 0.0, _tray_max_scroll())
+	queue_redraw()
+
+
+func _tray_max_scroll() -> float:
+	var slots := _tray_slot_layout()
+	if slots.is_empty():
+		return 0.0
+	var last_slot: Dictionary = slots.back()
+	var content_width := float(last_slot["x"]) + float(last_slot["width"]) + 4.0
+	return maxf(0.0, content_width - _tray_rect().size.x)
+
+
+func _tray_slot_layout() -> Array:
+	var pieces: Array = assembly_data.get("pieces", [])
+	var result: Array = []
+	var content_x := 14.0
+	for slot_index in range(pieces.size()):
+		var sizing_piece := _piece_for_initial_slot(slot_index)
+		var bounds := _piece_bounds(sizing_piece)
+		var width := clampf(float(bounds.size.x) * TRAY_CELL_SIZE + 32.0, TRAY_SLOT_MIN_WIDTH, TRAY_SLOT_MAX_WIDTH)
+		result.append({"index": slot_index, "x": content_x, "width": width})
+		content_x += width + 10.0
+	return result
+
+
+func _piece_for_initial_slot(slot_index: int) -> Dictionary:
+	var pieces: Array = assembly_data.get("pieces", [])
+	for piece in pieces:
+		if int(piece.get("trayIndex", piece.get("pieceId", -1))) == slot_index:
+			return piece
+	return pieces[slot_index] if slot_index >= 0 and slot_index < pieces.size() else {}
+
+
+func _first_empty_tray_slot() -> int:
+	for slot_index in range(tray_slot_piece_ids.size()):
+		if int(tray_slot_piece_ids[slot_index]) < 0:
+			return slot_index
+	return -1
+
+
+func _prepare_return_slot_focus() -> void:
+	if _return_slot_index >= 0:
+		return
+	_return_slot_index = _first_empty_tray_slot()
+	if _return_slot_index >= 0:
+		focus_tray_slot(_return_slot_index)
+
+
+func focus_tray_slot(slot_index: int, animated: bool = true) -> void:
+	var slots := _tray_slot_layout()
+	if slot_index < 0 or slot_index >= slots.size():
+		return
+	var slot: Dictionary = slots[slot_index]
+	var target_scroll := clampf(
+		float(slot["x"]) + float(slot["width"]) * 0.5 - _tray_rect().size.x * 0.5,
+		0.0,
+		_tray_max_scroll()
+	)
+	if _tray_focus_tween and _tray_focus_tween.is_valid():
+		_tray_focus_tween.kill()
+	if not animated or is_equal_approx(tray_scroll, target_scroll):
+		_set_tray_scroll(target_scroll)
+		return
+	_tray_focus_tween = create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_tray_focus_tween.tween_method(_set_tray_scroll, tray_scroll, target_scroll, RETURN_FOCUS_DURATION)
+
+
+func _set_tray_scroll(value: float) -> void:
+	tray_scroll = clampf(value, 0.0, _tray_max_scroll())
 	queue_redraw()
 
 
