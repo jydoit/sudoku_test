@@ -7,15 +7,16 @@ const MUTED := Color("#718096")
 const CREAM := Color("#FFF8ED")
 const CARD := Color("#FFFFFF")
 const REGION_COLORS = [
-	Color("#FFE88A"),
-	Color("#70B7FF"),
-	Color("#82D989"),
-	Color("#B59AF1"),
-	Color("#FF8C8C"),
-	Color("#64D8C4"),
-	Color("#F6A6D7"),
-	Color("#A8B8D8"),
-	Color("#FFB56B")
+	Color("#E53935"),
+	Color("#1E88E5"),
+	Color("#43A047"),
+	Color("#FDD835"),
+	Color("#8E24AA"),
+	Color("#00ACC1"),
+	Color("#FB8C00"),
+	Color("#3949AB"),
+	Color("#7CB342"),
+	Color("#D81B60")
 ]
 
 var levels: Array = []
@@ -204,6 +205,7 @@ func _rebuild_board() -> void:
 	_refresh_cells()
 
 
+
 func _refresh_cells() -> void:
 	var solution := _solution_set()
 	for row in range(int(current_level["rows"])):
@@ -246,7 +248,7 @@ func _toggle_solution_mode() -> void:
 
 func _update_solution_button() -> void:
 	if paint_solution:
-		solution_mode_button.text = "答案模式：点皇冠"
+		solution_mode_button.text = "答案模式：点小狮子"
 		solution_mode_button.add_theme_stylebox_override("normal", _button_style(Color("#FFB84E"), 12))
 	else:
 		solution_mode_button.text = "区域模式：涂颜色"
@@ -260,7 +262,7 @@ func _validate_current_level() -> void:
 	var solution: Array = current_level["solution"]
 	var issues: Array[String] = []
 	if solution.size() != target:
-		issues.append("答案皇冠数量应为 %d 个，现在是 %d 个" % [target, solution.size()])
+		issues.append("答案小狮子数量应为 %d 个，现在是 %d 个" % [target, solution.size()])
 
 	var seen_rows := {}
 	var seen_cols := {}
@@ -274,11 +276,11 @@ func _validate_current_level() -> void:
 			continue
 		var region := int(current_level["regions"][row][col])
 		if seen_rows.has(row):
-			issues.append("同一行里有多个皇冠")
+			issues.append("同一行里有多个小狮子")
 		if seen_cols.has(col):
-			issues.append("同一列里有多个皇冠")
+			issues.append("同一列里有多个小狮子")
 		if seen_regions.has(region):
-			issues.append("同一区域里有多个皇冠")
+			issues.append("同一区域里有多个小狮子")
 		seen_rows[row] = true
 		seen_cols[col] = true
 		seen_regions[region] = true
@@ -289,7 +291,7 @@ func _validate_current_level() -> void:
 			var a := positions[i]
 			var b := positions[j]
 			if absi(a.x - b.x) <= 1 and absi(a.y - b.y) <= 1:
-				issues.append("皇冠不能相邻，包括斜向相邻")
+				issues.append("小狮子不能相邻，包括斜向相邻")
 
 	if issues.is_empty():
 		status_label.text = "当前关卡检查通过，可以保存。"

@@ -10,14 +10,14 @@
 <text x="282.0" y="154" font-family="Arial, PingFang SC, sans-serif" font-size="24" font-weight="700" fill="#26334A" text-anchor="middle">棋盘交互</text>
 <rect x="112" y="220" width="320" height="92" rx="16" fill="#FFFFFF" stroke="#D8DEE9" stroke-width="2" />
 <text x="132" y="258" font-family="Arial, PingFang SC, sans-serif" font-size="21" font-weight="700" fill="#26334A" text-anchor="start">点击格子后状态循环</text>
-<text x="132" y="288" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#536278" text-anchor="start">空白 -&gt; X -&gt; 皇冠 -&gt; 空白</text>
+<text x="132" y="288" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#536278" text-anchor="start">单击标记 X，双击尝试找小狮子</text>
 <rect x="101" y="374" width="342" height="342" rx="12" fill="#26334A" stroke="#26334A" stroke-width="0" />
 <rect x="107.0" y="380.0" width="55.0" height="55.0" rx="4" fill="#B8E6B1" stroke="#FFFFFF" stroke-width="2" />
 <line x1="122.0" y1="395.0" x2="147.0" y2="420.0" stroke="#26334A" stroke-width="5" stroke-linecap="round"/>
 <line x1="147.0" y1="395.0" x2="122.0" y2="420.0" stroke="#26334A" stroke-width="5" stroke-linecap="round"/>
 <rect x="162.0" y="380.0" width="55.0" height="55.0" rx="4" fill="#B8E6B1" stroke="#FFFFFF" stroke-width="2" />
 <rect x="167.0" y="385.0" width="45.0" height="45.0" rx="8" fill="none" stroke="#E23B4A" stroke-width="5" />
-<text x="189.5" y="418.5" font-family="Arial, PingFang SC, sans-serif" font-size="19" font-weight="700" fill="#26334A" text-anchor="middle">皇冠</text>
+<text x="189.5" y="418.5" font-family="Arial, PingFang SC, sans-serif" font-size="19" font-weight="700" fill="#26334A" text-anchor="middle">小狮子</text>
 <rect x="217.0" y="380.0" width="55.0" height="55.0" rx="4" fill="#FFE6A7" stroke="#FFFFFF" stroke-width="2" />
 <rect x="272.0" y="380.0" width="55.0" height="55.0" rx="4" fill="#FFE6A7" stroke="#FFFFFF" stroke-width="2" />
 <rect x="327.0" y="380.0" width="55.0" height="55.0" rx="4" fill="#A8D8FF" stroke="#FFFFFF" stroke-width="2" />
@@ -43,7 +43,7 @@
 <rect x="272.0" y="545.0" width="55.0" height="55.0" rx="4" fill="#FFE6A7" stroke="#FFFFFF" stroke-width="2" />
 <rect x="327.0" y="545.0" width="55.0" height="55.0" rx="4" fill="#E7C6FF" stroke="#FFFFFF" stroke-width="2" />
 <rect x="332.0" y="550.0" width="45.0" height="45.0" rx="8" fill="none" stroke="#48B985" stroke-width="5" />
-<text x="354.5" y="583.5" font-family="Arial, PingFang SC, sans-serif" font-size="19" font-weight="700" fill="#26334A" text-anchor="middle">皇冠</text>
+<text x="354.5" y="583.5" font-family="Arial, PingFang SC, sans-serif" font-size="19" font-weight="700" fill="#26334A" text-anchor="middle">小狮子</text>
 <rect x="382.0" y="545.0" width="55.0" height="55.0" rx="4" fill="#E7C6FF" stroke="#FFFFFF" stroke-width="2" />
 <rect x="107.0" y="600.0" width="55.0" height="55.0" rx="4" fill="#FFC6C6" stroke="#FFFFFF" stroke-width="2" />
 <rect x="162.0" y="600.0" width="55.0" height="55.0" rx="4" fill="#FFC6C6" stroke="#FFFFFF" stroke-width="2" />
@@ -62,7 +62,7 @@
 <circle cx="548" cy="225" r="20" fill="#E23B4A"/>
 <text x="548" y="232" font-family="Arial, PingFang SC, sans-serif" font-size="21" font-weight="700" fill="#fff" text-anchor="middle">1</text>
 <text x="580" y="222" font-family="Arial, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#26334A" text-anchor="start">状态循环</text>
-<text x="580" y="252" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#536278" text-anchor="start">第一次点击标记排除 X，第二次放皇冠，第三次清空。</text>
+<text x="580" y="252" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#536278" text-anchor="start">单击标记排除 X，再次单击取消；双击尝试找小狮子。</text>
 <line x1="296" y1="286" x2="532" y2="225" stroke="#E23B4A" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
 <circle cx="548" cy="430" r="20" fill="#E23B4A"/>
 <text x="548" y="437" font-family="Arial, PingFang SC, sans-serif" font-size="21" font-weight="700" fill="#fff" text-anchor="middle">2</text>

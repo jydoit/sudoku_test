@@ -14,10 +14,10 @@
 <text x="374.0" y="204" font-family="Arial, PingFang SC, sans-serif" font-size="17" font-weight="700" fill="#26334A" text-anchor="middle">设置</text>
 <rect x="116" y="260" width="312" height="250" rx="18" fill="#FFFFFF" stroke="#D8DEE9" stroke-width="3" filter="url(#shadow)"/>
 <text x="272" y="310" font-family="Arial, PingFang SC, sans-serif" font-size="26" font-weight="700" fill="#26334A" text-anchor="middle">基础规则</text>
-<text x="150" y="360" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#26334A" text-anchor="start">每行一个皇冠</text>
-<text x="150" y="394" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#26334A" text-anchor="start">每列一个皇冠</text>
-<text x="150" y="428" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#26334A" text-anchor="start">每个颜色区域一个皇冠</text>
-<text x="150" y="462" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#26334A" text-anchor="start">皇冠不能相邻</text>
+<text x="150" y="360" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#26334A" text-anchor="start">每行一个小狮子</text>
+<text x="150" y="394" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#26334A" text-anchor="start">每列一个小狮子</text>
+<text x="150" y="428" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#26334A" text-anchor="start">每个颜色区域一个小狮子</text>
+<text x="150" y="462" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#26334A" text-anchor="start">小狮子不能相邻</text>
 <rect x="116" y="590" width="312" height="116" rx="18" fill="#FFF8ED" stroke="#F0C36A" stroke-width="2" />
 <text x="150" y="634" font-family="Arial, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#26334A" text-anchor="start">即时纠错</text>
 <text x="150" y="672" font-family="Arial, PingFang SC, sans-serif" font-size="18" font-weight="400" fill="#536278" text-anchor="start">开 / 关冲突红框显示</text>

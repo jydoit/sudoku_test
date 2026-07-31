@@ -4,31 +4,127 @@
 
 ## 分支规则
 
-- 日常迭代默认在 `codex-iteration` 分支进行。
-- `main` 作为稳定分支，不直接承接日常实验性修改。
-- 提交前确认当前分支，避免把迭代直接提交到 `main`。
+- 当前团队协作以朋友仓库 `jydoit` 的 `dev` 分支为集成分支：
+  `https://github.com/jydoit/sudoku_test.git`
+- 新开 Codex 对话或开始新任务时，先确认远端存在：
+  `jydoit https://github.com/jydoit/sudoku_test.git`。
+- 日常开发不要直接改 `dev` 或 `master`，应先从 `jydoit/dev` 拉取最新代码，再新建个人开发分支。
+- 推荐本地开发分支命名：`codex-dev-iteration`，或按任务命名为 `codex/<task-name>`。
+- 约定合并顺序：个人开发分支 -> `dev` -> `master`。
+- `master` 作为最终稳定分支，不直接承接日常修改。
+- 旧的 `codex-iteration -> main` 流程只用于历史仓库流程；除非用户明确要求，否则新工作按 `dev -> master` 流程处理。
+- 提交前确认当前分支，避免把迭代直接提交到 `dev`、`master`、`main`。
+
+开始新任务前推荐执行：
+
+```bash
+git fetch jydoit dev
+git switch -c codex-dev-iteration jydoit/dev
+```
+
+如果 `codex-dev-iteration` 已存在，则执行：
+
+```bash
+git switch codex-dev-iteration
+git pull
+```
 
 ## 产品文档规则
 
+- 新开 Codex 对话读取本项目时，必须先看本文档，再按任务类型读取：
+  - 产品、玩法、经济、提示、关卡、发布范围：`docs/PRODUCT_REQUIREMENTS.md`
+  - UI、视觉、动效、音效、截图验收：`docs/UI_DESIGN_GUIDE.md`
+  - 待办和延续事项：`docs/CODEX_TODO.md`
+  - 已完成功能、问题修复和验证记录：`docs/VERSION_HISTORY.md`
+  - 运行、打包和代码结构概览：`README.md`
 - 产品功能事实源为 `docs/PRODUCT_REQUIREMENTS.md`。
 - 新增、删除或修改功能时，必须同步更新该文档。
 - 修改 UI、玩法、提示、经济、关卡、存档、编辑器或测试流程时，也必须同步更新该文档。
+- 已验证、已修复或已完成的事项应从 `docs/CODEX_TODO.md` 移除，并记录到 `docs/VERSION_HISTORY.md`。
 - 如果实现与文档不一致，要么修代码，要么修文档，不能留下隐性差异。
+
+## 2026-07-23 主要更新约束
+
+- 棋盘视觉、交互、提示、音效、动效和说明文档已按当前 UI 规范重新对齐；后续修改必须同时检查 `docs/PRODUCT_REQUIREMENTS.md`、`docs/UI_DESIGN_GUIDE.md`、`README.md` 和本文档是否一致。
+- 棋盘区域色板以 `scripts/ui_tokens.gd` 的 10 色亮色板为准；PRD 和 UI 规范中的色板描述必须与该文件同步。
+- 已确认小狮子现在是锁定状态，不能再次单击取消或改成 X；提示小狮子、开局小狮子和错误红 X 同样锁定。
+- 正确找到小狮子必须有弹性出现动效；错误红 X 必须有短震动反馈；用户停顿思考约 8 秒时，棋盘上已出现的小狮子执行轻微摇头动作。
+- 正式关卡提示只允许通过半透明白灰蒙层和可点击目标表达，不显示解释文字，不加高亮框、光环或循环闪烁。
+- Android 调试包输出路径约定为 `builds/color_king-debug.apk`；打包后如只是 adb 服务连接失败，不代表 APK 导出失败。
+
+## 玩法硬约束
+
+- 核心玩法必须保持为从棋盘格中找出小狮子：每行、每列、每个颜色区域有且仅有一个小狮子，小狮子不能八方向相邻。
+- 核心棋盘交互必须区分普通排除 X、已确认小狮子、提示小狮子和错误红色 X；普通 X 可取消，已确认小狮子、提示小狮子和错误红色 X 都锁定。
+- 锁定约束也适用于隐藏的内部兼容操作：撤销只能改变普通 X，不能移除任何小狮子或错误红 X；教程不得回到旧撤销/清除教学状态。
+- 正式关卡按展示关卡序号分配红心：第 1-10 关 3 个，第 11-30 关 2 个，第 31 关起 1 个；用户双击非标准答案格尝试放置小狮子时，扣除 1 个红心并把该格标记为红色 X，红心为 0 时先锁定棋盘停顿 1.5 秒展示红 X，再进入关卡失败页。
+- 失败页点击“返回首页”后，下一次从首页点击开始关卡必须重新开始当前关卡，恢复红心并清空失败局错误红 X；不得再次弹出旧失败页阻断进入。
+- 每个用户初始有 3 次小狮子直找和 3 次提示；两个按钮的显示次数最低为 `×0`，不得显示负数或 `-价格`。免费次数用完后点击按钮只弹出购买金币 / 观看激励广告获取积分入口，不直接扣金币使用。
+- 当前底部关卡道具只显示“小狮子”和“提示”；清除/撤销不作为可见按钮出现。
+- 棋盘必须支持滑动批量处理普通排除 X：从空格开始滑动时连续标记普通 X；从普通 X 开始滑动时连续取消普通 X；滑动不得标记小狮子，也不得改变小狮子。
+- 移动端棋盘输入必须使用项目自定义触控防抖：触屏后短时间内忽略 Android 兼容鼠标事件；双击必须由同格、同位置附近、间隔合规的两次完整点击触发；不得直接依赖 Godot 自带 `double_tap` / `double_click` 作为小狮子尝试依据。
+- 棋盘颜色必须使用产品文档固化的“明亮经典”10 色默认色板；相邻区域不能使用相近颜色。
+- 棋盘不能只依赖颜色区分区域；棋盘底色为白色，棋盘最外缘不画黑色边框，不同颜色区域之间不画深色线，所有格子之间必须保留白色格间距，并用稍明显的底纹辅助区分。
+- 新手教程必须使用单张 5x5 教程棋盘图讲完核心规则，包含双击找小狮子、滑动排除小狮子周围格、同行同列排除、提示线索和完整找出全部小狮子；玩家可见道具文案使用“小狮子”。
+- 新手教程手势必须和文案一致：相邻排除阶段使用小手滑动演示；同行同列排除阶段只用小手点击绿色引导格。真机触控允许从绿色目标格起手的轻微滑动按一次点击容错处理，但不得连续滑动批量完成同行同列阶段。
+- 新手教程道具计数不得显示无限或正式关卡真实次数；非教学阶段为空，引导点击提示或小狮子时显示 `×1`，点击后显示 `×0`。
 
 ## 测试与验证规则
 
 正式发布前必须按 `docs/PRODUCT_REQUIREMENTS.md` 的“发布前回归测试清单”执行回归。
 
+- PRD 第 8 节的测试用例编号是需求、自动测试、视觉截图和发布报告之间的追溯键；新增或修改功能时必须同步更新对应编号、预期结果、验证层级和发布级别。
+- 正式发布优先运行 `tools/run_release_validation.sh --visual`，并保存 `artifacts/release_validation/` 下的报告。
+- 验证分为 A（自动功能）、V（Godot 540×960 视觉）、D（Android 真机/云真机）和 M（人工操作）；低层级通过不能替代高层级结论。
+- 所有 P0 用例必须通过；P1 失败必须修复或获得明确接受记录。没有 D 类证据时只能标记“待真机验收”，不得标记正式可发布。
+
+产品方案 / UI / 玩法逻辑 / 经济 / 关卡 / 提示 / 音效 / 动效变更流程：
+
+- 修改前必须先自动对照 `docs/PRODUCT_REQUIREMENTS.md`、`docs/UI_DESIGN_GUIDE.md`、`README.md`、本文档和相关代码，找出本次变更会影响的规则、页面、测试和文档。
+- 修改前必须把对照结果和拟修改范围提示给用户，并获得用户确认后再开始动代码或文档；用户已明确说“直接改”“全部按建议改”等同于确认。
+- 修改后必须同步更新 `docs/PRODUCT_REQUIREMENTS.md`、`docs/UI_DESIGN_GUIDE.md`、`README.md`、本文档和必要的待办记录；如果某个文件不需要改，交付说明里要说明原因。
+- 修改后必须运行对应测试验证；涉及 UI 的还必须生成运行截图或真机截图并按 UI 验收清单逐项对照。
+- 测试、截图验收和文档同步完成后，才允许打包 APK；如果有未验证项或不一致项，必须先明确报告，不能直接宣称可发布。
+
+任何涉及 UI、视觉素材、动效、音效反馈、页面布局、棋盘绘制、按钮状态、提示蒙层或结果页的改动，在打包、发布新功能或交付新版本前，必须额外执行 UI 视觉验收：
+
+- 先读取 `docs/UI_DESIGN_GUIDE.md`，把受影响页面和组件拆成逐项 checklist。
+- 必须区分“代码/自动测试通过”和“视觉符合规范”；没有真机或同尺寸运行截图时，只能说明代码层通过，不能宣称与 UI 规范一致。
+- 必须至少验收首页、正式关卡页、棋盘核心状态、提示/新人引导状态、通关页、失败页、弹窗/设置入口中受影响的页面；如果改动影响全局 token、字体、色板或按钮样式，则这些页面都要重新检查。
+- 可用 `tools/capture_ui_screenshots.gd` 生成 540×960 移动端尺寸截图；该截图只能代表 Godot 运行时移动尺寸，不等同于 Android 真机 APK 截图。
+- 棋盘 UI 必须用真实运行截图或真机截图逐项对照规范图：最外框不出现深色线、不同色区域之间无深色分割线、所有格子白色格间距、格子圆角、底纹可见度、X 居中和大小、小狮子尺寸、提示蒙层亮度都要单独判断。
+- 验收结论必须列出“通过项 / 不一致项 / 未能验证项”。发现不一致时，不能用“核心规则一致”代替视觉一致；要么继续修正，要么明确报告差异并等用户确认。
+- 打包后的 APK 需要记录生成时间、文件路径和校验值；如再次修改 UI，必须重新打包并重新执行对应视觉验收。
+
+Android 真机 / 模拟器验收规则：
+
+- Godot 540×960 截图只代表移动端尺寸模拟，不等同于 Android APK 真机验收。
+- 需要真机验收时，先确认 `adb devices` 能看到设备；设备必须开启开发者选项、USB 调试，并在手机上允许本机调试授权。
+- 安装 APK 后至少截：首页、正式关卡页、棋盘标记态、提示态、通关页、失败页；截图要和 `docs/UI_DESIGN_GUIDE.md` 逐项对照。
+- 当前 Android SDK 路径约定为 `/Users/shingo_mac/Documents/Codex/android_toolchain/android-sdk`；`adb` 位于 `platform-tools/adb`。
+- 当前 JDK 路径约定为 `/Users/shingo_mac/Documents/Codex/android_toolchain/jdk/jdk-17.0.19+10/Contents/Home`。
+- 当前已创建的自动验收 AVD 为 `color_king_api30`，使用 Android 30 Google APIs x86_64 系统镜像；没有可启动 AVD 时不能宣称完成安卓模拟器验收。
+- Android 调试包必须保留 `arm64-v8a` 供真机使用，并启用 `x86_64` 供本地模拟器自动验收；如果关闭任一 ABI，必须在交付说明中说明原因。
+- 真机可以通过 USB ADB、Wi-Fi ADB 或可安装指定 APK 的云真机连接；报告必须记录设备型号、Android 版本、分辨率、连接方式、测试时间和 APK SHA-256。
+- 真机阶段必须执行 PRD 中标记 D 的 P0 用例；滑动、双击、返回键、RTL、音效和动效需要实际操作，不能仅凭静态截图判定。
+
 每次代码改动后至少运行：
 
 ```bash
-HOME=/Users/shingo_mac/Documents/Codex/2026-06-29/du-y/work/godot_home /Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/shingo_mac/Desktop/push_sudoku_shingosuper --script res://tests/smoke_test.gd
+HOME=/private/tmp/color_king_smoke /Applications/Godot.app/Contents/MacOS/Godot --headless --path . --script tests/smoke_test.gd
+HOME=/private/tmp/color_king_tutorial /Applications/Godot.app/Contents/MacOS/Godot --headless --path . --script tests/tutorial_smoke_test.gd
+```
+
+涉及存档、教程完成状态、资源余额或版本号时还必须运行：
+
+```bash
+HOME=/private/tmp/color_king_save /Applications/Godot.app/Contents/MacOS/Godot --headless --path . --script tests/save_compat_test.gd
 ```
 
 如果改动涉及关卡编辑器，还必须运行：
 
 ```bash
-HOME=/Users/shingo_mac/Documents/Codex/2026-06-29/du-y/work/godot_home /Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/shingo_mac/Desktop/push_sudoku_shingosuper --script res://tests/editor_smoke_test.gd
+HOME=/private/tmp/color_king_editor /Applications/Godot.app/Contents/MacOS/Godot --headless --path . --script tests/editor_smoke_test.gd
 ```
 
 ## 关卡数据规则
@@ -41,16 +137,21 @@ HOME=/Users/shingo_mac/Documents/Codex/2026-06-29/du-y/work/godot_home /Applicat
 
 ## 提示系统规则
 
-- 提示不能直接替玩家放置皇冠。
-- 提示必须解释原因，不能只给“最佳格子”结论。
-- 提示文案应使用可见颜色名，例如黄色区域、绿色区域，避免使用“颜色区域 5”这类内部编号。
+- 正式关卡 Hint 的可操作范围只能包含可画普通 X 的非小狮子空格，不能包含标准答案小狮子格、候选观察格或推理单元；范围内每格必须可单击画 X，没有合法目标时不消耗提示次数。新手教程按独立教学状态机处理。
+- 正式关卡提示只通过棋盘图像差异和可操作范围表达，不显示解释文字或成功提示 Toast。
+- 提示和新手引导通过整盘半透明白灰蒙层区分可操作范围：不同颜色区域之间不额外绘制深色线，全部提示相关格和已有 X/小狮子重绘为正常亮度；提示格不加高亮框、不闪烁；其它空格禁止点击。
 - 如果新增解题策略，必须同步更新产品需求文档中的提示模块和回归测试重点。
 
 ## UI 规则
 
 - 项目以竖屏移动端体验为优先。
 - 修改 UI 后需要检查移动端宽度下是否有裁切、遮挡、按钮过小或文本溢出。
-- 首页和关卡页职责分离：金币、排行榜等资源与社交入口主要放首页；关卡页优先服务解题。
+- App 对外名称和首页主标题统一为 `color king`。
+- 首页和关卡结果页使用统一的蓝色主色系；首页优先呈现 `color king`、胜利小狮子主视觉、当前关卡入口和新人引导入口。
+- 首页和关卡页职责分离：排行榜、活动、宝箱和社交入口不在关卡页展示；关卡页可显示当前金币、红心、帮助、设置和选关，优先服务解题。
+- 关卡结果页使用整屏奖励结构：顶部完成文案、中部胜利小狮子展位、底部“下一关”和“主菜单”；当前不显示排行榜、奖励进度栏和广告位。
+- 关卡失败页沿用关卡结果页蓝色整屏结构，中部显示失败小狮子，底部按钮为“重新挑战”和“返回首页”。
+- 棋盘颜色区域需要兼顾色弱和低色彩敏感用户：棋盘最外缘不画深色边框，不同颜色区域之间不画深色线，所有格子之间保留白色格间距，并通过稍明显的底纹确保不靠颜色也能看出区域轮廓。
 
 ## 提交前检查
 
