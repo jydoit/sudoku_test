@@ -1,4 +1,6 @@
 .godot/
+artifacts/release_validation/
 export/
+builds/
 *.tmp
 .DS_Store

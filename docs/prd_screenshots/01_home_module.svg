@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1280" viewBox="0 0 960 1280">
+<defs>
+<filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#1d2b45" flood-opacity="0.18"/></filter>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="#2E92F2"/>
+<stop offset="58%" stop-color="#91D4FF"/>
+<stop offset="100%" stop-color="#DDF5FF"/>
+</linearGradient>
+</defs>
+<rect width="960" height="1280" fill="#F5F7FB"/>
+<text x="72" y="58" font-family="Arial, PingFang SC, sans-serif" font-size="30" font-weight="700" fill="#26334A">6.1 首页模块：当前入口结构</text>
+
+<rect x="96" y="110" width="420" height="880" rx="34" fill="#FFFFFF" stroke="#D8DEE9" stroke-width="3" filter="url(#shadow)"/>
+<rect x="116" y="132" width="380" height="836" rx="26" fill="url(#sky)"/>
+<text x="306" y="230" font-family="Arial, PingFang SC, sans-serif" font-size="30" font-weight="700" fill="#FFE166" text-anchor="middle">color king</text>
+
+<g transform="translate(306 365)">
+<ellipse cx="0" cy="134" rx="62" ry="14" fill="#5B7EA3" opacity="0.20"/>
+<circle cx="0" cy="-18" r="62" fill="#C86122" stroke="#8B3B14" stroke-width="7"/>
+<circle cx="-48" cy="-6" r="24" fill="#FFC44D" stroke="#8B3B14" stroke-width="7"/>
+<circle cx="48" cy="-6" r="24" fill="#FFC44D" stroke="#8B3B14" stroke-width="7"/>
+<path d="M-34 -54 L-20 -92 L0 -58 L20 -92 L34 -54 Z" fill="#FFD84A" stroke="#8B3B14" stroke-width="6" stroke-linejoin="round"/>
+<rect x="-56" y="12" width="112" height="108" rx="42" fill="#FFC44D" stroke="#8B3B14" stroke-width="7"/>
+<circle cx="-24" cy="54" r="8" fill="#5D2A13"/>
+<circle cx="24" cy="54" r="8" fill="#5D2A13"/>
+<ellipse cx="0" cy="78" rx="15" ry="10" fill="#7A3517"/>
+<path d="M-20 98 Q0 116 20 98" fill="none" stroke="#7A3517" stroke-width="6" stroke-linecap="round"/>
+<rect x="-64" y="92" width="24" height="66" rx="12" fill="#FFC44D" stroke="#8B3B14" stroke-width="7"/>
+<rect x="40" y="92" width="24" height="66" rx="12" fill="#FFC44D" stroke="#8B3B14" stroke-width="7"/>
+<rect x="-44" y="116" width="88" height="56" rx="12" fill="#FFE8A6" stroke="#8B3B14" stroke-width="6"/>
+</g>
+
+<rect x="166" y="650" width="280" height="58" rx="18" fill="#3E8DFF" filter="url(#shadow)"/>
+<text x="306" y="687" font-family="Arial, PingFang SC, sans-serif" font-size="22" font-weight="700" fill="#FFFFFF" text-anchor="middle">开始第 1 关</text>
+<rect x="166" y="736" width="280" height="54" rx="18" fill="#FFFFFF" stroke="#D8DEE9" stroke-width="2" filter="url(#shadow)"/>
+<text x="306" y="771" font-family="Arial, PingFang SC, sans-serif" font-size="21" font-weight="700" fill="#3E8DFF" text-anchor="middle">新人引导</text>
+
+<text x="570" y="210" font-family="Arial, PingFang SC, sans-serif" font-size="24" font-weight="700" fill="#26334A">必须保留</text>
+<text x="570" y="252" font-family="Arial, PingFang SC, sans-serif" font-size="20" font-weight="400" fill="#536278">- App 名称：color king</text>
+<text x="570" y="290" font-family="Arial, PingFang SC, sans-serif" font-size="20" font-weight="400" fill="#536278">- 胜利小狮子主视觉</text>
+<text x="570" y="328" font-family="Arial, PingFang SC, sans-serif" font-size="20" font-weight="400" fill="#536278">- 开始当前关卡</text>
+<text x="570" y="366" font-family="Arial, PingFang SC, sans-serif" font-size="20" font-weight="400" fill="#536278">- 新人引导入口</text>
+
+<text x="570" y="454" font-family="Arial, PingFang SC, sans-serif" font-size="24" font-weight="700" fill="#26334A">不得出现</text>
+<text x="570" y="496" font-family="Arial, PingFang SC, sans-serif" font-size="20" font-weight="400" fill="#536278">- 庭院 / 章节装修进度</text>
+<text x="570" y="534" font-family="Arial, PingFang SC, sans-serif" font-size="20" font-weight="400" fill="#536278">- 每日奖励 / 宝箱 / 活动 / 排行</text>
+<text x="570" y="572" font-family="Arial, PingFang SC, sans-serif" font-size="20" font-weight="400" fill="#536278">- 底部导航栏</text>
+<text x="570" y="610" font-family="Arial, PingFang SC, sans-serif" font-size="20" font-weight="400" fill="#536278">- 星数、庭院资源或装修任务</text>
+</svg>
