@@ -3,6 +3,7 @@ extends RefCounted
 
 const MAX_VALID_LAYOUTS := 6
 const MAX_SEARCH_NODES := 60000
+const DATA_VERSION := 9
 const MIN_REGION_CELLS := 3
 const MIN_STANDARD_PIECE_CELLS := 2
 const SPLIT_ATTEMPTS := 3
@@ -88,7 +89,7 @@ static func build(
 	)
 
 	var data := {
-		"version": 8,
+		"version": DATA_VERSION,
 		"seed": seed,
 		"difficulty": difficulty,
 		"rows": rows,
@@ -114,32 +115,43 @@ static func empty_placements() -> Dictionary:
 
 static func sanitize_tray_slots(data: Dictionary, placements: Dictionary, raw_slots = []) -> Array:
 	var pieces: Array = data.get("pieces", [])
-	var piece_ids := {}
-	for piece in pieces:
-		piece_ids[int(piece.get("pieceId", -1))] = true
-	var result: Array = []
-	result.resize(pieces.size())
-	result.fill(-1)
-	var seen := {}
-	if raw_slots is Array and raw_slots.size() == pieces.size():
-		for slot_index in range(raw_slots.size()):
-			var piece_id := int(raw_slots[slot_index])
-			if piece_id >= 0 and piece_ids.has(piece_id) and not placements.has(str(piece_id)) and not seen.has(piece_id):
-				result[slot_index] = piece_id
-				seen[piece_id] = true
-	var missing: Array = []
-	for piece in pieces:
-		var piece_id := int(piece.get("pieceId", -1))
-		if not placements.has(str(piece_id)) and not seen.has(piece_id):
-			missing.append(piece_id)
-	missing.sort_custom(func(a: int, b: int) -> bool:
-		return int(_piece_by_id(pieces, a).get("trayIndex", a)) < int(_piece_by_id(pieces, b).get("trayIndex", b))
+	var region_sizes := {}
+	for raw_cell in data.get("constructionCells", []):
+		if not raw_cell is Array or raw_cell.size() < 2:
+			continue
+		var row := int(raw_cell[0])
+		var col := int(raw_cell[1])
+		var base_regions: Array = data.get("baseRegions", [])
+		if row < 0 or row >= base_regions.size() or col < 0 or col >= base_regions[row].size():
+			continue
+		var region_id := int(base_regions[row][col])
+		region_sizes[region_id] = int(region_sizes.get(region_id, 0)) + 1
+
+	var ordered_pieces: Array = pieces.duplicate(true)
+	ordered_pieces.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var a_id := int(a.get("pieceId", -1))
+		var b_id := int(b.get("pieceId", -1))
+		var a_placed := placements.has(str(a_id))
+		var b_placed := placements.has(str(b_id))
+		if a_placed != b_placed:
+			return not a_placed
+		var a_region := int(a.get("regionId", -1))
+		var b_region := int(b.get("regionId", -1))
+		var a_region_size := int(region_sizes.get(a_region, 0))
+		var b_region_size := int(region_sizes.get(b_region, 0))
+		if a_region_size != b_region_size:
+			return a_region_size < b_region_size
+		if a_region != b_region:
+			return a_region < b_region
+		var a_cells := (a.get("cells", []) as Array).size()
+		var b_cells := (b.get("cells", []) as Array).size()
+		if a_cells != b_cells:
+			return a_cells < b_cells
+		return int(a.get("trayIndex", a_id)) < int(b.get("trayIndex", b_id))
 	)
-	for piece_id in missing:
-		var empty_slot := result.find(-1)
-		if empty_slot < 0:
-			break
-		result[empty_slot] = piece_id
+	var result: Array = []
+	for piece in ordered_pieces:
+		result.append(int(piece.get("pieceId", -1)))
 	return result
 
 

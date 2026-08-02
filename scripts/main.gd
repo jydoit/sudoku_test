@@ -11,6 +11,7 @@ const DialogControllerScript = preload("res://scripts/dialog_controller.gd")
 const LocalizationControllerScript = preload("res://scripts/localization_controller.gd")
 const AudioControllerScript = preload("res://scripts/audio_controller.gd")
 const CompositeLevelScript = preload("res://scripts/composite_level.gd")
+const CompositeLevelStoreScript = preload("res://scripts/composite_level_store.gd")
 const AssemblyViewScript = preload("res://scripts/assembly_view.gd")
 const UI_FONT: Font = preload("res://assets/fonts/NotoSansSC-Regular.ttf")
 const ARABIC_FONT: Font = preload("res://assets/fonts/NotoSansArabic-Regular.ttf")
@@ -123,6 +124,7 @@ var resume_composite_state: Dictionary = {}
 var composite_mode := false
 var composite_phase := "crown"
 var composite_data: Dictionary = {}
+var composite_levels: Dictionary = {}
 var composite_placements: Dictionary = {}
 var composite_placement_history: Array = []
 var composite_tray_slots: Array = []
@@ -170,6 +172,7 @@ var level_heart_tweens: Array = []
 var progress_bar: ProgressBar
 var progress_label: Label
 var progress_row: Control
+var assembly_tray_target: Control
 var action_bar: Control
 var assembly_stage_label: Label
 var assembly_view
@@ -227,6 +230,7 @@ var drag_changed := false
 var drag_cells := {}
 var opening_king_reveal_pending := false
 var result_overlay_mode := "success"
+var save_game_after_frame_pending := false
 
 
 
@@ -235,6 +239,7 @@ func _ready() -> void:
 	if levels.is_empty():
 		_show_fatal_error("没有找到可用关卡")
 		return
+	composite_levels = CompositeLevelStoreScript.load_entries()
 	_load_save()
 	localization = LocalizationControllerScript.new()
 	localization.initialize(selected_language)
@@ -618,6 +623,14 @@ func _build_game_screen() -> Control:
 	content.add_child(progress_row)
 	content.add_child(_build_coach())
 
+	assembly_tray_target = Control.new()
+	assembly_tray_target.name = "AssemblyTrayTop"
+	assembly_tray_target.custom_minimum_size.y = 118
+	assembly_tray_target.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	assembly_tray_target.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	assembly_tray_target.hide()
+	content.add_child(assembly_tray_target)
+
 	board = GameBoardScript.new()
 	board.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	board.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -639,7 +652,7 @@ func _build_game_screen() -> Control:
 	assembly_view.return_requested.connect(_on_assembly_return_requested)
 	assembly_view.intro_finished.connect(_on_composite_intro_finished)
 	root.add_child(assembly_view)
-	assembly_view.bind_targets(board, action_bar)
+	assembly_view.bind_targets(board, assembly_tray_target)
 	return root
 
 
@@ -916,12 +929,14 @@ func _build_completion_overlay() -> void:
 	safe_area.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	safe_area.add_theme_constant_override("margin_left", 30)
 	safe_area.add_theme_constant_override("margin_right", 30)
-	safe_area.add_theme_constant_override("margin_top", 112)
-	safe_area.add_theme_constant_override("margin_bottom", 56)
+	safe_area.add_theme_constant_override("margin_top", 56)
+	safe_area.add_theme_constant_override("margin_bottom", 24)
 	completion_overlay.add_child(safe_area)
 
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 24)
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.custom_minimum_size.x = 0
+	column.add_theme_constant_override("separation", 14)
 	column.alignment = BoxContainer.ALIGNMENT_CENTER
 	safe_area.add_child(column)
 
@@ -932,7 +947,10 @@ func _build_completion_overlay() -> void:
 	completion_title.add_theme_color_override("font_shadow_color", Color(0.10, 0.23, 0.45, 0.30))
 	completion_title.add_theme_constant_override("shadow_offset_x", 0)
 	completion_title.add_theme_constant_override("shadow_offset_y", 4)
-	completion_title.add_theme_font_size_override("font_size", 54)
+	completion_title.add_theme_font_size_override("font_size", 44)
+	completion_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	completion_title.custom_minimum_size.x = 0
+	completion_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(completion_title)
 
 	reward_label = Label.new()
@@ -942,13 +960,16 @@ func _build_completion_overlay() -> void:
 	reward_label.add_theme_color_override("font_shadow_color", Color(0.10, 0.23, 0.45, 0.26))
 	reward_label.add_theme_constant_override("shadow_offset_x", 0)
 	reward_label.add_theme_constant_override("shadow_offset_y", 3)
-	reward_label.add_theme_font_size_override("font_size", 29)
+	reward_label.add_theme_font_size_override("font_size", 23)
+	reward_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reward_label.custom_minimum_size.x = 0
+	reward_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(reward_label)
 
 	var showcase := PanelContainer.new()
-	showcase.custom_minimum_size = Vector2(0, 250)
+	showcase.custom_minimum_size = Vector2(0, 210)
 	showcase.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	showcase.add_theme_stylebox_override("panel", _card_style(CARD, 32, true, 28))
+	showcase.add_theme_stylebox_override("panel", _card_style(CARD, 32, true, 18))
 	column.add_child(showcase)
 
 	var showcase_column := VBoxContainer.new()
@@ -966,7 +987,7 @@ func _build_completion_overlay() -> void:
 	result_icon_label.add_theme_color_override("font_shadow_color", Color("#B92E4A"))
 	result_icon_label.add_theme_constant_override("shadow_offset_x", 0)
 	result_icon_label.add_theme_constant_override("shadow_offset_y", 5)
-	result_icon_label.add_theme_font_size_override("font_size", 104)
+	result_icon_label.add_theme_font_size_override("font_size", 84)
 	result_icon_label.hide()
 	showcase_column.add_child(result_icon_label)
 
@@ -974,7 +995,10 @@ func _build_completion_overlay() -> void:
 	result_reward_label.text = ""
 	result_reward_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	result_reward_label.add_theme_color_override("font_color", Color("#2F73D9"))
-	result_reward_label.add_theme_font_size_override("font_size", 24)
+	result_reward_label.add_theme_font_size_override("font_size", 20)
+	result_reward_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	result_reward_label.custom_minimum_size.x = 0
+	result_reward_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	result_reward_label.hide()
 	showcase_column.add_child(result_reward_label)
 
@@ -982,24 +1006,27 @@ func _build_completion_overlay() -> void:
 	result_tip_label.text = "继续前进，收集更多皇冠"
 	result_tip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	result_tip_label.add_theme_color_override("font_color", Color("#6A82A6"))
-	result_tip_label.add_theme_font_size_override("font_size", 17)
+	result_tip_label.add_theme_font_size_override("font_size", 16)
+	result_tip_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	result_tip_label.custom_minimum_size.x = 0
+	result_tip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	showcase_column.add_child(result_tip_label)
 
 	var spacer := Control.new()
-	spacer.custom_minimum_size.y = 22
+	spacer.custom_minimum_size.y = 10
 	column.add_child(spacer)
 
 	completion_next_button = _action_button("下一关", Color("#3E8DFF"))
-	completion_next_button.custom_minimum_size.y = 74
+	completion_next_button.custom_minimum_size.y = 58
 	completion_next_button.add_theme_color_override("font_color", Color.WHITE)
-	completion_next_button.add_theme_font_size_override("font_size", 30)
+	completion_next_button.add_theme_font_size_override("font_size", 24)
 	completion_next_button.pressed.connect(_completion_primary_pressed)
 	column.add_child(completion_next_button)
 
 	completion_replay_button = _action_button("主菜单", CARD)
-	completion_replay_button.custom_minimum_size.y = 66
+	completion_replay_button.custom_minimum_size.y = 54
 	completion_replay_button.add_theme_color_override("font_color", Color("#287BFF"))
-	completion_replay_button.add_theme_font_size_override("font_size", 27)
+	completion_replay_button.add_theme_font_size_override("font_size", 22)
 	completion_replay_button.pressed.connect(_completion_secondary_pressed)
 	column.add_child(completion_replay_button)
 
@@ -1131,10 +1158,10 @@ func _build_help_dialog() -> void:
 	assembly_intro.add_theme_color_override("font_color", INK)
 	assembly_intro.add_theme_font_size_override("font_size", 16)
 	assembly_column.add_child(assembly_intro)
-	assembly_column.add_child(_build_assembly_help_step("1", "向上拖出彩色方块", "底部托盘可以左右滑动，查看尚未放置的方块。"))
+	assembly_column.add_child(_build_assembly_help_step("1", "向下拖出彩色方块", "顶部待放置区可以左右滑动，查看尚未放置的方块。"))
 	assembly_column.add_child(_build_assembly_help_step("2", "完整对齐空白凹槽", "只要方块不越界、不重叠，就可以吸附到施工区。"))
 	assembly_column.add_child(_build_assembly_help_step("3", "死局可以复活", "同色区域被隔离时，可用金币自动放回最后一个方块，或重新开始本局。"))
-	assembly_column.add_child(_build_assembly_help_step("4", "可以随时拿回重放", "把棋盘上的立体方块向下拖回托盘，再尝试其它位置。"))
+	assembly_column.add_child(_build_assembly_help_step("4", "可以随时拿回重放", "把棋盘上的立体方块向上拖回待放置区，再尝试其它位置。"))
 	assembly_column.add_child(_build_assembly_help_step("5", "拼完自动进入找皇冠", "立体方块会压平为正常颜色棋盘，并恢复清除、直找和提示。"))
 	var replay_button := Button.new()
 	replay_button.name = "ReplayAssemblyIntro"
@@ -1434,43 +1461,37 @@ func _prepare_composite_level(allow_resume: bool) -> void:
 
 	if not bool(active_schedule.get("assemblyEnabled", false)) or int(current_level.get("rows", 0)) < 6:
 		return
-	var seed := int(resume_composite_state.get("seed", 0)) if saved_matches else int(active_schedule.get("assemblySeed", 0))
-	if seed == 0:
-		seed = int(current_level.get("levelId", 1)) * 1000003 + player_level_number * 9176 + 20260722
 	var difficulty_pattern := str(active_schedule.get("assemblyDifficultyPattern", ""))
+	if difficulty_pattern.is_empty():
+		difficulty_pattern = str(current_level.get("difficulty", "medium"))
+	var seed := int(resume_composite_state.get("seed", 0)) if saved_matches else int(active_schedule.get("assemblySeed", 0))
 	var prebuilt_composite = active_schedule.get("assemblyPrebuiltData", {})
 	active_schedule.erase("assemblyPrebuiltData")
-	var debug_layout_limit := 1 if home_composite_entry_active else CompositeLevelScript.MAX_VALID_LAYOUTS
 	if _prebuilt_composite_matches(prebuilt_composite, seed, difficulty_pattern):
 		composite_data = (prebuilt_composite as Dictionary).duplicate(true)
-	elif saved_matches:
-		composite_data = CompositeLevelScript.build(current_level, seed, difficulty_pattern, debug_layout_limit)
 	else:
-		var fallback_composite: Dictionary = {}
-		for seed_offset in range(12):
-			var candidate_composite: Dictionary = CompositeLevelScript.build(
-				current_level,
-				seed + seed_offset,
-				difficulty_pattern,
-				debug_layout_limit
-			)
-			if candidate_composite.is_empty():
-				continue
-			if fallback_composite.is_empty():
-				fallback_composite = candidate_composite
-			if home_composite_entry_active or candidate_composite["validLayouts"].size() >= 2:
-				composite_data = candidate_composite
-				break
-		if composite_data.is_empty():
-			composite_data = fallback_composite
+		composite_data = CompositeLevelStoreScript.find(
+			composite_levels,
+			int(current_level.get("levelId", -1)),
+			difficulty_pattern
+		)
 	if composite_data.is_empty():
 		active_schedule["assemblyEnabled"] = false
 		return
+	CompositeLevelScript._prepare_runtime_cache(composite_data)
+	active_schedule["assemblySeed"] = int(composite_data.get("seed", seed))
+	active_schedule["assemblyDifficultyPattern"] = str(composite_data.get("difficulty", difficulty_pattern))
 	composite_mode = true
 	composite_phase = "assembly"
 	active_schedule["kingPositions"] = []
 	var saved_data_version := int(resume_composite_state.get("dataVersion", 0))
-	if saved_matches and saved_phase == "assembly" and saved_data_version == int(composite_data.get("version", -1)):
+	var saved_data_matches := (
+		saved_matches
+		and saved_phase == "assembly"
+		and saved_data_version == int(composite_data.get("version", -1))
+		and int(resume_composite_state.get("seed", 0)) == int(composite_data.get("seed", -1))
+	)
+	if saved_data_matches:
 		composite_placements = CompositeLevelScript.sanitize_placements(composite_data, resume_composite_state.get("placements", {}))
 		composite_placement_history = _sanitize_composite_placement_history(
 			resume_composite_state.get("placementHistory", []),
@@ -1483,7 +1504,7 @@ func _prepare_composite_level(allow_resume: bool) -> void:
 		composite_data,
 		composite_placements,
 		resume_composite_state.get("traySlots", [])
-		if saved_matches and saved_phase == "assembly" and saved_data_version == int(composite_data.get("version", -1))
+		if saved_data_matches
 		else []
 	)
 
@@ -1540,11 +1561,261 @@ func _assembly_allowed_origins() -> Dictionary:
 	return CompositeLevelScript.allowed_origins_for_all(composite_data, composite_placements)
 
 
+func _assembly_compatible_layouts() -> Array:
+	var result: Array = []
+	for raw_layout in composite_data.get("validLayouts", []):
+		if not raw_layout is Dictionary:
+			continue
+		var layout: Dictionary = raw_layout
+		var layout_placements: Dictionary = layout.get("placements", {})
+		var matches := true
+		for raw_key in composite_placements.keys():
+			var key := str(raw_key)
+			if not layout_placements.has(key):
+				matches = false
+				break
+			var expected: Array = layout_placements[key]
+			var actual: Array = composite_placements[raw_key]
+			if expected.size() < 2 or actual.size() < 2 or int(expected[0]) != int(actual[0]) or int(expected[1]) != int(actual[1]):
+				matches = false
+				break
+		if matches:
+			result.append(layout)
+	return result
+
+
+func _assembly_compatible_layout() -> Dictionary:
+	var layouts := _assembly_compatible_layouts()
+	return layouts[0] if not layouts.is_empty() else {}
+
+
+func _assembly_remaining_cells_for_region(region_id: int) -> int:
+	var remaining := 0
+	for piece in composite_data.get("pieces", []):
+		if int(piece.get("regionId", -1)) != region_id or composite_placements.has(str(int(piece.get("pieceId", -1)))):
+			continue
+		remaining += (piece.get("cells", []) as Array).size()
+	return remaining
+
+
+func _assembly_direct_find_target() -> Dictionary:
+	var layout := _assembly_compatible_layout()
+	if layout.is_empty():
+		return {}
+	var selected_region := -1
+	var smallest_remaining := 1 << 30
+	for raw_region_id in composite_data.get("selectedRegionIds", []):
+		var region_id := int(raw_region_id)
+		var remaining := _assembly_remaining_cells_for_region(region_id)
+		if remaining > 0 and remaining < smallest_remaining:
+			smallest_remaining = remaining
+			selected_region = region_id
+	if selected_region < 0:
+		return {}
+	var target_pieces: Array[int] = []
+	var layout_placements: Dictionary = layout.get("placements", {})
+	for piece in composite_data.get("pieces", []):
+		var piece_id := int(piece.get("pieceId", -1))
+		if int(piece.get("regionId", -1)) != selected_region or composite_placements.has(str(piece_id)):
+			continue
+		if not layout_placements.has(str(piece_id)):
+			return {}
+		target_pieces.append(piece_id)
+	if target_pieces.is_empty():
+		return {}
+	return {"layout": layout, "regionId": selected_region, "pieceIds": target_pieces}
+
+
+func _assembly_hint_target() -> Dictionary:
+	var compatible_layouts := _assembly_compatible_layouts()
+	var open_candidates: Array[Dictionary] = []
+	for layout in compatible_layouts:
+		var layout_placements: Dictionary = layout.get("placements", {})
+		for piece in composite_data.get("pieces", []):
+			var piece_id := int(piece.get("pieceId", -1))
+			var key := str(piece_id)
+			if composite_placements.has(key) or not layout_placements.has(key):
+				continue
+			var expected: Array = layout_placements[key]
+			var allowed: Array = allowed_by_piece_for_assembly(piece_id)
+			# A hint is useful only when the complete piece can currently occupy its target.
+			# Checking the shared allowed-origin cache also excludes targets hidden by
+			# already placed blocks, which is important when one color has many pieces.
+			if _assembly_origin_in_list(expected, allowed):
+				open_candidates.append({
+					"pieceId": piece_id,
+					"origin": Vector2i(int(expected[1]), int(expected[0])),
+					"spaceCount": allowed.size(),
+					"pieceSize": (piece.get("cells", []) as Array).size(),
+					"regionId": int(piece.get("regionId", -1))
+				})
+	open_candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if int(a["spaceCount"]) != int(b["spaceCount"]):
+			return int(a["spaceCount"]) < int(b["spaceCount"])
+		if int(a["pieceSize"]) != int(b["pieceSize"]):
+			return int(a["pieceSize"]) < int(b["pieceSize"])
+		if int(a["regionId"]) != int(b["regionId"]):
+			return int(a["regionId"]) < int(b["regionId"])
+		return int(a["pieceId"]) < int(b["pieceId"])
+	)
+	if not open_candidates.is_empty():
+		return open_candidates[0]
+
+	# If the player has blocked every remaining blank target, point at a placed
+	# piece that belongs somewhere else. Prefer a layout that agrees with the
+	# largest part of the current board when several layouts are available.
+	var fallback_layouts := compatible_layouts
+	if fallback_layouts.is_empty():
+		fallback_layouts = composite_data.get("validLayouts", [])
+	var best_fallback: Dictionary = {}
+	var best_match_count := -1
+	for raw_layout in fallback_layouts:
+		if not raw_layout is Dictionary:
+			continue
+		var layout: Dictionary = raw_layout
+		var layout_placements: Dictionary = layout.get("placements", {})
+		var match_count := 0
+		for raw_key in composite_placements.keys():
+			var key := str(raw_key)
+			if layout_placements.has(key):
+				var expected: Array = layout_placements[key]
+				var actual: Array = composite_placements[raw_key]
+				if expected.size() >= 2 and actual.size() >= 2 and int(expected[0]) == int(actual[0]) and int(expected[1]) == int(actual[1]):
+					match_count += 1
+		if match_count > best_match_count:
+			best_match_count = match_count
+			best_fallback = layout
+	if best_fallback.is_empty():
+		return {}
+	var fallback_placements: Dictionary = best_fallback.get("placements", {})
+	for piece in composite_data.get("pieces", []):
+		var piece_id := int(piece.get("pieceId", -1))
+		var key := str(piece_id)
+		if not composite_placements.has(key) or not fallback_placements.has(key):
+			continue
+		var current: Array = composite_placements[key]
+		var expected: Array = fallback_placements[key]
+		if current.size() >= 2 and expected.size() >= 2 and (int(current[0]) != int(expected[0]) or int(current[1]) != int(expected[1])):
+			return {"pieceId": piece_id, "origin": Vector2i(int(expected[1]), int(expected[0]))}
+	# A deadlocked but otherwise valid state can have no legal blank target. Still
+	# show the first unplaced block's correct location instead of disabling Hint.
+	for piece in composite_data.get("pieces", []):
+		var piece_id := int(piece.get("pieceId", -1))
+		var key := str(piece_id)
+		if not composite_placements.has(key) and fallback_placements.has(key):
+			var expected: Array = fallback_placements[key]
+			if expected.size() >= 2:
+				return {"pieceId": piece_id, "origin": Vector2i(int(expected[1]), int(expected[0]))}
+	return {}
+
+
+func allowed_by_piece_for_assembly(piece_id: int) -> Array:
+	var raw_allowed = assembly_view.allowed_by_piece.get(str(piece_id), []) if assembly_view else []
+	return raw_allowed if raw_allowed is Array else []
+
+
+func _assembly_origin_in_list(origin: Array, origins: Array) -> bool:
+	for raw_origin in origins:
+		if raw_origin is Array and raw_origin.size() >= 2 and int(raw_origin[0]) == int(origin[0]) and int(raw_origin[1]) == int(origin[1]):
+			return true
+	return false
+
+
+func _clear_assembly_placements() -> void:
+	if composite_placements.is_empty():
+		return
+	composite_placements.clear()
+	composite_placement_history.clear()
+	composite_deadlocked = false
+	composite_tray_slots = CompositeLevelScript.sanitize_tray_slots(composite_data, composite_placements, composite_tray_slots)
+	assembly_view.update_state(composite_placements, _assembly_allowed_origins(), composite_tray_slots)
+	_update_assembly_tool_buttons()
+	_save_game()
+	_show_toast("已清除已放置方块")
+
+
+func _use_assembly_direct_find() -> void:
+	var target := _assembly_direct_find_target()
+	if target.is_empty():
+		_show_toast("当前没有可以直接填满的颜色区域")
+		_update_assembly_tool_buttons()
+		return
+	var layout: Dictionary = target["layout"]
+	var layout_placements: Dictionary = layout.get("placements", {})
+	var candidate_placements := composite_placements.duplicate(true)
+	for piece_id in target["pieceIds"]:
+		candidate_placements[str(piece_id)] = layout_placements[str(piece_id)].duplicate()
+	var evaluation := CompositeLevelScript.evaluate_placement_state(composite_data, candidate_placements, true)
+	if not bool(evaluation.get("valid", false)):
+		_show_toast("当前局面无法直接填充这个颜色区域")
+		return
+	var uses_free_count := crown_find_count > 0
+	if not uses_free_count and not _spend_coins_for_tool(CoinEconomyScript.TOOL_CROWN_FIND):
+		return
+	if uses_free_count:
+		crown_find_count -= 1
+	composite_placements = candidate_placements
+	for piece_id in target["pieceIds"]:
+		composite_placement_history.erase(piece_id)
+		composite_placement_history.append(piece_id)
+	composite_tray_slots = CompositeLevelScript.sanitize_tray_slots(composite_data, composite_placements, composite_tray_slots)
+	composite_deadlocked = false
+	var completed_layout: Dictionary = evaluation.get("layout", {})
+	if not completed_layout.is_empty():
+		assembly_view.update_state(composite_placements, {}, composite_tray_slots)
+		_update_assembly_tool_buttons()
+		_complete_composite_assembly(completed_layout)
+		return
+	assembly_view.update_state(composite_placements, evaluation.get("allowedByPiece", {}), composite_tray_slots)
+	_update_assembly_tool_buttons()
+	_save_game()
+	_show_toast("直找：已填满%s区域" % _region_name(int(target["regionId"])))
+	audio_controller.play_correct()
+
+
+func _use_assembly_hint() -> void:
+	var target := _assembly_hint_target()
+	if target.is_empty():
+		_show_toast("当前没有可以提示的放置位置")
+		_update_assembly_tool_buttons()
+		return
+	if hint_count > 0:
+		hint_count -= 1
+	elif not _spend_coins_for_tool(CoinEconomyScript.TOOL_HINT):
+		return
+	assembly_view.show_piece_hint(int(target["pieceId"]), target["origin"])
+	_update_assembly_tool_buttons()
+	run_hint_count += 1
+	audio_controller.play_hint()
+	_save_game()
+
+
+func _update_assembly_tool_buttons() -> void:
+	if not _is_assembly_phase():
+		return
+	if clear_button:
+		clear_button.disabled = composite_placements.is_empty()
+		_refresh_tool_button_visual(clear_button)
+	var direct_target := _assembly_direct_find_target()
+	if crown_find_button:
+		if crown_find_button_label:
+			crown_find_button_label.text = _t("直找 ×%d", [crown_find_count]) if crown_find_count > 0 else _t("直找 -%d", [_current_tool_price(CoinEconomyScript.TOOL_CROWN_FIND)])
+		crown_find_button.disabled = composite_deadlocked or direct_target.is_empty()
+		_refresh_tool_button_visual(crown_find_button)
+	var hint_target := _assembly_hint_target()
+	if hint_button:
+		if hint_button_label:
+			hint_button_label.text = _t("提示 ×%d", [hint_count]) if hint_count > 0 else _t("提示 -%d", [_current_tool_price(CoinEconomyScript.TOOL_HINT)])
+		hint_button.disabled = composite_deadlocked or hint_target.is_empty()
+		_refresh_tool_button_visual(hint_button)
+
+
 func _apply_composite_phase_ui() -> void:
 	if not assembly_view or not board or not action_bar or not progress_row:
 		return
 	if _is_assembly_phase():
 		progress_row.hide()
+		assembly_tray_target.show()
 		if assembly_stage_label:
 			assembly_stage_label.text = str(composite_data.get("difficulty", "medium")).to_upper()
 			assembly_stage_label.show()
@@ -1552,8 +1823,7 @@ func _apply_composite_phase_ui() -> void:
 		board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		for button in [clear_button, crown_find_button, hint_button]:
 			if button:
-				button.disabled = true
-				button.hide()
+				button.show()
 		assembly_view.configure(
 			composite_data,
 			composite_placements,
@@ -1562,15 +1832,21 @@ func _apply_composite_phase_ui() -> void:
 			composite_tray_slots
 		)
 		assembly_view.input_locked = composite_deadlocked
+		if clear_button_label:
+			clear_button_label.text = "清除"
+		_update_assembly_tool_buttons()
 		if composite_deadlocked:
 			call_deferred("_show_composite_deadlock")
 	else:
 		progress_row.show()
+		assembly_tray_target.hide()
 		if assembly_stage_label:
 			assembly_stage_label.hide()
 		board.modulate.a = 1.0
 		board.mouse_filter = Control.MOUSE_FILTER_STOP
 		assembly_view.deactivate()
+		if clear_button_label:
+			clear_button_label.text = "清除 · 免费"
 		for button in [clear_button, crown_find_button, hint_button]:
 			if button:
 				button.show()
@@ -1630,8 +1906,10 @@ func _on_assembly_return_requested(piece_id: int, preferred_slot_index: int = -1
 	composite_deadlocked = false
 	assembly_view.update_state(composite_placements, _assembly_allowed_origins(), composite_tray_slots)
 	if returned_slot >= 0:
-		assembly_view.focus_tray_slot(returned_slot)
-	_save_game()
+		assembly_view.focus_tray_slot(returned_slot, false)
+	# Do not block the release event on JSON serialization and file I/O. The
+	# updated tray is already visible; persist the same state after this frame.
+	_queue_save_game_after_frame()
 
 
 func _remove_piece_from_composite_tray(piece_id: int) -> void:
@@ -1750,6 +2028,11 @@ func _play_pending_opening_king_reveal() -> void:
 
 
 func _play_opening_king_intro(cells: Array) -> void:
+	if not game_screen or not game_screen.visible:
+		opening_king_reveal_pending = false
+		if board:
+			board.reveal_all_prepared_kings()
+		return
 	if not opening_king_overlay or not opening_king_panel or cells.is_empty():
 		board.reveal_all_prepared_kings()
 		board.play_king_reveal(cells)
@@ -2063,6 +2346,7 @@ func _undo() -> void:
 
 func _clear_board() -> void:
 	if _is_assembly_phase():
+		_clear_assembly_placements()
 		return
 	if in_tutorial:
 		_use_tutorial_clear()
@@ -2151,6 +2435,7 @@ func _show_coin_shortage_dialog(tool: String, price: int) -> void:
 
 func _use_hint() -> void:
 	if _is_assembly_phase():
+		_use_assembly_hint()
 		return
 	if in_tutorial:
 		_use_tutorial_hint()
@@ -2183,6 +2468,7 @@ func _use_hint() -> void:
 
 func _use_crown_find() -> void:
 	if _is_assembly_phase():
+		_use_assembly_direct_find()
 		return
 	if in_tutorial:
 		_use_tutorial_crown_find()
@@ -4496,7 +4782,7 @@ func _complete_level() -> void:
 
 func _prepare_success_result_page(reward: int = 0) -> void:
 	result_overlay_mode = "success"
-	completion_title.text = "太棒了！"
+	completion_title.text = _t("太棒了！")
 	reward_label.text = _t("拼块挑战 · 第 %d 局完成", [maxi(1, home_composite_round)]) if home_composite_entry_active else _t("第 %d 关 已完成", [player_level_number])
 	if result_icon_label:
 		result_icon_label.hide()
@@ -4506,11 +4792,11 @@ func _prepare_success_result_page(reward: int = 0) -> void:
 	if result_reward_label:
 		result_reward_label.hide()
 	if result_tip_label:
-		result_tip_label.text = "主线进度保持不变" if home_composite_entry_active else ("金币 +%d" % reward if reward > 0 else "本关已完成，继续挑战")
+		result_tip_label.text = _t("主线进度保持不变") if home_composite_entry_active else (_t("金币 +%d", [reward]) if reward > 0 else _t("本关已完成，继续挑战"))
 	if completion_next_button:
-		completion_next_button.text = _t("下一局") if home_composite_entry_active else "下一关"
+		completion_next_button.text = _t("下一局") if home_composite_entry_active else _t("下一关")
 	if completion_replay_button:
-		completion_replay_button.text = "主菜单"
+		completion_replay_button.text = _t("主菜单")
 		completion_replay_button.show()
 	call_deferred("_play_result_lion_animation")
 
@@ -4518,7 +4804,7 @@ func _prepare_success_result_page(reward: int = 0) -> void:
 func _prepare_failure_result_page() -> void:
 	result_overlay_mode = "failure"
 	_stop_result_lion_animation()
-	completion_title.text = "挑战失败"
+	completion_title.text = _t("挑战失败")
 	reward_label.text = _t("拼块挑战 · 第 %d 局未完成", [maxi(1, home_composite_round)]) if home_composite_entry_active else _t("第 %d 关 未完成", [player_level_number])
 	if result_icon_label:
 		result_icon_label.text = "♥"
@@ -4528,14 +4814,14 @@ func _prepare_failure_result_page() -> void:
 	if result_piece_icon:
 		result_piece_icon.hide()
 	if result_reward_label:
-		result_reward_label.text = "红心已用完"
+		result_reward_label.text = _t("红心已用完")
 		result_reward_label.show()
 	if result_tip_label:
-		result_tip_label.text = "可以重新挑战，或返回首页继续主线" if home_composite_entry_active else "复活会保留当前棋盘，并恢复 1 颗红心"
+		result_tip_label.text = _t("可以重新挑战，或返回首页继续主线") if home_composite_entry_active else _t("复活会保留当前棋盘，并恢复 1 颗红心")
 	if completion_next_button:
-		completion_next_button.text = "重新挑战" if home_composite_entry_active else _t("金币复活  -%d", [_current_tool_price(CoinEconomyScript.TOOL_REVIVE)])
+		completion_next_button.text = _t("重新挑战") if home_composite_entry_active else _t("金币复活  -%d", [_current_tool_price(CoinEconomyScript.TOOL_REVIVE)])
 	if completion_replay_button:
-		completion_replay_button.text = "主菜单" if home_composite_entry_active else "重新挑战"
+		completion_replay_button.text = _t("主菜单") if home_composite_entry_active else _t("重新挑战")
 		completion_replay_button.show()
 
 
@@ -4545,8 +4831,8 @@ func _show_composite_deadlock() -> void:
 	result_overlay_mode = "assembly_deadlock"
 	_stop_result_lion_animation()
 	assembly_view.input_locked = true
-	completion_title.text = "拼块死局"
-	reward_label.text = "同色区域已被隔离"
+	completion_title.text = _t("拼块死局")
+	reward_label.text = _t("同色区域已被隔离")
 	if result_icon_label:
 		result_icon_label.text = "!"
 		result_icon_label.add_theme_color_override("font_color", Color("#F2A93B"))
@@ -4555,10 +4841,10 @@ func _show_composite_deadlock() -> void:
 	if result_piece_icon:
 		result_piece_icon.hide()
 	if result_reward_label:
-		result_reward_label.text = "当前摆法已经无法完成颜色区域"
+		result_reward_label.text = _t("当前摆法已经无法完成颜色区域")
 		result_reward_label.show()
 	if result_tip_label:
-		result_tip_label.text = "金币复活会自动放回最后一个放置的方块"
+		result_tip_label.text = _t("金币复活会自动放回最后一个放置的方块")
 	if completion_next_button:
 		completion_next_button.text = _t("金币复活  -%d", [_current_tool_price(CoinEconomyScript.TOOL_REVIVE)])
 	if completion_replay_button:
@@ -5274,6 +5560,19 @@ func _save_game() -> void:
 		file.store_string(JSON.stringify(data))
 
 
+func _queue_save_game_after_frame() -> void:
+	if save_game_after_frame_pending:
+		return
+	save_game_after_frame_pending = true
+	call_deferred("_flush_save_game_after_frame")
+
+
+func _flush_save_game_after_frame() -> void:
+	await get_tree().process_frame
+	save_game_after_frame_pending = false
+	_save_game()
+
+
 func _update_coin_label() -> void:
 	if coin_label:
 		coin_label.text = str(coin_count)
@@ -5356,7 +5655,7 @@ func _fail_level() -> void:
 	if clear_button:
 		clear_button.disabled = true
 		_refresh_tool_button_visual(clear_button)
-	coach_label.text = "红心已用完，本关挑战失败。"
+	coach_label.text = _t("红心已用完，本关挑战失败。")
 	coach_label.add_theme_color_override("font_color", Color("#B93D4D"))
 	_prepare_failure_result_page()
 	_save_game()
@@ -5368,6 +5667,9 @@ func _fail_level() -> void:
 
 func _update_hint_button() -> void:
 	if not hint_button:
+		return
+	if _is_assembly_phase():
+		_update_assembly_tool_buttons()
 		return
 	if in_tutorial:
 		if hint_button_label:
@@ -5386,6 +5688,9 @@ func _update_hint_button() -> void:
 
 func _update_crown_find_button() -> void:
 	if not crown_find_button:
+		return
+	if _is_assembly_phase():
+		_update_assembly_tool_buttons()
 		return
 	if in_tutorial:
 		if crown_find_button_label:
@@ -5407,13 +5712,16 @@ func _update_level_picker() -> void:
 
 func _show_home() -> void:
 	_hide_tutorial_hand()
-	_cancel_opening_king_intro(true)
+	_cancel_opening_king_intro(false)
 	_stop_result_lion_animation()
 	_stop_heart_tweens()
 	if home_composite_entry_active:
 		_update_home_composite_history()
 		_restore_home_composite_progress()
 		_save_game()
+	# Restoring the formal snapshot can schedule its opening kings again. Home
+	# must always finish with that transient overlay and pending reveal cleared.
+	_cancel_opening_king_intro(false)
 	if home_screen:
 		home_screen.show()
 	if game_screen:
@@ -5479,9 +5787,9 @@ func _start_home_composite_flow() -> void:
 		resume_composite_state.clear()
 		var schedule: Dictionary = candidate["schedule"]
 		_load_level(int(candidate["levelIndex"]), false, schedule)
-	if not _is_assembly_phase():
+	if not composite_mode:
 		_restore_home_composite_progress()
-		_show_toast("拼块关卡生成失败，请重试")
+		_show_toast("拼块关卡加载失败，请重试")
 		return
 	_show_game()
 	_save_game()
@@ -5522,23 +5830,23 @@ func _home_composite_candidate(round_number: int = 1) -> Dictionary:
 	for candidate_offset in range(candidate_indices.size()):
 		var index := candidate_indices[(start_offset + candidate_offset) % candidate_indices.size()]
 		var level: Dictionary = levels[index]
-		var seed := int(level.get("levelId", 1)) * 1000003 + safe_round * 7919 + 20260722
-		for seed_offset in range(12):
-			var resolved_seed := seed + seed_offset
-			var prebuilt_composite := CompositeLevelScript.build(level, resolved_seed, difficulty_pattern, 1)
-			if prebuilt_composite.is_empty():
-				continue
-			var schedule := LevelDirectorScript.manual_schedule_for_level(levels, index, 1, "home_composite")
-			schedule["assemblyEnabled"] = true
-			schedule["assemblySeed"] = resolved_seed
-			schedule["assemblyDifficultyPattern"] = difficulty_pattern
-			schedule["assemblyPrebuiltData"] = prebuilt_composite
-			schedule["homeCompositeRound"] = safe_round
-			return {
-				"levelIndex": index,
-				"difficultyPattern": difficulty_pattern,
-				"schedule": schedule
-			}
+		var offline_data := CompositeLevelStoreScript.find(
+			composite_levels,
+			int(level.get("levelId", -1)),
+			difficulty_pattern
+		)
+		if offline_data.is_empty():
+			continue
+		var schedule := LevelDirectorScript.manual_schedule_for_level(levels, index, 1, "home_composite")
+		schedule["assemblyEnabled"] = true
+		schedule["assemblySeed"] = int(offline_data.get("seed", 0))
+		schedule["assemblyDifficultyPattern"] = difficulty_pattern
+		schedule["homeCompositeRound"] = safe_round
+		return {
+			"levelIndex": index,
+			"difficultyPattern": difficulty_pattern,
+			"schedule": schedule
+		}
 	return {}
 
 

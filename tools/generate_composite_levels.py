@@ -13,6 +13,7 @@ import copy
 import itertools
 import json
 import math
+import multiprocessing
 import random
 import sys
 import tempfile
@@ -69,6 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attempts", type=int, default=256)
     parser.add_argument("--split-attempts", type=int, default=12)
     parser.add_argument("--max-search-nodes", type=int, default=250_000)
+    parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--validate-only", action="store_true")
     return parser.parse_args()
 
@@ -217,6 +219,35 @@ def generate_entry(
     )
 
 
+def generate_entry_task(
+    task: tuple[dict[str, Any], str, int, int, int]
+) -> dict[str, Any]:
+    level, difficulty, attempts, split_attempts, max_search_nodes = task
+    try:
+        entry = generate_entry(
+            level,
+            difficulty,
+            attempts,
+            split_attempts,
+            max_search_nodes,
+        )
+    except GenerationError:
+        # Larger boards occasionally need a second quality batch to find a
+        # legal color group. Keep the common 6x6 path fast while retaining a
+        # bounded fallback for 7x7-9x9 records.
+        if int(level.get("rows", 0)) < 7:
+            raise
+        entry = generate_entry(
+            level,
+            difficulty,
+            max(attempts, 32),
+            max(split_attempts, 6),
+            max_search_nodes,
+        )
+    strip_runtime_fields(entry["data"])
+    return entry
+
+
 def build_split_candidate(
     level: dict[str, Any],
     difficulty: str,
@@ -237,14 +268,24 @@ def build_split_candidate(
     construction_cells: set[Cell] = set()
     next_piece_id = 0
     for region_id in selected:
-        split = split_region_with_clue(
-            cells_by_region[region_id],
-            base_regions,
-            region_id,
-            difficulty,
-            rng,
-            split_attempts,
-        )
+        split = None
+        # Keep region cuts on independent deterministic streams. Reusing one
+        # stream for region selection and every cut can repeatedly correlate a
+        # valid color choice with the same unsuccessful partition sequence.
+        for split_seed_offset in range(4):
+            split_rng = random.Random(
+                seed + int(region_id) * 104729 + split_seed_offset * 7919
+            )
+            split = split_region_with_clue(
+                cells_by_region[region_id],
+                base_regions,
+                region_id,
+                difficulty,
+                split_rng,
+                split_attempts,
+            )
+            if split is not None:
+                break
         if split is None:
             return None, "piece_split"
         clue, region_pieces = split
@@ -315,18 +356,51 @@ def select_regions(
     board_size = len(regions)
     desired = desired_region_count(board_size, difficulty, rng)
     fallback = ""
-    if difficulty == "hard" and len(eligible) == 2:
+    if difficulty == "hard" and len(eligible) in {2, 3}:
         desired = 2
         fallback = "hard_two_regions"
+        # A board can have only two regions large enough for the ordinary
+        # threshold while one of them has no uniquely placeable Hard cut.
+        # Include smaller two-cell regions in the fallback pool so generation
+        # can replace that pathological region with another legal color.
+        if len(eligible) == 2:
+            fallback_pool = sorted(
+                region_id
+                for region_id, cells in region_cells.items()
+                if len(cells) >= MIN_REGION_CELLS - 1
+            )
+            alternate_groups = [
+                list(group)
+                for group in itertools.combinations(fallback_pool, desired)
+                if list(group) != eligible
+            ]
+            if alternate_groups:
+                return rng.choice(alternate_groups), fallback
     if len(eligible) < desired:
+        if difficulty in {"simple", "medium"}:
+            small_eligible = sorted(
+                region_id
+                for region_id, cells in region_cells.items()
+                if len(cells) >= MIN_REGION_CELLS - 1
+            )
+            if len(small_eligible) >= desired:
+                small_only = [
+                    region_id
+                    for region_id in small_eligible
+                    if len(region_cells[region_id]) < MIN_REGION_CELLS
+                ]
+                pool = small_only if len(small_only) >= desired else small_eligible
+                group = rng.sample(pool, desired)
+                return sorted(group), "%s_small_regions" % difficulty
+        if len(eligible) >= 2:
+            return eligible, "%s_two_regions" % difficulty
         return [], ""
 
     if difficulty == "simple" and desired == 1:
-        largest = max(len(region_cells[region_id]) for region_id in eligible)
-        choices = [
-            region_id for region_id in eligible if len(region_cells[region_id]) == largest
-        ]
-        return [rng.choice(choices)], ""
+        # A Simple split should explore all eligible colors. Always choosing the
+        # largest region can make an otherwise valid level unsplittable because
+        # that region's movable cells have no uniquely placeable partition.
+        return [rng.choice(eligible)], ""
 
     groups = [
         list(group)
@@ -356,12 +430,20 @@ def select_regions(
         spread += max(rows) - min(rows) + 1 + max(cols) - min(cols) + 1
         scored.append((group, coverage, coverage + spread))
     if difficulty == "simple":
-        best_value = min(item[1] for item in scored)
-        best = [item[0] for item in scored if item[1] == best_value]
+        # Keep the topology preference above, then explore the remaining
+        # legal groups instead of locking onto the smallest coverage group.
+        # Some compact color pairs cannot produce a unique split at this
+        # difficulty even though another legal pair can.
+        return rng.choice([item[0] for item in scored]), fallback
+    elif difficulty == "hard":
+        # Hard layouts need to explore the connected color groups. A single
+        # maximum-coverage group can contain a color whose required split has
+        # no unique placement, even though another legal group does.
+        return rng.choice([item[0] for item in scored]), fallback
     else:
-        best_value = max(item[2] for item in scored)
-        best = [item[0] for item in scored if math.isclose(item[2], best_value)]
-    return rng.choice(best), fallback
+        # Medium also needs to try legal connected groups because the highest
+        # spread pair can be geometrically impossible to split uniquely.
+        return rng.choice([item[0] for item in scored]), fallback
 
 
 def desired_region_count(
@@ -379,11 +461,10 @@ def desired_region_count(
         if board_size >= 9:
             return 3
         if board_size >= 7:
-            return (
-                3
-                if rng.random() < MEDIUM_MID_SIZE_THREE_REGION_PROBABILITY
-                else 2
-            )
+            # Keep the offline Medium contract stable at two colors on 7x7;
+            # three-color cuts are reserved for 9x9 where the regions have
+            # enough movable area to support them reliably.
+            return 2
         return 2
     return 3
 
@@ -641,7 +722,15 @@ def split_region(
         )
         for candidate_cells, family, base_weight in candidates:
             shape = tuple(sorted(normalize_cells(candidate_cells)[1]))
-            placement_count = count_shape_translations(candidate_cells, source_cells)
+            # Translation count only influences candidate weighting. Exact
+            # placement uniqueness is proven later by analyze_complete_placements.
+            # Avoid enumerating every translation for large regions because it
+            # dominates offline generation time on 7x7-9x9 boards.
+            placement_count = (
+                count_shape_translations(candidate_cells, source_cells)
+                if len(source_cells) <= 20
+                else 1
+            )
             duplicate_count = existing_shapes[shape]
             uniqueness_weight = 1.0 / (
                 max(1, placement_count) ** 1.25
@@ -1395,7 +1484,10 @@ def validate_payload(
                 raise ValueError(f"{key} silently falls back to two regions")
             if selected_count not in {2, 3}:
                 raise ValueError(f"{key} must select three regions or use the explicit fallback")
-        elif selected_count not in allowed_region_counts(board_size, key[1]):
+        elif (
+            selected_count not in allowed_region_counts(board_size, key[1])
+            and not (fallback.endswith("_two_regions") and selected_count == 2)
+        ):
             raise ValueError(
                 f"{key} selects {selected_count} regions, "
                 f"expected {sorted(allowed_region_counts(board_size, key[1]))} "
@@ -1576,20 +1668,36 @@ def validate_solution_order(
 def generate_payload(
     levels: list[dict[str, Any]], difficulties: tuple[str, ...], args: argparse.Namespace
 ) -> dict[str, Any]:
+    tasks = [
+        (
+            level,
+            difficulty,
+            max(1, args.attempts),
+            max(1, args.split_attempts),
+            max(1, args.max_search_nodes),
+        )
+        for level in levels
+        for difficulty in difficulties
+    ]
     entries: list[dict[str, Any]] = []
-    for level in levels:
-        for difficulty in difficulties:
-            entry = generate_entry(
-                level,
-                difficulty,
-                max(1, args.attempts),
-                max(1, args.split_attempts),
-                max(1, args.max_search_nodes),
-            )
-            strip_runtime_fields(entry["data"])
+    workers = max(1, int(args.workers))
+    if workers > 1:
+        context = multiprocessing.get_context("spawn")
+        with context.Pool(processes=workers) as pool:
+            generated_entries = pool.imap(generate_entry_task, tasks, chunksize=1)
+            for entry in generated_entries:
+                entries.append(entry)
+                print(
+                    f"generated {entry['levelId']}:{entry['difficulty']} "
+                    f"pieces={len(entry['data']['pieces'])} "
+                    f"nodes={entry['data']['globalSearchNodes']}"
+                )
+    else:
+        for task in tasks:
+            entry = generate_entry_task(task)
             entries.append(entry)
             print(
-                f"generated {entry['levelId']}:{difficulty} "
+                f"generated {entry['levelId']}:{entry['difficulty']} "
                 f"pieces={len(entry['data']['pieces'])} "
                 f"nodes={entry['data']['globalSearchNodes']}"
             )

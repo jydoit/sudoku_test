@@ -340,9 +340,23 @@ func _run() -> void:
 		game._on_cell_double_pressed(next_wrong.y, next_wrong.x)
 	assert(game.is_failed, "The level should fail when hearts reach zero")
 	assert(game.completion_overlay.visible, "Failing the level should show the result overlay")
+	await process_frame
+	var result_safe_width: float = game.completion_overlay.size.x - 60.0
+	assert(game.reward_label.size.x <= result_safe_width + 1.0, "Failure result text must stay inside the mobile safe width")
+	assert(game.completion_next_button.size.x <= result_safe_width + 1.0, "Failure result primary button must stay inside the mobile safe width")
 	var revive_price: int = game._current_tool_price(CoinEconomyScript.TOOL_REVIVE)
-	assert(game.completion_next_button.text == "金币复活  -%d" % revive_price, "Failure primary action should expose the current revive price")
-	assert(game.completion_replay_button.text == "重新挑战", "Failure secondary action should restart without preserving the board")
+	assert(game.completion_next_button.text == game._t("金币复活  -%d", [revive_price]), "Failure primary action should expose the current revive price")
+	assert(game.completion_replay_button.text == game._t("重新挑战"), "Failure secondary action should restart without preserving the board")
+	var failure_locale: String = game.localization.current_locale
+	game.localization.set_locale("en")
+	game._prepare_failure_result_page()
+	assert(game.completion_title.text == "Challenge failed", "Failure title should follow the English locale")
+	assert(game.result_reward_label.text == "No hearts left", "Failure reward text should follow the English locale")
+	assert(game.result_tip_label.text == "Revive keeps the board and restores one heart.", "Failure explanation should follow the English locale")
+	assert(game.completion_next_button.text == "Revive -%d" % revive_price, "Failure action should follow the English locale")
+	assert(game.completion_replay_button.text == "Retry", "Failure retry action should follow the English locale")
+	game.localization.set_locale(failure_locale)
+	game._prepare_failure_result_page()
 	var wrong_marks_before_revive := _count_state(game.cell_states, "wrong")
 	game.coin_count = revive_price
 	game._completion_primary_pressed()

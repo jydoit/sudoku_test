@@ -8,9 +8,9 @@ signal intro_finished()
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const BOARD_LAYOUT_INSET := 10.0
 const TRAY_CELL_SIZE := 21.0
-const TRAY_SLOT_MIN_WIDTH := 96.0
-const TRAY_SLOT_MAX_WIDTH := 180.0
-const DRAG_THRESHOLD := 10.0
+const TRAY_SLOT_HEIGHT := 94.0
+const TRAY_SLOT_GAP := 8.0
+const DRAG_THRESHOLD := 6.0
 const SCROLL_DIRECTION_BIAS := 0.78
 const WHEEL_SCROLL_STEP := 54.0
 const PAN_SCROLL_SCALE := 42.0
@@ -48,6 +48,12 @@ var _intro_dragging_piece := false
 
 var _intro_caption: Label
 var _intro_hand: Label
+var _hint_popup: PanelContainer
+var _hint_title: Label
+var _hint_copy: Label
+var _hint_swatch: Label
+var _hint_piece_id := -1
+var _hint_origin := Vector2i(-99, -99)
 var _intro_tween: Tween
 var _tray_focus_tween: Tween
 var _intro_token := 0
@@ -57,7 +63,9 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_process_input(true)
 	resized.connect(queue_redraw)
+	resized.connect(_position_hint_popup)
 	_build_intro_controls()
+	_build_hint_popup()
 	hide()
 
 
@@ -94,6 +102,7 @@ func configure(
 	active = not assembly_data.is_empty()
 	input_locked = false
 	visible = active
+	hide_piece_hint()
 	_reset_pointer()
 	queue_redraw()
 
@@ -102,6 +111,7 @@ func update_state(current_placements: Dictionary, allowed: Dictionary, tray_slot
 	placements = current_placements.duplicate(true)
 	allowed_by_piece = allowed.duplicate()
 	tray_slot_piece_ids = CompositeLevel.sanitize_tray_slots(assembly_data, placements, tray_slots)
+	hide_piece_hint()
 	queue_redraw()
 
 
@@ -113,6 +123,7 @@ func deactivate() -> void:
 		_tray_focus_tween.kill()
 	active = false
 	input_locked = false
+	hide_piece_hint()
 	_reset_pointer()
 	_hide_intro_controls()
 	hide()
@@ -142,7 +153,7 @@ func play_intro() -> void:
 	await get_tree().create_timer(0.65).timeout
 	if not _intro_is_current(token):
 		return
-	_intro_caption.text = tr("左右滑动托盘查看更多")
+	_intro_caption.text = tr("左右滑动待放置区查看更多")
 	_intro_hand.position = tray_rect.position + Vector2(tray_rect.size.x * 0.72, tray_rect.size.y * 0.50) - _intro_hand.size * 0.5
 	await _move_intro_hand(tray_rect.position + Vector2(tray_rect.size.x * 0.28, tray_rect.size.y * 0.50), 0.72)
 	if not _intro_is_current(token):
@@ -249,6 +260,17 @@ func _draw_board() -> void:
 		for cell in _piece_absolute_cells(demo_piece, _demo_origin):
 			if cell.x >= 0 and cell.y >= 0 and cell.y < rows and cell.x < cols:
 				_draw_block(_cell_rect(cell, board_rect.position, cell_size), _region_color(int(demo_piece.get("regionId", 1))), cell_size, true)
+	if _hint_piece_id >= 0 and _hint_origin.x > -90:
+		var hint_piece := _piece_by_id(_hint_piece_id)
+		if not hint_piece.is_empty():
+			var hint_color := _region_color(int(hint_piece.get("regionId", 1)))
+			hint_color.a = 0.32
+			for cell in _piece_absolute_cells(hint_piece, _hint_origin):
+				if cell.x < 0 or cell.y < 0 or cell.y >= rows or cell.x >= cols:
+					continue
+				var hint_rect := _cell_rect(cell, board_rect.position, cell_size)
+				_draw_block(hint_rect, hint_color, cell_size, true)
+				draw_rect(hint_rect.grow(1.0), UITokensScript.ATTENTION_HALO_COLOR, false, maxf(2.0, cell_size * 0.06))
 
 	if _drag_piece_id >= 0 and _preview_origin.x > -90:
 		var piece := _piece_by_id(_drag_piece_id)
@@ -308,36 +330,52 @@ func _draw_tray() -> void:
 		var slot_index := int(slot["index"])
 		var slot_rect := Rect2(
 			tray_rect.position.x + float(slot["x"]) - tray_scroll,
-			tray_rect.position.y + 10.0,
+			tray_rect.position.y + float(slot["y"]),
 			float(slot["width"]),
-			tray_rect.size.y - 20.0
+			float(slot["height"])
 		)
 		if slot_rect.end.x < tray_rect.position.x or slot_rect.position.x > tray_rect.end.x:
 			continue
-		var slot_color := Color(1.0, 1.0, 1.0, 0.09 * tray_alpha)
-		draw_rect(slot_rect.grow(-3.0), slot_color, true)
 		var piece_id := int(tray_slot_piece_ids[slot_index]) if slot_index < tray_slot_piece_ids.size() else -1
 		if slot_index == _return_slot_index and _drag_source == "board" and _drag_piece_id >= 0:
-			var focus_color := Color(0.45, 0.82, 1.0, 0.92 * tray_alpha)
-			draw_rect(slot_rect.grow(-4.0), focus_color, false, 3.0)
+			var focus_piece := _piece_by_id(_drag_piece_id)
+			_draw_slot_frame(slot_rect, _region_color(int(focus_piece.get("regionId", 1))), 1.0 * tray_alpha, true)
 			_draw_piece_preview(_piece_by_id(_drag_piece_id), slot_rect, 0.72 * tray_alpha)
 			continue
 		if piece_id < 0:
-			draw_rect(slot_rect.grow(-10.0), Color(1.0, 1.0, 1.0, 0.12 * tray_alpha), false, 2.0)
+			draw_rect(slot_rect.grow(-6.0), Color(1.0, 1.0, 1.0, 0.12 * tray_alpha), false, 2.0)
 			continue
 		var piece := _piece_by_id(piece_id)
-		if piece.is_empty() or placements.has(str(piece_id)):
+		if piece.is_empty():
+			continue
+		var is_placed := placements.has(str(piece_id))
+		_draw_slot_frame(slot_rect, _region_color(int(piece.get("regionId", 1))), (0.42 if is_placed else 0.96) * tray_alpha, not is_placed)
+		if is_placed:
+			_draw_piece_preview(piece, slot_rect, 0.28 * tray_alpha)
+			draw_string(ThemeDB.fallback_font, slot_rect.end - Vector2(24, 12), "✓", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color(0.72, 0.92, 0.80, 0.75 * tray_alpha))
 			continue
 		_piece_hit_rects[piece_id] = slot_rect
 		if piece_id == _drag_piece_id:
-			draw_rect(slot_rect.grow(-10.0), Color(1.0, 1.0, 1.0, 0.12 * tray_alpha), false, 2.0)
+			draw_rect(slot_rect.grow(-8.0), Color(1.0, 1.0, 1.0, 0.16 * tray_alpha), false, 2.0)
 		else:
 			_draw_piece_preview(piece, slot_rect, tray_alpha)
 
 	if max_scroll > 0.0:
 		var hint_color := Color(1.0, 1.0, 1.0, 0.58 * tray_alpha)
-		draw_string(ThemeDB.fallback_font, tray_rect.position + Vector2(12, 24), "‹", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, hint_color)
-		draw_string(ThemeDB.fallback_font, tray_rect.end - Vector2(24, tray_rect.size.y - 24), "›", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, hint_color)
+		draw_string(ThemeDB.fallback_font, tray_rect.position + Vector2(8, tray_rect.size.y * 0.5 + 7), "‹", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, hint_color)
+		draw_string(ThemeDB.fallback_font, tray_rect.end - Vector2(22, tray_rect.size.y * 0.5 - 7), "›", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, hint_color)
+
+
+func _draw_slot_frame(slot_rect: Rect2, region_color: Color, alpha: float, emphasized: bool) -> void:
+	var glow := region_color
+	glow.a = 0.22 * alpha
+	draw_rect(slot_rect.grow(4.0), glow, false, 7.0 if emphasized else 5.0)
+	var border := region_color
+	border.a = alpha
+	draw_rect(slot_rect.grow(-2.0), border, false, 4.0 if emphasized else 3.0)
+	var slot_surface := UITokensScript.ASSEMBLY_TRAY
+	slot_surface.a = 0.72 * alpha
+	draw_rect(slot_rect.grow(-5.0), slot_surface, true)
 
 
 func _draw_piece_preview(piece: Dictionary, slot_rect: Rect2, alpha: float) -> void:
@@ -456,9 +494,9 @@ func _pointer_moved(position: Vector2, pointer_id: int) -> void:
 			_interaction_mode = "scroll"
 		elif _press_piece_id >= 0 and delta.length() > DRAG_THRESHOLD and (
 			_drag_source == "board"
-			or (delta.y < -DRAG_THRESHOLD * 0.55 and absf(delta.y) > absf(delta.x))
+			or (_drag_source == "tray" and delta.y > DRAG_THRESHOLD * 0.55 and absf(delta.y) > absf(delta.x))
 		):
-			_start_drag(_press_piece_id)
+			_start_drag(_press_piece_id, position)
 		elif _drag_source == "tray" and _press_piece_id < 0 and absf(delta.x) > DRAG_THRESHOLD:
 			_interaction_mode = "scroll"
 	if _interaction_mode == "scroll":
@@ -478,20 +516,40 @@ func _pointer_moved(position: Vector2, pointer_id: int) -> void:
 func _pointer_released(position: Vector2, pointer_id: int) -> void:
 	if not _pointer_down or pointer_id != _pointer_id:
 		return
+	var return_piece_id := -1
+	var return_slot_index := -1
+	var placement_piece_id := -1
+	var placement_origin := Vector2i(-99, -99)
 	if _interaction_mode == "drag" and _drag_piece_id >= 0:
-		if _drag_source == "board" and _return_slot_index >= 0 and _tray_rect().grow(RETURN_HOTZONE_MARGIN).has_point(position):
-			return_requested.emit(_drag_piece_id, _return_slot_index)
+		_last_pointer = position
+		var in_return_hotzone := _tray_rect().grow(RETURN_HOTZONE_MARGIN).has_point(position)
+		if _drag_source == "board" and in_return_hotzone:
+			# Release can arrive without a final motion event on touch screens. Resolve
+			# the target from the release position itself so returning is immediate.
+			_prepare_return_slot_focus(false)
+			if _return_slot_index >= 0:
+				return_piece_id = _drag_piece_id
+				return_slot_index = _return_slot_index
 		elif _origin_allowed(_drag_piece_id, _preview_origin):
-			placement_requested.emit(_drag_piece_id, [_preview_origin.y, _preview_origin.x])
+			placement_piece_id = _drag_piece_id
+			placement_origin = _preview_origin
 	_reset_pointer()
 	queue_redraw()
 	get_viewport().set_input_as_handled()
+	# Clear the local drag state before invoking the main controller. This lets
+	# the view render the release immediately even when the controller updates
+	# the tray and schedules persistence in the same input tick.
+	if return_piece_id >= 0:
+		return_requested.emit(return_piece_id, return_slot_index)
+	elif placement_piece_id >= 0:
+		placement_requested.emit(placement_piece_id, [placement_origin.y, placement_origin.x])
 
 
-func _start_drag(piece_id: int) -> void:
+func _start_drag(piece_id: int, pointer_position: Vector2) -> void:
 	_drag_piece_id = piece_id
 	_interaction_mode = "drag"
-	_preview_origin = _origin_for_pointer(_last_pointer)
+	_last_pointer = pointer_position
+	_preview_origin = _origin_for_pointer(pointer_position)
 	queue_redraw()
 
 
@@ -566,13 +624,17 @@ func _tray_max_scroll() -> float:
 func _tray_slot_layout() -> Array:
 	var pieces: Array = assembly_data.get("pieces", [])
 	var result: Array = []
-	var content_x := 14.0
+	var horizontal_padding := 10.0
+	var column_gap := TRAY_SLOT_GAP
+	var slot_width := clampf((_tray_rect().size.x - horizontal_padding * 2.0 - column_gap * 3.0) / 4.0, 72.0, 120.0)
 	for slot_index in range(pieces.size()):
-		var sizing_piece := _piece_for_initial_slot(slot_index)
-		var bounds := _piece_bounds(sizing_piece)
-		var width := clampf(float(bounds.size.x) * TRAY_CELL_SIZE + 32.0, TRAY_SLOT_MIN_WIDTH, TRAY_SLOT_MAX_WIDTH)
-		result.append({"index": slot_index, "x": content_x, "width": width})
-		content_x += width + 10.0
+		result.append({
+			"index": slot_index,
+			"x": horizontal_padding + slot_index * (slot_width + column_gap),
+			"y": (tray_target.size.y - TRAY_SLOT_HEIGHT) * 0.5,
+			"width": slot_width,
+			"height": TRAY_SLOT_HEIGHT
+		})
 	return result
 
 
@@ -584,19 +646,12 @@ func _piece_for_initial_slot(slot_index: int) -> Dictionary:
 	return pieces[slot_index] if slot_index >= 0 and slot_index < pieces.size() else {}
 
 
-func _first_empty_tray_slot() -> int:
-	for slot_index in range(tray_slot_piece_ids.size()):
-		if int(tray_slot_piece_ids[slot_index]) < 0:
-			return slot_index
-	return -1
-
-
-func _prepare_return_slot_focus() -> void:
+func _prepare_return_slot_focus(animated: bool = true) -> void:
 	if _return_slot_index >= 0:
 		return
-	_return_slot_index = _first_empty_tray_slot()
+	_return_slot_index = tray_slot_piece_ids.find(_drag_piece_id)
 	if _return_slot_index >= 0:
-		focus_tray_slot(_return_slot_index)
+		focus_tray_slot(_return_slot_index, animated)
 
 
 func focus_tray_slot(slot_index: int, animated: bool = true) -> void:
@@ -741,6 +796,99 @@ func _cell_set(raw_cells: Array) -> Dictionary:
 
 func _cell_key(cell: Vector2i) -> String:
 	return "%d,%d" % [cell.y, cell.x]
+
+
+func show_piece_hint(piece_id: int, origin: Vector2i) -> void:
+	var piece := _piece_by_id(piece_id)
+	if piece.is_empty():
+		return
+	_hint_piece_id = piece_id
+	_hint_origin = origin
+	var region_id := int(piece.get("regionId", 1))
+	var color_name := "颜色"
+	var color_index := region_id - 1
+	if color_index >= 0 and color_index < UITokensScript.REGION_COLOR_NAMES.size():
+		color_name = str(UITokensScript.REGION_COLOR_NAMES[color_index])
+	_hint_title.text = "提示：%s块放这里" % color_name
+	_hint_copy.text = "正确位置：第 %d 行，第 %d 列" % [origin.y + 1, origin.x + 1]
+	_hint_swatch.text = "■"
+	_hint_swatch.add_theme_color_override("font_color", _region_color(region_id))
+	_position_hint_popup()
+	_hint_popup.show()
+	queue_redraw()
+
+
+func hide_piece_hint() -> void:
+	_hint_piece_id = -1
+	_hint_origin = Vector2i(-99, -99)
+	if _hint_popup:
+		_hint_popup.hide()
+	queue_redraw()
+
+
+func _position_hint_popup() -> void:
+	if not _hint_popup:
+		return
+	var board_rect := _board_draw_rect()
+	_hint_popup.position = Vector2(
+		maxf(12.0, (size.x - _hint_popup.size.x) * 0.5),
+		maxf(120.0, board_rect.position.y - _hint_popup.size.y - 10.0)
+	)
+
+
+func _build_hint_popup() -> void:
+	_hint_popup = PanelContainer.new()
+	_hint_popup.custom_minimum_size = Vector2(318, 86)
+	_hint_popup.size = Vector2(318, 86)
+	_hint_popup.z_index = 30
+	_hint_popup.mouse_filter = Control.MOUSE_FILTER_STOP
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("#FFFDF8")
+	style.border_color = Color("#D8E5F5")
+	style.set_border_width_all(2)
+	style.corner_radius_top_left = 16
+	style.corner_radius_top_right = 16
+	style.corner_radius_bottom_left = 16
+	style.corner_radius_bottom_right = 16
+	style.shadow_color = Color(0.05, 0.08, 0.14, 0.20)
+	style.shadow_size = 10
+	style.shadow_offset = Vector2(0, 4)
+	_hint_popup.add_theme_stylebox_override("panel", style)
+	add_child(_hint_popup)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	_hint_popup.add_child(margin)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	margin.add_child(row)
+	_hint_swatch = Label.new()
+	_hint_swatch.custom_minimum_size = Vector2(34, 42)
+	_hint_swatch.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hint_swatch.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_hint_swatch.add_theme_font_size_override("font_size", 28)
+	row.add_child(_hint_swatch)
+	var copy_column := VBoxContainer.new()
+	copy_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	copy_column.add_theme_constant_override("separation", 2)
+	row.add_child(copy_column)
+	_hint_title = Label.new()
+	_hint_title.add_theme_color_override("font_color", UITokensScript.INK)
+	_hint_title.add_theme_font_size_override("font_size", 16)
+	copy_column.add_child(_hint_title)
+	_hint_copy = Label.new()
+	_hint_copy.add_theme_color_override("font_color", UITokensScript.MUTED)
+	_hint_copy.add_theme_font_size_override("font_size", 13)
+	copy_column.add_child(_hint_copy)
+	var close_button := Button.new()
+	close_button.text = "知道了"
+	close_button.custom_minimum_size = Vector2(62, 34)
+	close_button.pressed.connect(hide_piece_hint)
+	row.add_child(close_button)
+	_hint_popup.hide()
 
 
 func _build_intro_controls() -> void:

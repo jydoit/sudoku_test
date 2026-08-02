@@ -163,10 +163,11 @@ func _run() -> void:
 	assert(history_slot_index >= 0, "An unplaced piece should occupy one persistent tray slot")
 	game._on_assembly_placement_requested(history_piece_id, history_origin)
 	assert(game.composite_placements.has(str(history_piece_id)), "The history regression fixture should contain an unfinished placed piece")
-	assert(int(game.composite_tray_slots[history_slot_index]) == -1, "Placing a piece should leave its previous tray slot empty")
+	var completed_slot_index: int = game.composite_tray_slots.find(history_piece_id)
+	assert(completed_slot_index >= 0 and completed_slot_index >= history_slot_index, "Placed pieces should remain visible as completed slots after unplaced pieces")
 	game._on_assembly_return_requested(history_piece_id, history_slot_index)
 	assert(not game.composite_placements.has(str(history_piece_id)), "Releasing a board piece over the focused tray slot should return it")
-	assert(int(game.composite_tray_slots[history_slot_index]) == history_piece_id, "The returned piece should belong to the focused empty slot")
+	assert(game.composite_tray_slots.find(history_piece_id) >= 0, "A returned piece should be reinserted into the automatically sorted tray")
 	game._on_assembly_placement_requested(history_piece_id, history_origin)
 	var saved_tray_slots: Array = game.composite_tray_slots.duplicate()
 	game._save_game()
@@ -190,9 +191,27 @@ func _run() -> void:
 	game._show_home()
 	await process_frame
 	assert(not game.home_composite_entry_active and game.current_level_index == formal_index, "Leaving the resumed block round should restore formal progress again")
+	assert(not game.opening_king_overlay.visible and not game.opening_king_reveal_pending, "Leaving block gameplay must not reveal the formal opening-king popup on the home screen")
 	var unfinished_history: Dictionary = game.home_composite_history.duplicate(true)
 	game.home_composite_history["isCompleted"] = true
 	assert(game._home_composite_resume_round() == 4, "A completed saved block round should advance the next entry instead of replaying the completed round")
+	game.home_composite_history = unfinished_history
+	var crown_history: Dictionary = unfinished_history.duplicate(true)
+	var crown_state: Dictionary = crown_history["compositeState"].duplicate(true)
+	crown_state["phase"] = "crown"
+	crown_state["finalRegions"] = history_layout["regions"].duplicate(true)
+	crown_state["finalSolution"] = history_layout["solution"].duplicate(true)
+	crown_state["layoutSignature"] = str(history_layout["signature"])
+	crown_history["compositeState"] = crown_state
+	crown_history["activeSchedule"]["assemblyLayoutSignature"] = str(history_layout["signature"])
+	crown_history["isCompleted"] = false
+	game.home_composite_history = crown_history
+	game._start_home_composite_flow()
+	await process_frame
+	assert(game.home_composite_entry_active and game.composite_mode and game.composite_phase == "crown", "A saved block round in crown phase should resume instead of showing a generation failure")
+	game._show_home()
+	await process_frame
+	assert(not game.opening_king_overlay.visible and not game.opening_king_reveal_pending, "Returning home from a saved crown-phase block round must clear the opening-king popup")
 	game.home_composite_history = unfinished_history
 	game.composite_tutorial_seen = false
 	var schedule := LevelDirectorScript.manual_schedule_for_level(game.levels, level_index, 80)
@@ -230,13 +249,23 @@ func _run() -> void:
 	game.assembly_view._drag_source = ""
 	assert(game.assembly_view.visible, "Assembly view should replace the standard board")
 	assert(not game.progress_row.visible, "Crown progress must stay hidden during assembly")
-	assert(not game.clear_button.visible and not game.crown_find_button.visible and not game.hint_button.visible, "Crown tools must stay hidden during assembly")
+	assert(game.clear_button.visible and game.crown_find_button.visible and game.hint_button.visible, "Assembly should keep the shared tool bar visible at the bottom")
+	assert(game.assembly_tray_target.visible, "Assembly should show the waiting area above the board")
+	assert(game.assembly_tray_target.get_global_rect().position.y < game.board.get_global_rect().position.y, "The waiting area should be positioned above the board")
+	assert(game.action_bar.get_global_rect().position.y > game.board.get_global_rect().end.y - 4.0, "Assembly tools should remain below the board")
 	var hint_before: int = game.hint_count
 	var crown_find_before: int = game.crown_find_count
+	var hint_target: Dictionary = game._assembly_hint_target()
+	assert(not hint_target.is_empty(), "Assembly hint should find a target while the tray still has unplaced blocks")
+	assert(not game.composite_placements.has(str(hint_target["pieceId"])), "Assembly hint should prefer an unplaced block")
+	var hint_origin: Vector2i = hint_target["origin"]
+	assert(game._assembly_origin_in_list([hint_origin.y, hint_origin.x], game.assembly_view.allowed_by_piece.get(str(hint_target["pieceId"]), [])), "Assembly hint should point to a currently open origin")
 	game._use_hint()
-	game._use_crown_find()
-	game._clear_board()
-	assert(game.hint_count == hint_before and game.crown_find_count == crown_find_before, "Hidden assembly tools must not consume inventory")
+	assert(game.assembly_view._hint_piece_id >= 0 and game.hint_count == hint_before - 1, "Assembly hint should show a correct block position and consume one hint")
+	game.assembly_view.hide_piece_hint()
+	assert(not game.crown_find_button.disabled and not game._assembly_direct_find_target().is_empty(), "Assembly direct find should expose a smallest remaining color target")
+	assert(game.crown_find_count == crown_find_before, "Inspecting the assembly direct-find target should not consume a use")
+	game._update_assembly_tool_buttons()
 	game._on_help()
 	assert(game.help_tabs.current_tab == 1, "Assembly help should open the block gameplay tab")
 	game.dialog_controller.hide_dialog(true)
@@ -246,6 +275,18 @@ func _run() -> void:
 	var first_piece_id := int(runtime_pieces[0]["pieceId"])
 	game._on_assembly_placement_requested(first_piece_id, runtime_layout["placements"][str(first_piece_id)])
 	assert(game.composite_placements.has(str(first_piece_id)), "Placed assembly state should be recorded")
+	var first_piece_origin: Array = game.composite_placements[str(first_piece_id)].duplicate()
+	var view: AssemblyView = game.assembly_view
+	view._pointer_down = true
+	view._pointer_id = 17
+	view._interaction_mode = "drag"
+	view._drag_piece_id = first_piece_id
+	view._drag_source = "board"
+	view._return_slot_index = -1
+	view._pointer_released(view._tray_rect().get_center(), 17)
+	assert(not game.composite_placements.has(str(first_piece_id)), "A release directly in the waiting area must return the block even without a final motion event")
+	assert(game.composite_tray_slots.find(first_piece_id) >= 0, "A directly released block must immediately re-enter the sorted tray")
+	game._on_assembly_placement_requested(first_piece_id, first_piece_origin)
 	game._save_game()
 	game.queue_free()
 	await process_frame
@@ -548,7 +589,7 @@ func _test_tray_horizontal_scroll(view) -> void:
 	var tray_center: Vector2 = view._tray_rect().get_center()
 	view._pointer_pressed(tray_center, 7)
 	view._pointer_moved(tray_center + Vector2(-44.0, -8.0), 7)
-	assert(view._interaction_mode == "scroll" and view.tray_scroll > 0.0, "A slightly diagonal left swipe over a tray piece should scroll instead of starting a piece drag")
+	assert(view._interaction_mode == "scroll" and view.tray_scroll > 0.0, "A horizontal swipe over the tray should scroll instead of starting a piece drag")
 	view._pointer_released(tray_center + Vector2(-44.0, -8.0), 7)
 
 	view.tray_scroll = 0.0
@@ -556,7 +597,7 @@ func _test_tray_horizontal_scroll(view) -> void:
 	pan.position = view.get_global_transform_with_canvas() * tray_center
 	pan.delta = Vector2(-1.0, 0.0)
 	view._input(pan)
-	assert(view.tray_scroll > 0.0, "A Mac trackpad pan gesture over an overflowing tray should scroll it")
+	assert(view.tray_scroll > 0.0, "A trackpad horizontal pan gesture over an overflowing tray should scroll it")
 	view.assembly_data = saved_data
 	view.tray_slot_piece_ids = saved_slots
 	view.tray_scroll = 0.0
@@ -578,13 +619,13 @@ func _test_tray_return_slot_focus(view) -> void:
 		})
 	view.assembly_data = {"pieces": pieces}
 	view.placements = {"0": [0, 0], "3": [0, 1]}
-	view.tray_slot_piece_ids = [1, 2, -1, -1, 4, 5, 6]
+	view.tray_slot_piece_ids = [0, 1, 2, 3, 4, 5, 6]
 	view.tray_scroll = view._tray_max_scroll()
 	view._drag_piece_id = 3
 	view._drag_source = "board"
 	view._return_slot_index = -1
 	view._prepare_return_slot_focus()
-	assert(view._return_slot_index == 2, "Returning a board piece should choose the first empty tray slot from the head")
+	assert(view._return_slot_index == 3, "Returning a board piece should focus its current completed slot")
 	view.focus_tray_slot(view._return_slot_index, false)
 	assert(view.tray_scroll < view._tray_max_scroll(), "The tray should move away from its tail to focus the selected empty slot")
 	view.assembly_data = saved_data
