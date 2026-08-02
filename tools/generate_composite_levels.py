@@ -37,6 +37,9 @@ REGION_SPLIT_ATTEMPT_MULTIPLIERS = {
     "hard": 32,
 }
 REGION_SEARCH_NODE_LIMIT = 25_000
+SIMPLE_TWO_REGION_DISCONNECTED_PROBABILITY = 0.40
+SIMPLE_THREE_REGION_ISOLATED_PROBABILITY = 0.60
+MEDIUM_MID_SIZE_THREE_REGION_PROBABILITY = 0.60
 
 SHAPE_TEMPLATES: tuple[tuple[str, tuple[Cell, ...]], ...] = (
     ("bar", ((0, 0), (0, 1))),
@@ -309,14 +312,8 @@ def select_regions(
     )
     if not eligible:
         return [], ""
-    if difficulty == "simple" and (len(eligible) < 2 or rng.random() < 0.55):
-        largest = max(len(region_cells[region_id]) for region_id in eligible)
-        choices = [
-            region_id for region_id in eligible if len(region_cells[region_id]) == largest
-        ]
-        return [rng.choice(choices)], ""
-
-    desired = 3 if difficulty == "hard" else 2
+    board_size = len(regions)
+    desired = desired_region_count(board_size, difficulty, rng)
     fallback = ""
     if difficulty == "hard" and len(eligible) == 2:
         desired = 2
@@ -324,14 +321,27 @@ def select_regions(
     if len(eligible) < desired:
         return [], ""
 
-    adjacency = region_adjacency(regions, set(eligible))
+    if difficulty == "simple" and desired == 1:
+        largest = max(len(region_cells[region_id]) for region_id in eligible)
+        choices = [
+            region_id for region_id in eligible if len(region_cells[region_id]) == largest
+        ]
+        return [rng.choice(choices)], ""
+
     groups = [
         list(group)
         for group in itertools.combinations(eligible, desired)
-        if region_group_connected(group, adjacency)
     ]
     if not groups:
         return [], ""
+    if difficulty == "simple":
+        adjacency = region_adjacency(regions, set(eligible))
+        groups = select_simple_topology_groups(
+            groups,
+            desired,
+            adjacency,
+            rng,
+        )
 
     scored: list[tuple[list[int], int, float]] = []
     for group in groups:
@@ -354,6 +364,88 @@ def select_regions(
     return rng.choice(best), fallback
 
 
+def desired_region_count(
+    board_size: int,
+    difficulty: str,
+    rng: random.Random,
+) -> int:
+    if difficulty == "simple":
+        if board_size >= 9:
+            return 3
+        if board_size >= 7:
+            return 2
+        return 1
+    if difficulty == "medium":
+        if board_size >= 9:
+            return 3
+        if board_size >= 7:
+            return (
+                3
+                if rng.random() < MEDIUM_MID_SIZE_THREE_REGION_PROBABILITY
+                else 2
+            )
+        return 2
+    return 3
+
+
+def allowed_region_counts(board_size: int, difficulty: str) -> set[int]:
+    if difficulty == "simple":
+        if board_size >= 9:
+            return {3}
+        if board_size >= 7:
+            return {2}
+        return {1}
+    if difficulty == "medium":
+        if board_size >= 9:
+            return {3}
+        if board_size >= 7:
+            return {2, 3}
+        return {2}
+    return {3}
+
+
+def select_simple_topology_groups(
+    groups: list[list[int]],
+    desired: int,
+    adjacency: dict[int, set[int]],
+    rng: random.Random,
+) -> list[list[int]]:
+    if desired < 2:
+        return groups
+    isolated_groups = [
+        group
+        for group in groups
+        if group_has_isolated_region(group, adjacency)
+    ]
+    non_isolated_groups = [
+        group
+        for group in groups
+        if not group_has_isolated_region(group, adjacency)
+    ]
+    isolated_probability = (
+        SIMPLE_TWO_REGION_DISCONNECTED_PROBABILITY
+        if desired == 2
+        else SIMPLE_THREE_REGION_ISOLATED_PROBABILITY
+    )
+    preferred = (
+        isolated_groups
+        if rng.random() < isolated_probability
+        else non_isolated_groups
+    )
+    return preferred if preferred else groups
+
+
+def group_has_isolated_region(
+    group: Iterable[int],
+    adjacency: dict[int, set[int]],
+) -> bool:
+    selected = set(group)
+    return any(
+        not (adjacency.get(region_id, set()) & (selected - {region_id}))
+        for region_id in selected
+    )
+
+
 def region_adjacency(
     regions: list[list[int]], eligible: set[int]
 ) -> dict[int, set[int]]:
@@ -372,21 +464,6 @@ def region_adjacency(
                     result[first].add(second)
                     result[second].add(first)
     return result
-
-
-def region_group_connected(group: Iterable[int], adjacency: dict[int, set[int]]) -> bool:
-    allowed = set(group)
-    if not allowed:
-        return False
-    pending = [next(iter(allowed))]
-    visited = {pending[0]}
-    while pending:
-        current = pending.pop()
-        for neighbor in adjacency.get(current, set()) & allowed:
-            if neighbor not in visited:
-                visited.add(neighbor)
-                pending.append(neighbor)
-    return visited == allowed
 
 
 def split_region_with_clue(
@@ -528,7 +605,7 @@ def row_column_different_color_max(
 
 def desired_piece_count(cell_count: int, difficulty: str) -> int:
     desired = math.ceil((cell_count / MIN_PIECE_CELLS) * PIECE_COUNT_FACTORS[difficulty])
-    return min(max(1, cell_count // MIN_PIECE_CELLS), max(1, desired))
+    return min(max(1, cell_count // MIN_PIECE_CELLS), min(max(2, desired),6))
 
 
 def split_region(
@@ -1312,15 +1389,18 @@ def validate_payload(
         order = data.get("solutionOrder", [])
         selected_count = len(data.get("selectedRegionIds", []))
         fallback = str(data.get("difficultyFallback", ""))
-        if key[1] == "simple" and selected_count not in {1, 2}:
-            raise ValueError(f"{key} must select one or two regions")
-        if key[1] == "medium" and selected_count != 2:
-            raise ValueError(f"{key} must select two regions")
+        board_size = int(data.get("rows", 0))
         if key[1] == "hard":
             if selected_count == 2 and fallback != "hard_two_regions":
                 raise ValueError(f"{key} silently falls back to two regions")
             if selected_count not in {2, 3}:
                 raise ValueError(f"{key} must select three regions or use the explicit fallback")
+        elif selected_count not in allowed_region_counts(board_size, key[1]):
+            raise ValueError(
+                f"{key} selects {selected_count} regions, "
+                f"expected {sorted(allowed_region_counts(board_size, key[1]))} "
+                f"for a {board_size}x{board_size} board"
+            )
         if (
             not data.get("globalUniqueSolution")
             or not data.get("globalUniquePlacement")
