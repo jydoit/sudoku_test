@@ -39,7 +39,7 @@ const LION_KING_VICTORY_FRAMES = [
 	LION_KING_VICTORY_FUNNY_ICON
 ]
 const SAVE_PATH := "user://color_queens_save.json"
-const SAVE_VERSION := 12
+const SAVE_VERSION := 13
 const INITIAL_HINT_COUNT := 3
 const INITIAL_HEART_COUNT := 3
 const INITIAL_CROWN_FIND_COUNT := 3
@@ -110,6 +110,7 @@ var active_hint_stage := 0
 var run_started_unix := 0
 var run_move_count := 0
 var run_hint_count := 0
+var run_direct_find_count := 0
 var run_coin_exchange_count := 0
 var resume_level_id := -1
 var resume_states: Array = []
@@ -1388,6 +1389,7 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 		run_started_unix = int(Time.get_unix_time_from_system())
 		run_move_count = 0
 		run_hint_count = 0
+		run_direct_find_count = 0
 		run_coin_exchange_count = 0
 	_update_active_king_positions()
 	_apply_king_positions_to_state()
@@ -2490,6 +2492,7 @@ func _use_crown_find() -> void:
 	board.set_guides({})
 	if uses_free_count:
 		crown_find_count -= 1
+	run_direct_find_count += 1
 	cell_states[target.y][target.x] = "hint"
 	audio_controller.play_correct()
 	board.set_states(cell_states)
@@ -4954,7 +4957,15 @@ func _record_level_result() -> void:
 	_sync_director_completed_levels()
 	var completed_unix := int(Time.get_unix_time_from_system())
 	var elapsed := maxf(1.0, float(completed_unix - run_started_unix))
-	LevelDirectorScript.record_completion(director_progress, current_level, active_schedule, elapsed, run_move_count, run_hint_count, _today_string(), completed_unix)
+	LevelDirectorScript.record_completion(director_progress, current_level, active_schedule, elapsed, run_move_count, run_hint_count, _today_string(), completed_unix, run_direct_find_count)
+	_sync_director_completed_levels()
+
+
+func _record_level_failure() -> void:
+	_sync_director_completed_levels()
+	var failed_unix := int(Time.get_unix_time_from_system())
+	var elapsed := maxf(1.0, float(failed_unix - run_started_unix))
+	LevelDirectorScript.record_failure(director_progress, current_level, active_schedule, elapsed, run_move_count, run_hint_count, _today_string(), failed_unix, run_direct_find_count)
 	_sync_director_completed_levels()
 
 
@@ -5343,6 +5354,7 @@ func _load_save() -> void:
 	run_started_unix = int(data.get("runStartedUnix", 0))
 	run_move_count = int(data.get("runMoveCount", 0))
 	run_hint_count = int(data.get("runHintCount", 0))
+	run_direct_find_count = int(data.get("runDirectFindCount", 0))
 	run_coin_exchange_count = maxi(0, int(data.get("runCoinExchangeCount", 0)))
 	immediate_errors = bool(data.get("immediateErrors", true))
 	selected_language = str(data.get("selectedLanguage", ""))
@@ -5383,6 +5395,7 @@ func _capture_formal_progress_snapshot() -> bool:
 		"runStartedUnix": run_started_unix,
 		"runMoveCount": run_move_count,
 		"runHintCount": run_hint_count,
+		"runDirectFindCount": run_direct_find_count,
 		"runCoinExchangeCount": run_coin_exchange_count,
 		"compositeState": _composite_save_state(),
 		"compositeTutorialSeen": composite_tutorial_seen
@@ -5434,6 +5447,7 @@ func _restore_formal_progress_snapshot() -> bool:
 	run_started_unix = int(snapshot.get("runStartedUnix", 0))
 	run_move_count = maxi(0, int(snapshot.get("runMoveCount", 0)))
 	run_hint_count = maxi(0, int(snapshot.get("runHintCount", 0)))
+	run_direct_find_count = maxi(0, int(snapshot.get("runDirectFindCount", 0)))
 	run_coin_exchange_count = maxi(0, int(snapshot.get("runCoinExchangeCount", 0)))
 	var snapshot_composite = snapshot.get("compositeState", {})
 	resume_composite_state = snapshot_composite.duplicate(true) if snapshot_composite is Dictionary else {}
@@ -5485,6 +5499,7 @@ func _update_home_composite_history() -> void:
 		"runStartedUnix": run_started_unix,
 		"runMoveCount": run_move_count,
 		"runHintCount": run_hint_count,
+		"runDirectFindCount": run_direct_find_count,
 		"runCoinExchangeCount": run_coin_exchange_count
 	}
 
@@ -5531,6 +5546,7 @@ func _save_game() -> void:
 		"runStartedUnix": run_started_unix,
 		"runMoveCount": run_move_count,
 		"runHintCount": run_hint_count,
+		"runDirectFindCount": run_direct_find_count,
 		"runCoinExchangeCount": run_coin_exchange_count,
 		"coinCount": coin_count,
 		"heartCount": heart_count,
@@ -5643,6 +5659,8 @@ func _fail_level() -> void:
 	if is_completed or is_failed:
 		return
 	is_failed = true
+	if not home_composite_entry_active and not _is_assembly_phase():
+		_record_level_failure()
 	active_hint_step.clear()
 	active_hint_stage = 0
 	board.set_guides({})
@@ -5766,6 +5784,7 @@ func _start_home_composite_flow() -> void:
 		run_started_unix = int(history.get("runStartedUnix", 0))
 		run_move_count = maxi(0, int(history.get("runMoveCount", 0)))
 		run_hint_count = maxi(0, int(history.get("runHintCount", 0)))
+		run_direct_find_count = maxi(0, int(history.get("runDirectFindCount", 0)))
 		run_coin_exchange_count = maxi(0, int(history.get("runCoinExchangeCount", 0)))
 		var saved_composite = history.get("compositeState", {})
 		resume_composite_state = saved_composite.duplicate(true) if saved_composite is Dictionary else {}

@@ -331,6 +331,11 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - 第 10 关之后根据玩家进度、size、难度和最近行为动态选择关卡；关卡选择按 size/difficulty 索引读取，并用最近 50 个 `levelId` 做去重。
 - 动态 size 解锁节奏为：30 关起保持 5x5；80 关起开放 5x5-6x6；180 关起开放 5x5-7x7；300 关起采样 6x6-8x8；450 关起采样 6x6-9x9。
 - 每逢 10 的整数关为挑战关；挑战关后一关为缓冲关，保持挑战关 size、难度降低一档，并显示提示皇冠。
+- 普通关卡使用分层后验推荐：size 层使用 Dirichlet 多项分布，size 内的 difficulty 层使用 Dirichlet 多项分布，每个 size×difficulty 组合分别维护通关、下一关开启和次日留存三个 Beta-Bernoulli 后验，并用 Thompson Sampling 选择。
+- 新 size 解锁时降低旧 size 的历史探索权重，为新 size 写入冷启动加成并优先探测 Medium；每个 size 和组合都有最低曝光配额，未充分曝光的组合优先于稳定收益采样。
+- 选择时观察最近 5 局：若存在高于最近主尺寸且尚未探测的 size，优先该 size 的 Medium；否则优先最近 5 局最大 size 中尚未探测的组合。连续 3 局未使用道具时提高难度压力，最近最大 size 的探测优先 Hard。
+- 普通关卡固定记录直找和提示的使用概率。没有未探测组合后，组合配额和 Thompson Sampling 使用最高道具收益权重，促进玩家在更高难度下使用帮助工具。
+- 每逢 10 关的挑战分支以及挑战后的下一关缓冲分支保持独立于普通后验推荐，后一关沿用挑战 size 并降低一档难度。
 - 第 11-50 关保留提示皇冠；50 关后每隔 5 关屏蔽一次提示皇冠。
 - 动态提示皇冠数量按棋盘 size 加权：5x5 固定 1 个，6x6 为 1-2 个，7x7 为 1-3 个，8x8 及以上为 1-3 个。
 - 基础校验包括行列尺寸、区域行列数和答案数量。
@@ -517,7 +522,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - `_next_level()` 和 `_replay_level()` 处理弹窗按钮。
 - `completion_overlay` 为全屏通关结果页；成功结算的角色展位显示一只开心站立的橘色皇冠狮子。每次进入结算页时随机选择自然挥手、逐步吐舌头或眨眼做鬼脸动画。角色身体保持固定位置、固定比例且不旋转，仅通过逐帧贴图表现动作；逐帧动画使用不等长帧时长与动作停顿，避免机械循环感。
 - 结算页只展示真实产生的金币奖励，不展示没有后续用途的“获得皇冠 +1”虚拟奖励。
-- 关卡完成会记录耗时、步数、提示数和难度收益；收益计算的耗时上限为 15 分钟。
+- 关卡完成会记录耗时、步数、提示数、直找次数、道具使用次数和难度收益；同时更新本组合的通关 Beta 后验，并在打开下一关、次日回访或失败时更新对应 Beta 与分层 Dirichlet 反馈。收益计算的耗时上限为 15 分钟。
 - 成功打开下一关会为上一局补记继续游玩收益；次日 24 小时内再次打开会为所有符合条件的完成局补记次留收益。
 
 功能截图与交互流转：
@@ -581,10 +586,10 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - 存档路径：`user://color_queens_save.json`。
 - `_load_save()` 加载并兼容旧版本。
 - `_save_game()` 在关键状态变化后写入。
-- 当前保存字段包括 `currentLevelIndex`、`currentLevelId`、`playerLevelNumber`、`activeSchedule`、`directorProgress`、`economyProgress`、`runStartedUnix`、`runMoveCount`、`runHintCount`、`runCoinExchangeCount`、`cellStates`、`isCompleted`、`isFailed`、`coinCount`、`heartCount`、`hintCount`、`completedLevels`、`immediateErrors`、`tutorialCompleted`、`tutorialStarted`、`tutorialStepIndex`、`formalProgressSnapshot`、`homeCompositeEntryActive`、`homeCompositeRound`、`homeCompositeProgressSnapshot`、`homeCompositeHistory`、`compositeState`、`compositeTutorialSeen`。
-- `directorProgress` 保存最近通关记录、size/difficulty 统计、下一关开启和次留补记状态。
+- 当前保存字段包括 `currentLevelIndex`、`currentLevelId`、`playerLevelNumber`、`activeSchedule`、`directorProgress`、`economyProgress`、`runStartedUnix`、`runMoveCount`、`runHintCount`、`runDirectFindCount`、`runCoinExchangeCount`、`cellStates`、`isCompleted`、`isFailed`、`coinCount`、`heartCount`、`hintCount`、`completedLevels`、`immediateErrors`、`tutorialCompleted`、`tutorialStarted`、`tutorialStepIndex`、`formalProgressSnapshot`、`homeCompositeEntryActive`、`homeCompositeRound`、`homeCompositeProgressSnapshot`、`homeCompositeHistory`、`compositeState`、`compositeTutorialSeen`。
+- `directorProgress` 保存最近通关和失败记录、size/difficulty 统计、下一关开启和次留补记状态、各组合的 Beta 后验，以及 `banditState` 中的 size/difficulty Dirichlet 参数和新 size 发布 epoch。
 - 首页点击“开始关卡”时，如果当前恢复的正式关卡已经完成，会自动推进并加载下一关，避免停留在已完成且不可操作的棋盘。
-- `SAVE_VERSION` 当前为 12；`formalProgressSnapshot` 在重看教程时持久保存正式关卡索引、调度、通关记录、经济资源、棋盘状态、红心、本局统计和复合拼块现场，成功恢复后清除。
+- `SAVE_VERSION` 当前为 13；`formalProgressSnapshot` 在重看教程时持久保存正式关卡索引、调度、通关记录、经济资源、棋盘状态、红心、本局统计和复合拼块现场，成功恢复后清除。
 - `homeCompositeProgressSnapshot` 与 `homeCompositeEntryActive` 用于隔离首页拼块入口：即使在独立拼块体验中退出应用，下次启动回到首页时也先恢复进入前的主线现场。`homeCompositeHistory` 独立保留拼块玩法的最近局数和未完成现场，不会随主线快照恢复而清空。
 - `compositeState` 保存关卡 ID、阶段、切分种子、拆块数据版本、已放方块、放置历史、死局状态、最终布局签名、`regions` 与 `solution`；版本 8 及更早的旧存档没有该字段时按当前关卡日程重新开始拼块或直接加载普通皇冠关卡。拆块数据版本变化时继续复用 seed，但清空旧形状对应的放置坐标，避免把旧现场套到新拼块。
 
@@ -724,6 +729,11 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 | 每关红心 | 1-10 关为 3；11-30 关为 2；31 关起为 1 | `_heart_limit_for_display_level()` | 正式关卡每次进入/重试时按展示关卡序号重置 |
 | 关卡红心动效 | 所有剩余红心同步双跳 | `HEART_PULSE_STAGGER_SECONDS`、`_update_heart_label()` | 不使用依次错峰动画；失去的红心停止跳动并恢复正常大小 |
 | 默认棋盘尺寸 | 5x5-9x9 | `data/levels.json` | 由关卡导演按进度解锁 |
+| 普通玩法组合推荐 | Dirichlet + Beta-Bernoulli + Thompson Sampling | `scripts/level_director.gd` | 反馈信号包括通关、失败、下一关开启和次日留存 |
+| 新 size 冷启动 | 新 size Dirichlet 加成，优先 Medium | `LevelDirector._apply_size_release_policy()` | 新 size 开放时衰减旧 size 的历史探索权重 |
+| 最低曝光配额 | size 12 局；组合 6 局 | `MIN_SIZE_EXPOSURE`、`MIN_COMBO_EXPOSURE` | 未充分探索的层级优先补足 |
+| 无道具难度压力 | 连续 3 局未使用道具后提高难度 | `NO_TOOL_DIFFICULTY_STREAK` | 最近最大 size 的探测优先 Hard |
+| 道具使用策略 | 直找 15%；提示 25%；收益权重 0.08 / 0.28 | `TOOL_*_PROBABILITY`、`TOOL_REWARD_*` | 没有未探测组合后使用最高道具收益权重 |
 | 复合拼块最小尺寸 | 6x6 | `LevelDirector.assemblyEnabled` | 5x5 不进入复合拼块玩法 |
 | 复合拼块触发 | 10 的整数倍里程碑且尺寸 ≥6 | `LevelDirector._make_schedule()` | 其它关卡直接进入皇冠阶段 |
 | 首页拼块入口 | 完成新人流程后常驻 | `_start_home_composite_flow()` | 独立 6x6 连续挑战；第 1/2/3 局使用 Simple/Medium/Hard pattern，之后循环；退出后恢复主线现场，不结算主线奖励 |

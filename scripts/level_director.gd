@@ -7,12 +7,26 @@ const DEDUPE_HISTORY_WINDOW := 50
 const MILESTONE_RECENT_WINDOW := 15
 const MAX_RUN_HISTORY := 40
 const MILESTONE_INTERVAL := 10
-const UCB_BOOTSTRAP_RUNS := 18
-const UCB_EXPLORATION := 0.72
 const MAX_REWARD_ELAPSED_SECONDS := 15.0 * 60.0
 const RETENTION_WINDOW_SECONDS := 24 * 60 * 60
+const NEXT_LEVEL_WINDOW_SECONDS := 30 * 60
 const NEXT_LEVEL_OPEN_BONUS := 0.08
 const RETENTION_BONUS := 0.15
+const BETA_PRIOR_A := 1.0
+const BETA_PRIOR_B := 1.0
+const DIRICHLET_PRIOR_ALPHA := 1.0
+const DIRICHLET_RELEASE_DECAY := 0.2
+const DIRICHLET_POSITIVE_RATE := 1.0
+const DIRICHLET_NEGATIVE_RATE := 0.35
+const MIN_SIZE_EXPOSURE := 12
+const MIN_COMBO_EXPOSURE := 6
+const NEW_SIZE_BOOST := 4.0
+const EXTRA_EXPLORATION_PROBABILITY := 0.08
+const TOOL_FIND_PROBABILITY := 0.15
+const TOOL_HINT_PROBABILITY := 0.25
+const TOOL_REWARD_BASE_WEIGHT := 0.08
+const TOOL_REWARD_MAX_WEIGHT := 0.28
+const NO_TOOL_DIFFICULTY_STREAK := 3
 const KING_SOLUTION_ORDINALS := [2, 4, 6, 8]
 const DIFFICULTY_ORDER := ["simple", "medium", "hard", "challenge"]
 const FIXED_OPENING_PLAN := [
@@ -36,6 +50,8 @@ static func normalize_progress(progress: Dictionary) -> Dictionary:
 		progress["statsByArm"] = {}
 	if not progress.has("completedLevelIds") or not progress["completedLevelIds"] is Array:
 		progress["completedLevelIds"] = []
+	if not progress.has("banditState") or not progress["banditState"] is Dictionary:
+		progress["banditState"] = {}
 	return progress
 
 
@@ -63,12 +79,9 @@ static func schedule_for_display_level(levels: Array, display_level: int, progre
 	elif _previous_run_is_challenge(progress):
 		arm = _post_challenge_arm(progress, allowed_sizes)
 		mode = "post_challenge"
-	elif _total_arm_plays(progress) >= UCB_BOOTSTRAP_RUNS:
-		arm = _ucb_arm(levels, level_index, allowed_sizes, completed_ids, progress)
-		mode = "ucb"
 	else:
-		arm = _rule_arm(display, allowed_sizes, rng)
-		mode = "rule"
+		arm = _recommended_arm(levels, level_index, allowed_sizes, completed_ids, progress, display, rng)
+		mode = str(arm.get("mode", "bayes"))
 
 	var selected_size := int(arm.get("size", allowed_sizes[0]))
 	var selected_difficulty := str(arm.get("difficulty", "simple"))
@@ -79,7 +92,7 @@ static func schedule_for_display_level(levels: Array, display_level: int, progre
 		index = clampi(display - 1, 0, levels.size() - 1)
 
 	var level: Dictionary = levels[index]
-	return _make_schedule(
+	var schedule := _make_schedule(
 		level,
 		index,
 		display,
@@ -89,6 +102,11 @@ static func schedule_for_display_level(levels: Array, display_level: int, progre
 		int(level.get("rows", selected_size)),
 		str(level.get("difficulty", selected_difficulty))
 	)
+	schedule["recommendationReason"] = str(arm.get("reason", mode))
+	schedule["toolFindProbability"] = TOOL_FIND_PROBABILITY
+	schedule["toolHintProbability"] = TOOL_HINT_PROBABILITY
+	schedule["toolRewardWeight"] = float(arm.get("toolRewardWeight", TOOL_REWARD_BASE_WEIGHT))
+	return schedule
 
 
 static func build_level_index(levels: Array) -> Dictionary:
@@ -171,7 +189,7 @@ static func unlocked_sizes(display_level: int) -> Array:
 	return [5]
 
 
-static func record_completion(progress: Dictionary, level: Dictionary, schedule: Dictionary, elapsed_seconds: float, moves: int, hints: int, completed_date: String = "", completed_unix: int = 0) -> void:
+static func record_completion(progress: Dictionary, level: Dictionary, schedule: Dictionary, elapsed_seconds: float, moves: int, hints: int, completed_date: String = "", completed_unix: int = 0, direct_finds: int = 0) -> void:
 	normalize_progress(progress)
 	var size := int(level.get("rows", schedule.get("selectedSize", 0)))
 	var difficulty := str(level.get("difficulty", schedule.get("selectedDifficulty", "normal")))
@@ -186,8 +204,12 @@ static func record_completion(progress: Dictionary, level: Dictionary, schedule:
 	stats["elapsedTotal"] = float(stats.get("elapsedTotal", 0.0)) + capped_elapsed
 	stats["movesTotal"] = int(stats.get("movesTotal", 0)) + moves
 	stats["hintsTotal"] = int(stats.get("hintsTotal", 0)) + hints
+	stats["directFindsTotal"] = int(stats.get("directFindsTotal", 0)) + direct_finds
+	stats["toolUsesTotal"] = int(stats.get("toolUsesTotal", 0)) + hints + direct_finds
 	stats["rewardTotal"] = float(stats.get("rewardTotal", 0.0)) + reward
+	_update_beta_metric(stats, "completion", true)
 	progress["statsByArm"][arm_key] = stats
+	_update_dirichlet_feedback(progress, size, difficulty, 1.0, 1.0)
 
 	var runs: Array = progress["recentRuns"]
 	runs.append({
@@ -201,7 +223,52 @@ static func record_completion(progress: Dictionary, level: Dictionary, schedule:
 		"elapsedSeconds": capped_elapsed,
 		"moves": moves,
 		"hints": hints,
+		"directFinds": direct_finds,
+		"toolUses": hints + direct_finds,
+		"completed": true,
 		"reward": reward,
+		"openedNextLevel": false,
+		"retainedNextDay": false,
+		"completedDate": completed_date,
+		"completedUnix": completed_unix
+	})
+	while runs.size() > MAX_RUN_HISTORY:
+		runs.pop_front()
+
+
+static func record_failure(progress: Dictionary, level: Dictionary, schedule: Dictionary, elapsed_seconds: float, moves: int, hints: int, completed_date: String = "", completed_unix: int = 0, direct_finds: int = 0) -> void:
+	normalize_progress(progress)
+	var size := int(level.get("rows", schedule.get("selectedSize", 0)))
+	var difficulty := str(level.get("difficulty", schedule.get("selectedDifficulty", "normal")))
+	var arm_key := _arm_key(size, difficulty)
+	var stats: Dictionary = progress["statsByArm"].get(arm_key, {})
+	stats["plays"] = int(stats.get("plays", 0)) + 1
+	stats["failures"] = int(stats.get("failures", 0)) + 1
+	stats["elapsedTotal"] = float(stats.get("elapsedTotal", 0.0)) + minf(elapsed_seconds, MAX_REWARD_ELAPSED_SECONDS)
+	stats["movesTotal"] = int(stats.get("movesTotal", 0)) + moves
+	stats["hintsTotal"] = int(stats.get("hintsTotal", 0)) + hints
+	stats["directFindsTotal"] = int(stats.get("directFindsTotal", 0)) + direct_finds
+	stats["toolUsesTotal"] = int(stats.get("toolUsesTotal", 0)) + hints + direct_finds
+	_update_beta_metric(stats, "completion", false)
+	progress["statsByArm"][arm_key] = stats
+	_update_dirichlet_feedback(progress, size, difficulty, 0.0, 1.0)
+
+	var runs: Array = progress["recentRuns"]
+	runs.append({
+		"displayLevel": int(schedule.get("displayLevel", 1)),
+		"levelIndex": int(schedule.get("levelIndex", -1)),
+		"levelId": int(level.get("levelId", -1)),
+		"size": size,
+		"difficulty": difficulty,
+		"mode": str(schedule.get("mode", "")),
+		"isMilestoneChallenge": bool(schedule.get("isMilestoneChallenge", false)),
+		"elapsedSeconds": minf(elapsed_seconds, MAX_REWARD_ELAPSED_SECONDS),
+		"moves": moves,
+		"hints": hints,
+		"directFinds": direct_finds,
+		"toolUses": hints + direct_finds,
+		"completed": false,
+		"reward": 0.0,
 		"openedNextLevel": false,
 		"retainedNextDay": false,
 		"completedDate": completed_date,
@@ -217,6 +284,9 @@ static func record_next_level_opened(progress: Dictionary) -> void:
 	if runs.is_empty():
 		return
 	var run: Dictionary = runs[runs.size() - 1]
+	if not bool(run.get("nextLevelObserved", false)):
+		run["nextLevelObserved"] = true
+		_update_run_metric(progress, run, "nextLevel", true)
 	_add_reward_bonus(progress, run, NEXT_LEVEL_OPEN_BONUS, "openedNextLevel")
 
 
@@ -231,8 +301,19 @@ static func record_retention_if_needed(progress: Dictionary, today: String, now_
 		var completed_date := str(run.get("completedDate", ""))
 		var completed_unix := int(run.get("completedUnix", 0))
 		var age_seconds := now_unix - completed_unix
-		if completed_date != "" and completed_date != today and completed_unix > 0 and age_seconds >= 0 and age_seconds < RETENTION_WINDOW_SECONDS:
+		if bool(run.get("retentionObserved", false)) or completed_unix <= 0:
+			continue
+		if completed_date != "" and completed_date != today and age_seconds >= 0 and age_seconds < RETENTION_WINDOW_SECONDS:
+			run["retentionObserved"] = true
+			_update_run_metric(progress, run, "retention", true)
 			_add_reward_bonus(progress, run, RETENTION_BONUS, "retainedNextDay")
+		elif age_seconds >= RETENTION_WINDOW_SECONDS:
+			run["retentionObserved"] = true
+			_update_run_metric(progress, run, "retention", false)
+
+		if not bool(run.get("nextLevelObserved", false)) and age_seconds >= NEXT_LEVEL_WINDOW_SECONDS:
+			run["nextLevelObserved"] = true
+			_update_run_metric(progress, run, "nextLevel", false)
 
 
 static func _make_schedule(level: Dictionary, index: int, display: int, mode: String, is_milestone: bool, allowed_sizes: Array, selected_size: int, selected_difficulty: String) -> Dictionary:
@@ -351,28 +432,188 @@ static func _difficulty_weights(display: int) -> Dictionary:
 	return {"simple": 0.14, "medium": 0.25, "hard": 0.36, "challenge": 0.25}
 
 
-static func _ucb_arm(levels: Array, level_index: Dictionary, allowed_sizes: Array, completed_ids: Array, progress: Dictionary) -> Dictionary:
-	var total_plays := maxi(1, _total_arm_plays(progress))
-	var best_score := -INF
-	var best_arm := {"size": int(allowed_sizes[0]), "difficulty": "simple"}
-	for size in allowed_sizes:
+static func _recommended_arm(levels: Array, level_index: Dictionary, allowed_sizes: Array, completed_ids: Array, progress: Dictionary, display: int, rng: RandomNumberGenerator) -> Dictionary:
+	_ensure_bandit_state(progress, level_index)
+	_apply_size_release_policy(progress, allowed_sizes)
+	var arms := _available_arms(level_index, allowed_sizes)
+	if arms.is_empty():
+		return {"size": int(allowed_sizes[0]), "difficulty": "simple", "mode": "bayes", "reason": "fallback"}
+
+	var recent := _last_runs(progress, RECENT_WINDOW)
+	var recent_mode_size := _most_common_recent_size(recent, int(allowed_sizes[0]))
+	var new_size_arm := _new_size_medium_probe(arms, progress, recent_mode_size)
+	if not new_size_arm.is_empty():
+		return {
+			"size": int(new_size_arm["size"]),
+			"difficulty": str(new_size_arm["difficulty"]),
+			"mode": "new_size_probe",
+			"reason": "higher_than_recent_mode",
+			"toolRewardWeight": TOOL_REWARD_BASE_WEIGHT
+		}
+
+	var recent_max_arm := _recent_max_size_probe(arms, progress, recent)
+	if not recent_max_arm.is_empty():
+		var recent_max_tool_weight := TOOL_REWARD_MAX_WEIGHT if _no_tool_streak(progress) >= NO_TOOL_DIFFICULTY_STREAK else TOOL_REWARD_BASE_WEIGHT
+		return {
+			"size": int(recent_max_arm["size"]),
+			"difficulty": str(recent_max_arm["difficulty"]),
+			"mode": "recent_size_probe",
+			"reason": "recent_max_size",
+			"toolRewardWeight": recent_max_tool_weight
+		}
+
+	var unseen := _arms_with_max_plays(arms, progress, 0)
+	if not unseen.is_empty():
+		return _weighted_arm_choice(unseen, progress, rng, "unseen_combo_probe", TOOL_REWARD_BASE_WEIGHT)
+
+	var under_size_quota := _arms_for_size_quota(arms, progress)
+	if not under_size_quota.is_empty():
+		return _weighted_arm_choice(under_size_quota, progress, rng, "size_quota_probe", TOOL_REWARD_MAX_WEIGHT)
+
+	var under_quota: Array = []
+	for arm in arms:
+		var plays := _arm_plays(progress, int(arm["size"]), str(arm["difficulty"]))
+		if plays < MIN_COMBO_EXPOSURE:
+			under_quota.append(arm)
+	if not under_quota.is_empty():
+		return _weighted_arm_choice(under_quota, progress, rng, "combo_quota_probe", TOOL_REWARD_MAX_WEIGHT)
+
+	var tool_weight := TOOL_REWARD_MAX_WEIGHT
+	var sampled_arm := _thompson_arm(arms, progress, rng, display, tool_weight)
+	if not sampled_arm.is_empty() and rng.randf() >= EXTRA_EXPLORATION_PROBABILITY:
+		sampled_arm["mode"] = "thompson_sampling"
+		sampled_arm["reason"] = "posterior_reward"
+		sampled_arm["toolRewardWeight"] = tool_weight
+		return sampled_arm
+
+	var random_arm := _weighted_arm_choice(arms, progress, rng, "posterior_exploration", tool_weight)
+	return random_arm
+
+
+static func _available_arms(level_index: Dictionary, allowed_sizes: Array) -> Array:
+	var arms: Array = []
+	for raw_size in allowed_sizes:
+		var size := int(raw_size)
+		var by_difficulty: Dictionary = level_index.get(size, {})
 		for difficulty in DIFFICULTY_ORDER:
-			if _candidate_indices(levels, level_index, [int(size)], [difficulty], completed_ids, [], true, true).is_empty():
-				continue
-			var stats: Dictionary = progress["statsByArm"].get(_arm_key(int(size), difficulty), {})
-			var plays := int(stats.get("plays", 0))
-			var average_reward := 0.0
-			if plays > 0:
-				average_reward = float(stats.get("rewardTotal", 0.0)) / float(plays)
-			else:
-				average_reward = 0.72
-			var exploration := sqrt(log(float(total_plays + 1)) / float(maxi(1, plays)))
-			var cold_start_bonus := 0.18 if plays == 0 else 0.0
-			var score := average_reward + UCB_EXPLORATION * exploration + cold_start_bonus
-			if score > best_score:
-				best_score = score
-				best_arm = {"size": int(size), "difficulty": difficulty}
-	return best_arm
+			if not by_difficulty.get(difficulty, []).is_empty():
+				arms.append({"size": size, "difficulty": difficulty})
+	return arms
+
+
+static func _arms_with_max_plays(arms: Array, progress: Dictionary, maximum_plays: int) -> Array:
+	var result: Array = []
+	for arm in arms:
+		if _arm_plays(progress, int(arm["size"]), str(arm["difficulty"])) <= maximum_plays:
+			result.append(arm)
+	return result
+
+
+static func _new_size_medium_probe(arms: Array, progress: Dictionary, recent_mode_size: int) -> Dictionary:
+	var candidate_sizes: Array = []
+	for arm in arms:
+		var size := int(arm["size"])
+		if size > recent_mode_size and _arm_plays(progress, size, str(arm["difficulty"])) == 0 and not candidate_sizes.has(size):
+			candidate_sizes.append(size)
+	if candidate_sizes.is_empty():
+		return {}
+	candidate_sizes.sort()
+	var selected_size := int(candidate_sizes[0])
+	for arm in arms:
+		if int(arm["size"]) == selected_size and str(arm["difficulty"]) == "medium" and _arm_plays(progress, selected_size, "medium") == 0:
+			return arm
+	for arm in arms:
+		if int(arm["size"]) == selected_size and _arm_plays(progress, selected_size, str(arm["difficulty"])) == 0:
+			return arm
+	return {}
+
+
+static func _recent_max_size_probe(arms: Array, progress: Dictionary, recent: Array) -> Dictionary:
+	if recent.is_empty():
+		return {}
+	var max_size := 0
+	for run in recent:
+		max_size = maxi(max_size, int(run.get("size", 0)))
+	if max_size <= 0:
+		return {}
+	var preferred := ["medium", "hard", "simple", "challenge"]
+	if _no_tool_streak(progress) >= NO_TOOL_DIFFICULTY_STREAK:
+		preferred = ["hard", "medium", "challenge", "simple"]
+	for difficulty in preferred:
+		for arm in arms:
+			if int(arm["size"]) == max_size and str(arm["difficulty"]) == difficulty and _arm_plays(progress, max_size, difficulty) == 0:
+				return arm
+	return {}
+
+
+static func _arms_for_size_quota(arms: Array, progress: Dictionary) -> Array:
+	var size_plays: Dictionary = {}
+	for arm in arms:
+		var size := int(arm["size"])
+		size_plays[size] = _size_plays(progress, size)
+	var under_quota_sizes: Array = []
+	for size in size_plays.keys():
+		if int(size_plays[size]) < MIN_SIZE_EXPOSURE:
+			under_quota_sizes.append(int(size))
+	if under_quota_sizes.is_empty():
+		return []
+	var selected_size: int = int(under_quota_sizes[0])
+	for size in under_quota_sizes:
+		if int(size_plays[size]) < int(size_plays[selected_size]):
+			selected_size = size
+	var result: Array = []
+	for arm in arms:
+		if int(arm["size"]) == int(selected_size):
+			result.append(arm)
+	return result
+
+
+static func _weighted_arm_choice(arms: Array, progress: Dictionary, rng: RandomNumberGenerator, reason: String, tool_weight: float) -> Dictionary:
+	var weights: Array[float] = []
+	var total := 0.0
+	for arm in arms:
+		var size := int(arm["size"])
+		var difficulty := str(arm["difficulty"])
+		var plays := _arm_plays(progress, size, difficulty)
+		var gap := float(maxi(1, MIN_COMBO_EXPOSURE - plays))
+		var novelty := 1.0 if plays == 0 else 0.35
+		var weight := gap * novelty * _dirichlet_arm_mean(progress, size, difficulty)
+		weights.append(maxf(0.001, weight))
+		total += weights.back()
+	if total <= 0.0:
+		return arms[rng.randi_range(0, arms.size() - 1)].duplicate(true)
+	var roll := rng.randf() * total
+	var cursor := 0.0
+	for index in range(arms.size()):
+		cursor += weights[index]
+		if roll <= cursor:
+			var result: Dictionary = arms[index].duplicate(true)
+			result["mode"] = reason
+			result["reason"] = reason
+			result["toolRewardWeight"] = tool_weight
+			return result
+	return arms.back().duplicate(true)
+
+
+static func _thompson_arm(arms: Array, progress: Dictionary, rng: RandomNumberGenerator, display: int, tool_weight: float) -> Dictionary:
+	var best: Dictionary = {}
+	var best_score := -INF
+	for arm in arms:
+		var size := int(arm["size"])
+		var difficulty := str(arm["difficulty"])
+		var stats: Dictionary = progress["statsByArm"].get(_arm_key(size, difficulty), {})
+		var completion := _beta_sample(stats, "completion", rng)
+		var next_level := _beta_sample(stats, "nextLevel", rng)
+		var retention := _beta_sample(stats, "retention", rng)
+		var score := completion * 0.20 + next_level * 0.45 + retention * 0.35
+		score += tool_weight * _expected_tool_value(size, difficulty)
+		if _no_tool_streak(progress) >= NO_TOOL_DIFFICULTY_STREAK:
+			score += _difficulty_score(difficulty) * 0.08
+		score += _dirichlet_arm_sample(progress, size, difficulty, rng) * 0.08
+		if score > best_score:
+			best_score = score
+			best = arm.duplicate(true)
+	return best
 
 
 static func _milestone_arm(progress: Dictionary, allowed_sizes: Array, display: int, rng: RandomNumberGenerator) -> Dictionary:
@@ -518,6 +759,239 @@ static func _weighted_pick(weights: Dictionary, rng: RandomNumberGenerator):
 		if roll <= cursor:
 			return key
 	return weights.keys()[weights.size() - 1]
+
+
+static func _ensure_bandit_state(progress: Dictionary, level_index: Dictionary) -> void:
+	normalize_progress(progress)
+	var state: Dictionary = progress["banditState"]
+	var size_alpha: Dictionary = state.get("sizeAlpha", {})
+	var difficulty_alpha: Dictionary = state.get("difficultyAlpha", {})
+	for raw_size in level_index.keys():
+		var size_key := str(int(raw_size))
+		if not size_alpha.has(size_key):
+			size_alpha[size_key] = DIRICHLET_PRIOR_ALPHA
+		var by_difficulty: Dictionary = difficulty_alpha.get(size_key, {})
+		var indexed: Dictionary = level_index[raw_size]
+		for difficulty in DIFFICULTY_ORDER:
+			if not indexed.get(difficulty, []).is_empty() and not by_difficulty.has(difficulty):
+				by_difficulty[difficulty] = DIRICHLET_PRIOR_ALPHA
+		difficulty_alpha[size_key] = by_difficulty
+	state["sizeAlpha"] = size_alpha
+	state["difficultyAlpha"] = difficulty_alpha
+	if not state.has("releaseEpoch"):
+		state["releaseEpoch"] = 0
+	if not state.has("lastKnownSizes"):
+		state["lastKnownSizes"] = []
+	progress["banditState"] = state
+
+
+static func _apply_size_release_policy(progress: Dictionary, allowed_sizes: Array) -> void:
+	var state: Dictionary = progress.get("banditState", {})
+	var known: Array = state.get("lastKnownSizes", [])
+	var size_alpha: Dictionary = state.get("sizeAlpha", {})
+	var difficulty_alpha: Dictionary = state.get("difficultyAlpha", {})
+	var newly_allowed: Array = []
+	for raw_size in allowed_sizes:
+		var size := int(raw_size)
+		if not known.has(size):
+			newly_allowed.append(size)
+	if newly_allowed.is_empty():
+		return
+	for key in size_alpha.keys():
+		if newly_allowed.has(int(key)):
+			continue
+		size_alpha[key] = DIRICHLET_PRIOR_ALPHA + (float(size_alpha[key]) - DIRICHLET_PRIOR_ALPHA) * DIRICHLET_RELEASE_DECAY
+	for size in newly_allowed:
+		var size_key := str(size)
+		size_alpha[size_key] = DIRICHLET_PRIOR_ALPHA + NEW_SIZE_BOOST
+		var by_difficulty: Dictionary = difficulty_alpha.get(size_key, {})
+		for difficulty in by_difficulty.keys():
+			by_difficulty[difficulty] = DIRICHLET_PRIOR_ALPHA + NEW_SIZE_BOOST * 0.35
+		difficulty_alpha[size_key] = by_difficulty
+		known.append(size)
+	state["lastKnownSizes"] = known
+	state["releaseEpoch"] = int(state.get("releaseEpoch", 0)) + newly_allowed.size()
+	state["sizeAlpha"] = size_alpha
+	state["difficultyAlpha"] = difficulty_alpha
+	progress["banditState"] = state
+
+
+static func _arm_plays(progress: Dictionary, size: int, difficulty: String) -> int:
+	var stats: Dictionary = progress.get("statsByArm", {}).get(_arm_key(size, difficulty), {})
+	return int(stats.get("plays", 0))
+
+
+static func _size_plays(progress: Dictionary, size: int) -> int:
+	var total := 0
+	for difficulty in DIFFICULTY_ORDER:
+		total += _arm_plays(progress, size, difficulty)
+	return total
+
+
+static func _beta_sample(stats: Dictionary, metric: String, rng: RandomNumberGenerator) -> float:
+	var a := maxf(0.05, float(stats.get(metric + "A", BETA_PRIOR_A)))
+	var b := maxf(0.05, float(stats.get(metric + "B", BETA_PRIOR_B)))
+	var x := _sample_gamma(a, rng)
+	var y := _sample_gamma(b, rng)
+	if x + y <= 0.0:
+		return 0.5
+	return clampf(x / (x + y), 0.0, 1.0)
+
+
+static func _sample_gamma(shape: float, rng: RandomNumberGenerator) -> float:
+	if shape < 1.0:
+		return _sample_gamma(shape + 1.0, rng) * pow(maxf(0.000001, rng.randf()), 1.0 / shape)
+	var d := shape - 1.0 / 3.0
+	var c := 1.0 / sqrt(9.0 * d)
+	for _attempt in range(64):
+		var normal := rng.randfn(0.0, 1.0)
+		var v := 1.0 + c * normal
+		if v <= 0.0:
+			continue
+		v = v * v * v
+		var roll := maxf(0.000001, rng.randf())
+		if roll < 1.0 - 0.0331 * pow(normal, 4.0) or log(roll) < 0.5 * normal * normal + d * (1.0 - v + log(v)):
+			return d * v
+	return maxf(0.000001, d)
+
+
+static func _dirichlet_arm_mean(progress: Dictionary, size: int, difficulty: String) -> float:
+	var state: Dictionary = progress.get("banditState", {})
+	var size_alpha: Dictionary = state.get("sizeAlpha", {})
+	var difficulty_alpha: Dictionary = state.get("difficultyAlpha", {})
+	var size_total := 0.0
+	for value in size_alpha.values():
+		size_total += maxf(0.01, float(value))
+	var difficulty_values: Dictionary = difficulty_alpha.get(str(size), {})
+	var difficulty_total := 0.0
+	for value in difficulty_values.values():
+		difficulty_total += maxf(0.01, float(value))
+	if size_total <= 0.0 or difficulty_total <= 0.0:
+		return 1.0
+	return maxf(0.001, float(size_alpha.get(str(size), DIRICHLET_PRIOR_ALPHA)) / size_total * float(difficulty_values.get(difficulty, DIRICHLET_PRIOR_ALPHA)) / difficulty_total)
+
+
+static func _dirichlet_arm_sample(progress: Dictionary, size: int, difficulty: String, rng: RandomNumberGenerator) -> float:
+	var state: Dictionary = progress.get("banditState", {})
+	var size_alpha: Dictionary = state.get("sizeAlpha", {})
+	var difficulty_alpha: Dictionary = state.get("difficultyAlpha", {})
+	var size_keys := size_alpha.keys()
+	var size_values: Array[float] = []
+	for key in size_keys:
+		size_values.append(maxf(0.05, float(size_alpha[key])))
+	var size_samples := _sample_dirichlet(size_values, rng)
+	var size_index := size_keys.find(str(size))
+	if size_index < 0:
+		return 0.0
+	var difficulty_values: Dictionary = difficulty_alpha.get(str(size), {})
+	var difficulty_keys := difficulty_values.keys()
+	var difficulty_shapes: Array[float] = []
+	for key in difficulty_keys:
+		difficulty_shapes.append(maxf(0.05, float(difficulty_values[key])))
+	var difficulty_samples := _sample_dirichlet(difficulty_shapes, rng)
+	var difficulty_index := difficulty_keys.find(difficulty)
+	if difficulty_index < 0:
+		return float(size_samples[size_index])
+	return float(size_samples[size_index]) * float(difficulty_samples[difficulty_index])
+
+
+static func _sample_dirichlet(shapes: Array[float], rng: RandomNumberGenerator) -> Array[float]:
+	var samples: Array[float] = []
+	var total := 0.0
+	for shape in shapes:
+		var value := _sample_gamma(maxf(0.05, shape), rng)
+		samples.append(value)
+		total += value
+	if total <= 0.0:
+		var uniform := 1.0 / float(maxi(1, shapes.size()))
+		for index in range(samples.size()):
+			samples[index] = uniform
+		return samples
+	for index in range(samples.size()):
+		samples[index] /= total
+	return samples
+
+
+static func _expected_tool_value(size: int, difficulty: String) -> float:
+	var intensity := clampf(float(size - 5) * 0.12 + _difficulty_score(difficulty) * 0.18, 0.25, 1.4)
+	return (TOOL_FIND_PROBABILITY * 1.0 + TOOL_HINT_PROBABILITY * 0.8) * intensity
+
+
+static func _update_beta_metric(stats: Dictionary, metric: String, succeeded: bool) -> void:
+	var a_key := metric + "A"
+	var b_key := metric + "B"
+	if succeeded:
+		stats[a_key] = float(stats.get(a_key, BETA_PRIOR_A)) + 1.0
+	else:
+		stats[b_key] = float(stats.get(b_key, BETA_PRIOR_B)) + 1.0
+
+
+static func _update_run_metric(progress: Dictionary, run: Dictionary, metric: String, succeeded: bool) -> void:
+	var size := int(run.get("size", 0))
+	var difficulty := str(run.get("difficulty", "normal"))
+	var key := _arm_key(size, difficulty)
+	var stats: Dictionary = progress["statsByArm"].get(key, {})
+	_update_beta_metric(stats, metric, succeeded)
+	progress["statsByArm"][key] = stats
+	_update_dirichlet_feedback(progress, size, difficulty, 1.0 if succeeded else 0.0, 0.8)
+
+
+static func _update_dirichlet_feedback(progress: Dictionary, size: int, difficulty: String, quality: float, evidence_weight: float) -> void:
+	var state: Dictionary = progress.get("banditState", {})
+	var size_alpha: Dictionary = state.get("sizeAlpha", {})
+	var difficulty_alpha: Dictionary = state.get("difficultyAlpha", {})
+	var size_key := str(size)
+	if not size_alpha.has(size_key):
+		size_alpha[size_key] = DIRICHLET_PRIOR_ALPHA
+	if not difficulty_alpha.has(size_key):
+		difficulty_alpha[size_key] = {}
+	var difficulty_values: Dictionary = difficulty_alpha[size_key]
+	if not difficulty_values.has(difficulty):
+		difficulty_values[difficulty] = DIRICHLET_PRIOR_ALPHA
+	var positive := maxf(0.0, quality - 0.5) * 2.0
+	var negative := maxf(0.0, 0.5 - quality) * 2.0
+	if positive > 0.0:
+		size_alpha[size_key] = float(size_alpha[size_key]) + DIRICHLET_POSITIVE_RATE * evidence_weight * positive
+		difficulty_values[difficulty] = float(difficulty_values[difficulty]) + DIRICHLET_POSITIVE_RATE * evidence_weight * positive
+	elif negative > 0.0:
+		var size_share := 1.0 / float(maxi(1, size_alpha.size() - 1))
+		for other_size in size_alpha.keys():
+			if str(other_size) != size_key:
+				size_alpha[other_size] = float(size_alpha[other_size]) + DIRICHLET_NEGATIVE_RATE * evidence_weight * negative * size_share
+		var difficulty_share := 1.0 / float(maxi(1, difficulty_values.size() - 1))
+		for other_difficulty in difficulty_values.keys():
+			if str(other_difficulty) != difficulty:
+				difficulty_values[other_difficulty] = float(difficulty_values[other_difficulty]) + DIRICHLET_NEGATIVE_RATE * evidence_weight * negative * difficulty_share
+	difficulty_alpha[size_key] = difficulty_values
+	state["sizeAlpha"] = size_alpha
+	state["difficultyAlpha"] = difficulty_alpha
+	progress["banditState"] = state
+
+
+static func _no_tool_streak(progress: Dictionary) -> int:
+	var streak := 0
+	var runs := _last_runs(progress, RECENT_WINDOW)
+	for index in range(runs.size() - 1, -1, -1):
+		if int(runs[index].get("toolUses", 0)) > 0:
+			break
+		streak += 1
+	return streak
+
+
+static func _most_common_recent_size(runs: Array, fallback: int) -> int:
+	if runs.is_empty():
+		return fallback
+	var counts: Dictionary = {}
+	for run in runs:
+		var size := int(run.get("size", fallback))
+		counts[size] = int(counts.get(size, 0)) + 1
+	var best_size := fallback
+	var best_count := -1
+	for size in counts.keys():
+		if int(counts[size]) > best_count or (int(counts[size]) == best_count and int(size) > best_size):
+			best_size = int(size)
+			best_count = int(counts[size])
+	return best_size
 
 
 static func _completion_reward(size: int, difficulty: String, elapsed_seconds: float, moves: int, hints: int) -> float:

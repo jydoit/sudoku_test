@@ -219,6 +219,34 @@ func _run() -> void:
 	assert(int(dynamic_schedule["displayLevel"]) == 11, "Dynamic schedule should keep the player-facing level number")
 	assert(not completed_ids.has(int(dynamic_schedule["levelId"])), "Dynamic schedule should skip already completed raw levelIds")
 	_validate_dynamic_king_positions(game.levels[int(dynamic_schedule["levelIndex"])], dynamic_schedule)
+	var cold_size_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": {}}
+	var cold_size_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 81, cold_size_progress)
+	assert(str(cold_size_schedule.get("mode", "")) == "new_size_probe", "A newly unlocked size should enter the cold-start probe branch")
+	assert(int(cold_size_schedule.get("selectedSize", 0)) == 6 and str(cold_size_schedule.get("selectedDifficulty", "")) == "medium", "A new size should prefer its Medium probe")
+	var size_quota_stats := {}
+	for size in [5, 6]:
+		for difficulty in ["simple", "medium", "hard", "challenge"]:
+			size_quota_stats["%d|%s" % [size, difficulty]] = {"plays": 12 if size == 5 else 1}
+	var size_quota_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": size_quota_stats}
+	var size_quota_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 81, size_quota_progress)
+	assert(int(size_quota_schedule.get("selectedSize", 0)) == 6, "The size exposure quota should prioritize the under-exposed size")
+	var no_tool_progress := {"completedLevelIds": [], "recentRuns": [
+		{"size": 5, "toolUses": 0},
+		{"size": 5, "toolUses": 0},
+		{"size": 6, "toolUses": 0}
+	], "statsByArm": {}}
+	assert(LevelDirectorScript._no_tool_streak(no_tool_progress) == 3, "Three recent runs without tools should raise the difficulty pressure state")
+	var recent_probe_stats := {}
+	for size in [5, 6]:
+		for difficulty in ["simple", "medium", "hard", "challenge"]:
+			recent_probe_stats["%d|%s" % [size, difficulty]] = {"plays": 1 if not (size == 6 and difficulty == "hard") else 0}
+	var recent_probe_progress := {"completedLevelIds": [], "recentRuns": [
+		{"displayLevel": 81, "size": 6, "toolUses": 0},
+		{"displayLevel": 82, "size": 6, "toolUses": 0},
+		{"displayLevel": 83, "size": 6, "toolUses": 0}
+	], "statsByArm": recent_probe_stats}
+	var recent_probe_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 83, recent_probe_progress)
+	assert(int(recent_probe_schedule.get("selectedSize", 0)) == 6 and str(recent_probe_schedule.get("selectedDifficulty", "")) == "hard", "Three no-tool runs should raise the recent-size probe to Hard")
 	assert(LevelDirectorScript._opening_king_count_for_size(5, RandomNumberGenerator.new()) == 1, "5x5 dynamic levels should reveal exactly one opening king")
 	for size in [6, 7, 8, 9]:
 		var count_rng := RandomNumberGenerator.new()
@@ -268,10 +296,13 @@ func _run() -> void:
 	assert(float(reward_run["elapsedSeconds"]) == 900.0, "Reward elapsed time should be capped at 15 minutes")
 	LevelDirectorScript.record_next_level_opened(reward_progress)
 	assert(bool(reward_run["openedNextLevel"]) and float(reward_run["reward"]) > reward_before_bonus, "Opening the next level should add a reward bonus")
+	assert(float(reward_progress["statsByArm"]["5|simple"].get("nextLevelA", 0.0)) > 1.0, "Opening the next level should update the Beta success posterior")
 	LevelDirectorScript.record_completion(reward_progress, game.levels[1], LevelDirectorScript.schedule_for_display_level(game.levels, 2, {}), 100.0, 8, 0, "2026-07-09", 1200)
 	var second_reward_run: Dictionary = reward_progress["recentRuns"][1]
 	LevelDirectorScript.record_retention_if_needed(reward_progress, "2026-07-10", 1000 + 12 * 60 * 60)
 	assert(bool(reward_run["retainedNextDay"]) and bool(second_reward_run["retainedNextDay"]), "Startup retention should mark every cross-day run within 24 hours")
+	assert(float(reward_progress["statsByArm"]["5|simple"].get("retentionA", 0.0)) > 1.0, "Next-day retention should update the Beta retention posterior")
+	assert(float(reward_progress["banditState"]["sizeAlpha"]["5"]) > 1.0, "User feedback should update the size Dirichlet exploration posterior")
 	var reward_after_retention := float(reward_run["reward"])
 	LevelDirectorScript.record_retention_if_needed(reward_progress, "2026-07-10", 1000 + 12 * 60 * 60)
 	assert(float(reward_run["reward"]) == reward_after_retention, "Retention bonus should not be added twice")
@@ -280,6 +311,9 @@ func _run() -> void:
 	var expired_run: Dictionary = expired_progress["recentRuns"][0]
 	LevelDirectorScript.record_retention_if_needed(expired_progress, "2026-07-10", 1000 + 24 * 60 * 60 + 1)
 	assert(not bool(expired_run["retainedNextDay"]), "Retention bonus should expire after 24 hours")
+	var failed_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": {}}
+	LevelDirectorScript.record_failure(failed_progress, game.levels[0], LevelDirectorScript.schedule_for_display_level(game.levels, 1, {}), 80.0, 4, 0, "2026-07-09", 1000)
+	assert(float(failed_progress["statsByArm"]["5|simple"].get("completionB", 0.0)) > 1.0, "A failed level should update the Beta failure posterior")
 
 	game.immediate_errors = true
 	game.heart_count = 3
