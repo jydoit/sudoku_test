@@ -422,16 +422,6 @@ func _draw() -> void:
 	var geometry := _board_geometry()
 	var board_rect: Rect2 = geometry["rect"]
 	var cell_size: float = geometry["cell_size"]
-	var border_width := _region_border_width(cell_size)
-	var outer := StyleBoxFlat.new()
-	outer.bg_color = Color("#FFFFFF").lerp(Color("#F7FAFF"), victory_strength * 0.32)
-	outer.border_color = REGION_BORDER_COLOR
-	outer.set_border_width_all(int(border_width))
-	outer.corner_radius_top_left = 22
-	outer.corner_radius_top_right = 22
-	outer.corner_radius_bottom_left = 22
-	outer.corner_radius_bottom_right = 22
-	draw_style_box(outer, board_rect.grow(border_width * 0.5))
 
 	_draw_cell_gap_backgrounds(board_rect.position, cell_size)
 	for row in range(rows):
@@ -494,15 +484,61 @@ func _draw_board_outer_border(board_rect: Rect2, cell_size: float) -> void:
 	var border_width := _region_border_width(cell_size)
 	if border_width <= 0.0:
 		return
-	var border := StyleBoxFlat.new()
-	border.bg_color = Color.TRANSPARENT
-	border.border_color = REGION_BORDER_COLOR
-	border.set_border_width_all(int(border_width))
-	border.corner_radius_top_left = 22
-	border.corner_radius_top_right = 22
-	border.corner_radius_bottom_left = 22
-	border.corner_radius_bottom_right = 22
-	draw_style_box(border, board_rect.grow(border_width * 0.5))
+	var outer_rect := _outer_border_rect(board_rect, cell_size)
+	var corner_radius := _outer_border_corner_radius(cell_size, border_width)
+
+	# Match the perimeter spacing to the existing gap between adjacent cells.
+	var outer_gap := StyleBoxFlat.new()
+	outer_gap.bg_color = Color.TRANSPARENT
+	outer_gap.border_color = UITokensScript.BOARD_GAP
+	outer_gap.set_border_width_all(int(border_width))
+	outer_gap.corner_radius_top_left = corner_radius
+	outer_gap.corner_radius_top_right = corner_radius
+	outer_gap.corner_radius_bottom_left = corner_radius
+	outer_gap.corner_radius_bottom_right = corner_radius
+	draw_style_box(outer_gap, outer_rect.grow(border_width))
+
+	# Build both glow bands outward so they never cover the board cells.
+	var edge_width := maxi(1, int(round(border_width * 0.20)))
+	var edge_radius := _cell_corner_radius(cell_size) + int(round(border_width * 0.5)) + edge_width
+	var edge_expansion := border_width * 0.5
+	var inner_glow_width := maxf(2.0, round(border_width * 0.38))
+	var outer_glow_width := maxf(3.0, round(border_width * 0.72))
+
+	var outer_glow := StyleBoxFlat.new()
+	outer_glow.bg_color = Color.TRANSPARENT
+	outer_glow.border_color = Color(0.93, 0.94, 0.95, 0.35)
+	outer_glow.set_border_width_all(int(outer_glow_width))
+	var outer_glow_radius := edge_radius + int(inner_glow_width + outer_glow_width)
+	outer_glow.corner_radius_top_left = outer_glow_radius
+	outer_glow.corner_radius_top_right = outer_glow_radius
+	outer_glow.corner_radius_bottom_left = outer_glow_radius
+	outer_glow.corner_radius_bottom_right = outer_glow_radius
+	draw_style_box(
+		outer_glow,
+		outer_rect.grow(edge_expansion + inner_glow_width + outer_glow_width)
+	)
+
+	var inner_glow := StyleBoxFlat.new()
+	inner_glow.bg_color = Color.TRANSPARENT
+	inner_glow.border_color = Color(0.85, 0.87, 0.89, 0.70)
+	inner_glow.set_border_width_all(int(inner_glow_width))
+	var inner_glow_radius := edge_radius + int(inner_glow_width)
+	inner_glow.corner_radius_top_left = inner_glow_radius
+	inner_glow.corner_radius_top_right = inner_glow_radius
+	inner_glow.corner_radius_bottom_left = inner_glow_radius
+	inner_glow.corner_radius_bottom_right = inner_glow_radius
+	draw_style_box(inner_glow, outer_rect.grow(edge_expansion + inner_glow_width))
+
+	var edge_line := StyleBoxFlat.new()
+	edge_line.bg_color = Color.TRANSPARENT
+	edge_line.border_color = REGION_BORDER_COLOR
+	edge_line.set_border_width_all(edge_width)
+	edge_line.corner_radius_top_left = edge_radius
+	edge_line.corner_radius_top_right = edge_radius
+	edge_line.corner_radius_bottom_left = edge_radius
+	edge_line.corner_radius_bottom_right = edge_radius
+	draw_style_box(edge_line, outer_rect.grow(edge_expansion))
 
 
 func _draw_attention_mask(origin: Vector2, cell_size: float) -> void:
@@ -735,5 +771,16 @@ func _cell_corner_radius(cell_size: float) -> int:
 	return UITokensScript.cell_corner_radius(cell_size)
 
 
-func _region_border_width(_cell_size: float) -> float:
-	return UITokensScript.board_border_width(maxi(rows, cols))
+func _outer_border_rect(board_rect: Rect2, cell_size: float) -> Rect2:
+	var first_cell := _cell_rect(0, 0, board_rect.position, cell_size)
+	var last_cell := _cell_rect(rows - 1, cols - 1, board_rect.position, cell_size)
+	return Rect2(first_cell.position, last_cell.end - first_cell.position)
+
+
+func _outer_border_corner_radius(cell_size: float, border_width: float) -> int:
+	return _cell_corner_radius(cell_size) + int(border_width)
+
+
+func _region_border_width(cell_size: float) -> float:
+	# Match the outer frame to the actual gap between adjacent cells.
+	return _cell_gap(cell_size) * 2.0
