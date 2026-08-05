@@ -21,7 +21,9 @@ import json
 import math
 import random
 import sys
-from collections import Counter, deque
+import time
+from collections import Counter, defaultdict, deque
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -40,6 +42,8 @@ EIGHT_WAY: tuple[Cell, ...] = (
     (1, 1),
 )
 CANON_ALPHABET = "abcdefghijklmnopqrstuvwxyz"
+EXPANSION_DIFFICULTIES = ("simple", "medium", "hard", "challenge")
+DEFAULT_EXPANSION_SEED = 20260722
 
 
 DIFFICULTY_ALIASES = {
@@ -1171,6 +1175,327 @@ def parse_plan(
     return specs
 
 
+def normalize_contract_fields(level: dict[str, Any]) -> None:
+    level.setdefault("logicStatus", "no_guess")
+    level.setdefault("hintSteps", [])
+    level.setdefault("solveSteps", [])
+
+
+def prepare_expanded_level(level: dict[str, Any], level_id: int, keep_generator: bool) -> dict[str, Any]:
+    prepared = deepcopy(level)
+    prepared["levelId"] = level_id
+    normalize_contract_fields(prepared)
+    if not keep_generator:
+        prepared.pop("generator", None)
+    return prepared
+
+
+def index_seen_colorings(levels: list[dict[str, Any]]) -> dict[tuple[int, str], set[str]]:
+    seen: dict[tuple[int, str], set[str]] = {}
+    for level in levels:
+        size = int(level["rows"])
+        solution_key = canonical_solution_key(level["solution"])
+        coloring = canonical_region_string(level["regions"])
+        seen.setdefault((size, solution_key), set()).add(coloring)
+    return seen
+
+
+def solution_keys_by_size(levels: list[dict[str, Any]]) -> dict[int, set[str]]:
+    result: dict[int, set[str]] = defaultdict(set)
+    for level in levels:
+        result[int(level["rows"])].add(canonical_solution_key(level["solution"]))
+    return result
+
+
+def enumerate_expansion_solution_pools(seed: int) -> dict[int, list[list[list[int]]]]:
+    rng = random.Random(seed)
+    caps = {
+        5: 64,
+        6: 256,
+        7: 1024,
+        8: 6000,
+        9: 50000,
+    }
+    pools: dict[int, list[list[list[int]]]] = {}
+    for size, cap in caps.items():
+        pool_seed = rng.randrange(1, 2**31 - 1)
+        pools[size] = enumerate_king_solutions(size, cap, random.Random(pool_seed))
+    return pools
+
+
+class LevelExpansionRun:
+    def __init__(
+        self,
+        base_levels: list[dict[str, Any]],
+        seed: int,
+        keep_generator: bool,
+        max_new: int,
+        size5_target: int,
+        size6_target: int,
+        size7_groups: int,
+        size8_target: int,
+        size9_target: int,
+        checkpoint_path: Path | None = None,
+        indent: int = 2,
+    ) -> None:
+        self.base_levels = base_levels
+        self.seed = seed
+        self.keep_generator = keep_generator
+        self.max_new = max_new
+        self.size5_target = size5_target
+        self.size6_target = size6_target
+        self.size7_groups = size7_groups
+        self.size8_target = size8_target
+        self.size9_target = size9_target
+        self.rng = random.Random(seed)
+        self.pools = enumerate_expansion_solution_pools(seed + 17)
+        self.seen = index_seen_colorings(base_levels)
+        self.existing_solution_keys = solution_keys_by_size(base_levels)
+        self.generated: list[dict[str, Any]] = []
+        self.start_level_id = max_level_id(base_levels) + 1
+        self.started_at = time.time()
+        self.checkpoint_path = checkpoint_path
+        self.indent = indent
+
+    def remaining_capacity(self) -> int:
+        return max(0, self.max_new - len(self.generated))
+
+    def next_level_id(self, offset: int = 0) -> int:
+        return self.start_level_id + len(self.generated) + offset
+
+    def log(self, message: str) -> None:
+        elapsed = time.time() - self.started_at
+        print(f"[{elapsed:7.1f}s] {message}", flush=True)
+
+    def write_checkpoint(self, label: str) -> None:
+        if self.checkpoint_path is None:
+            return
+        data = {"levels": [*self.base_levels, *self.generated]}
+        write_level_file(self.checkpoint_path, data, indent=self.indent)
+        self.log(f"checkpoint {label}: wrote {self.checkpoint_path} ({len(data['levels'])} levels)")
+
+    def run(self) -> list[dict[str, Any]]:
+        self.log(f"loaded {len(self.base_levels)} base levels; target new={self.max_new}")
+        self.expand_color_variants(5, self.size5_target)
+        self.write_checkpoint("after-5x5")
+        self.expand_color_variants(6, self.size6_target)
+        self.write_checkpoint("after-6x6")
+        self.expand_7x7_new_solutions(self.size7_groups)
+        self.write_checkpoint("after-7x7")
+        self.expand_new_solution_supplements(8, self.size8_target, ("hard", "challenge", "medium"))
+        self.write_checkpoint("after-8x8")
+        self.expand_new_solution_supplements(9, self.size9_target, ("hard", "challenge"))
+        self.write_checkpoint("after-9x9")
+        self.write_checkpoint("final")
+        self.log(f"generated {len(self.generated)} levels")
+        return self.generated
+
+    def expand_color_variants(self, size: int, target: int) -> None:
+        if target <= 0:
+            return
+        per_difficulty = distribute_count(target, len(EXPANSION_DIFFICULTIES))
+        for difficulty, difficulty_target in zip(EXPANSION_DIFFICULTIES, per_difficulty, strict=True):
+            made = 0
+            failures = 0
+            while made < difficulty_target and self.remaining_capacity() > 0:
+                try:
+                    level = self.generate_one(size, difficulty, self.pools[size])
+                except Exception as exc:  # noqa: BLE001 - keep best-effort exploration moving.
+                    failures += 1
+                    if failures >= 6:
+                        self.log(f"stop {size}x{size} {difficulty}: {failures} consecutive failures ({exc})")
+                        break
+                    continue
+                failures = 0
+                self.generated.append(level)
+                made += 1
+                if made == difficulty_target or made % 25 == 0:
+                    self.log(f"{size}x{size} color {difficulty}: {made}/{difficulty_target}")
+                    self.write_checkpoint(f"{size}x{size}-{difficulty}-{made}")
+
+    def expand_7x7_new_solutions(self, target_groups: int) -> None:
+        if target_groups <= 0:
+            return
+        plan = ("simple", "medium", "hard", "challenge", "hard")
+        self.expand_solution_groups(7, target_groups, plan, "7x7 new-solution groups")
+
+    def expand_solution_groups(
+        self,
+        size: int,
+        target_groups: int,
+        difficulty_plan: tuple[str, ...],
+        label: str,
+    ) -> None:
+        unused = self.unused_solutions(size)
+        self.rng.shuffle(unused)
+        groups = 0
+        for solution in unused:
+            if groups >= target_groups or self.remaining_capacity() < len(difficulty_plan):
+                break
+            group = self.generate_group_for_solution(size, solution, difficulty_plan)
+            if len(group) != len(difficulty_plan):
+                continue
+            self.generated.extend(group)
+            groups += 1
+            if groups == target_groups or groups % 10 == 0:
+                self.log(f"{label}: {groups}/{target_groups} ({len(self.generated)} total new)")
+                self.write_checkpoint(f"{label}-{groups}")
+
+    def expand_new_solution_supplements(
+        self,
+        size: int,
+        target_levels: int,
+        difficulties: tuple[str, ...],
+    ) -> None:
+        if target_levels <= 0:
+            return
+        unused = self.unused_solutions(size)
+        self.rng.shuffle(unused)
+        made = 0
+        for solution in unused:
+            if made >= target_levels or self.remaining_capacity() <= 0:
+                break
+            want = min(len(difficulties), target_levels - made, self.remaining_capacity())
+            group = self.generate_group_for_solution(size, solution, difficulties[:want])
+            if not group:
+                continue
+            self.generated.extend(group)
+            made += len(group)
+            if made == target_levels or made % 20 == 0:
+                self.log(f"{size}x{size} new-solution supplement: {made}/{target_levels}")
+                self.write_checkpoint(f"{size}x{size}-supplement-{made}")
+
+    def unused_solutions(self, size: int) -> list[list[list[int]]]:
+        used_keys = self.existing_solution_keys.get(size, set())
+        return [
+            solution
+            for solution in self.pools[size]
+            if canonical_solution_key(solution) not in used_keys
+        ]
+
+    def generate_group_for_solution(
+        self,
+        size: int,
+        solution: list[list[int]],
+        difficulties: tuple[str, ...],
+    ) -> list[dict[str, Any]]:
+        solution_key = canonical_solution_key(solution)
+        transactional_seen = {
+            (size, solution_key): set(self.seen.get((size, solution_key), set()))
+        }
+        group: list[dict[str, Any]] = []
+        for difficulty in difficulties:
+            try:
+                level = self.generate_one(
+                    size,
+                    difficulty,
+                    [solution],
+                    seen_override=transactional_seen,
+                    level_id=self.next_level_id(len(group)),
+                )
+            except Exception:
+                return []
+            group.append(level)
+
+        self.seen[(size, solution_key)] = transactional_seen[(size, solution_key)]
+        self.existing_solution_keys.setdefault(size, set()).add(solution_key)
+        return group
+
+    def generate_one(
+        self,
+        size: int,
+        difficulty: str,
+        pool: list[list[list[int]]],
+        seen_override: dict[tuple[int, str], set[str]] | None = None,
+        level_id: int | None = None,
+    ) -> dict[str, Any]:
+        seed = self.rng.randrange(1, 2**31 - 1)
+        target_level_id = self.next_level_id() if level_id is None else level_id
+        raw = generate_level_from_pool(
+            target_level_id,
+            size,
+            difficulty,
+            random.Random(seed),
+            pool,
+            self.seen if seen_override is None else seen_override,
+            seed,
+        )
+        errors = validate_level(raw)
+        if errors:
+            raise RuntimeError("; ".join(errors))
+        return prepare_expanded_level(raw, target_level_id, self.keep_generator)
+
+
+def distribute_count(total: int, buckets: int) -> list[int]:
+    base = total // buckets
+    remainder = total % buckets
+    return [base + (1 if index < remainder else 0) for index in range(buckets)]
+
+
+def expansion_summary(levels: list[dict[str, Any]], generated_count: int) -> str:
+    total_by_size = Counter(int(level["rows"]) for level in levels)
+    diff_by_size: dict[int, Counter[str]] = defaultdict(Counter)
+    solution_keys: dict[int, set[str]] = defaultdict(set)
+    coloring_keys: set[tuple[int, str, str]] = set()
+    for level in levels:
+        size = int(level["rows"])
+        difficulty = str(level.get("difficulty", ""))
+        solution_key = canonical_solution_key(level["solution"])
+        coloring = canonical_region_string(level["regions"])
+        diff_by_size[size][difficulty] += 1
+        solution_keys[size].add(solution_key)
+        coloring_keys.add((size, solution_key, coloring))
+
+    lines = [
+        f"merged total levels: {len(levels)} (+{generated_count})",
+        f"unique color layouts: {len(coloring_keys)}",
+    ]
+    for size in sorted(total_by_size):
+        details = ", ".join(
+            f"{difficulty}={diff_by_size[size][difficulty]}"
+            for difficulty in EXPANSION_DIFFICULTIES
+            if diff_by_size[size][difficulty]
+        )
+        lines.append(
+            f"{size}x{size}: {total_by_size[size]} levels, "
+            f"{len(solution_keys[size])} answer patterns ({details})"
+        )
+    return "\n".join(lines)
+
+
+def command_expand(args: argparse.Namespace) -> int:
+    data = load_level_file(Path(args.input))
+    base_levels: list[dict[str, Any]] = data["levels"]
+    for level in base_levels:
+        normalize_contract_fields(level)
+
+    run = LevelExpansionRun(
+        base_levels=base_levels,
+        seed=int(args.seed),
+        keep_generator=bool(args.keep_generator),
+        max_new=int(args.max_new),
+        size5_target=int(args.size5_target),
+        size6_target=int(args.size6_target),
+        size7_groups=int(args.size7_groups),
+        size8_target=int(args.size8_target),
+        size9_target=int(args.size9_target),
+        checkpoint_path=Path(args.checkpoint_output) if str(args.checkpoint_output).strip() else None,
+        indent=int(args.indent),
+    )
+    generated = run.run()
+    output_data = {"levels": [*base_levels, *generated]}
+    print(expansion_summary(output_data["levels"], len(generated)))
+
+    if args.dry_run:
+        print("dry run: output not written")
+        return 0
+
+    output_path = Path(args.output)
+    write_level_file(output_path, output_data, indent=args.indent)
+    print(f"wrote {output_path}")
+    return 0
+
+
 def command_generate(args: argparse.Namespace) -> int:
     base_data: dict[str, Any] = {"levels": []}
     if args.append_from:
@@ -1345,6 +1670,25 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--output", default="-", help="output path, or '-' for stdout")
     generate.add_argument("--indent", type=int, default=2)
     generate.set_defaults(func=command_generate)
+
+    expand = subparsers.add_parser(
+        "expand",
+        help="expand an existing level file while excluding already generated color layouts",
+    )
+    expand.add_argument("--input", default="data/levels.json")
+    expand.add_argument("--output", default="data/levels.json")
+    expand.add_argument("--seed", type=int, default=DEFAULT_EXPANSION_SEED)
+    expand.add_argument("--max-new", type=int, default=800)
+    expand.add_argument("--size5-target", type=int, default=400)
+    expand.add_argument("--size6-target", type=int, default=400)
+    expand.add_argument("--size7-groups", type=int, default=0)
+    expand.add_argument("--size8-target", type=int, default=0)
+    expand.add_argument("--size9-target", type=int, default=0)
+    expand.add_argument("--checkpoint-output", default="")
+    expand.add_argument("--keep-generator", action="store_true")
+    expand.add_argument("--dry-run", action="store_true")
+    expand.add_argument("--indent", type=int, default=2)
+    expand.set_defaults(func=command_expand)
 
     analyze = subparsers.add_parser("analyze", help="print difficulty metrics for an existing JSON file")
     analyze.add_argument("input")

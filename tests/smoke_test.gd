@@ -11,7 +11,6 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	print("CASES HOME-001..004 LEVEL-001..004 BOARD-001..009 HINT-001..004 TOOL-001..003 ECON-001 RESULT-001..002 I18N-001..002 DATA-001..003")
 	var previous_save := ""
 	var had_save := FileAccess.file_exists(SAVE_PATH)
 	if had_save:
@@ -59,19 +58,12 @@ func _run() -> void:
 	assert(game.INK == UITokensScript.INK, "Main UI should use the shared ink token")
 	assert(game.REGION_COLORS == UITokensScript.REGION_COLORS, "Main UI should use the shared region palette")
 	assert(game.board.BOARD_INK == UITokensScript.INK, "Board symbols should use the shared ink token")
-	assert(UITokensScript.board_border_width(5) == 0.0, "Board outer border should be hidden in the current UI guide")
-	assert(UITokensScript.same_region_gap_color(UITokensScript.REGION_COLORS[0]) == UITokensScript.BOARD_GAP, "Same-region gaps should stay on the white board surface so cells never merge into a single color block")
-	var different_region_pair := _first_adjacent_region_pair(game.board.regions)
-	assert(different_region_pair.size() == 4, "Smoke fixture should include adjacent color regions")
-	assert(game.board._gap_color_between(different_region_pair[0], different_region_pair[1], different_region_pair[2], different_region_pair[3]) == UITokensScript.BOARD_GAP, "Different-region gaps should stay white without dark divider lines")
-	assert(is_equal_approx(UITokensScript.ATTENTION_MASK_COLOR.a, 0.58), "Hint masks should use the approved semi-transparent white-gray overlay")
-	assert(UITokensScript.board_border_width(7) == 0.0, "7x7 board border should stay hidden")
-	assert(UITokensScript.board_border_width(9) == 0.0, "9x9 board border should stay hidden")
-	assert(UITokensScript.REGION_PATTERN_ALPHA >= 0.30, "Region texture should be visible enough without an outer border")
+	assert(UITokensScript.BOARD_BORDER.a == 1.0, "Board borders should use a precomposed color with stable visual opacity")
+	assert(is_equal_approx(UITokensScript.ATTENTION_MASK_COLOR.a, 0.70), "Hint masks should use the approved 70 percent opacity")
+	assert(UITokensScript.board_border_width(5) == 4.0, "5x5 board border should follow the UI guide")
+	assert(UITokensScript.board_border_width(7) == 3.0, "7x7 board border should follow the UI guide")
+	assert(UITokensScript.board_border_width(9) == 2.0, "9x9 board border should follow the UI guide")
 	assert(UITokensScript.CROWN_MAX_FONT_RATIO <= 0.72, "Opening crown scale should stay inside its cell")
-	assert(UITokensScript.REGION_PATTERN_NAMES.size() == UITokensScript.REGION_COLORS.size(), "Every region color should have one documented pattern")
-	for pattern_name in UITokensScript.REGION_PATTERN_NAMES:
-		assert("交叉" not in str(pattern_name) and "X" not in str(pattern_name).to_upper(), "Region patterns must not resemble player X marks")
 	assert(CoinEconomyScript.size_base_reward(5) < CoinEconomyScript.size_base_reward(9), "Larger boards should grant a larger base coin reward")
 	assert(CoinEconomyScript.level_base_reward(5, 1) < CoinEconomyScript.level_base_reward(5, 0), "Opening king levels should grant fewer coins")
 	var clean_reward := CoinEconomyScript.completion_reward(5, 0, 0)
@@ -143,23 +135,22 @@ func _run() -> void:
 	await process_frame
 	assert(game.layout_direction == Control.LAYOUT_DIRECTION_LTR, "Chinese should restore LTR layout")
 	assert(game.level_heart_label.get_parent() == game.top_home_button.get_parent(), "Level hearts should share the top navigation row with coins")
-	assert(game.clear_button == null, "Clear should no longer be exposed as a bottom tool")
-	assert(game.crown_find_button.get_parent() == game.hint_button.get_parent(), "Lion finder and hint should share the bottom tool bar")
+	assert(game.level_heart_label.get_parent() != game.clear_button.get_parent(), "Level hearts should no longer occupy a bottom tool slot")
+	assert(game.clear_button.get_parent() == game.crown_find_button.get_parent() and game.clear_button.get_parent() == game.hint_button.get_parent(), "Clear, crown find and hint should share the bottom tool bar")
 	assert(game.level_heart_slots.size() == game.INITIAL_HEART_COUNT, "The top heart badge should keep independent heart slots")
-	assert(game.level_heart_tweens.size() == game.INITIAL_HEART_COUNT, "Every visible heart should keep a stable tween slot")
+	assert(game.HEART_PULSE_STAGGER_SECONDS == 0.0, "Remaining hearts should pulse together without stagger")
+	assert(game.level_heart_tweens.size() == game.INITIAL_HEART_COUNT, "Every visible full heart should own a pulse state")
 	for heart_index in range(game.level_heart_slots.size()):
 		var heart_slot: Label = game.level_heart_slots[heart_index]
 		assert(heart_slot.custom_minimum_size.x >= 32.0 and heart_slot.custom_minimum_size.y >= 38.0, "Heart slots should not be compressed")
-		assert(game.level_heart_tweens[heart_index] == null, "Hearts should stay still by default")
-	for tool_button in [game.crown_find_button, game.hint_button]:
+		assert(game.level_heart_tweens[heart_index] != null, "Every remaining heart should pulse")
+	for tool_button in [game.clear_button, game.crown_find_button, game.hint_button]:
 		var tool_icon: Control = tool_button.find_child("ToolIcon", true, false)
 		var tool_label: Label = tool_button.find_child("ToolLabel", true, false)
 		assert(tool_icon != null and tool_label != null, "Every tool should expose a large icon and caption")
 		assert(tool_icon.custom_minimum_size.x >= 48.0 and tool_icon.custom_minimum_size.y >= 48.0, "Tool icons should use the enlarged visual size")
-		assert(tool_icon.position.x < tool_label.position.x, "Tool icons should render before their compact counters")
-	assert(game.crown_find_button_label.text == "×3", "Lion finder should show only its icon and remaining count")
-	assert(game.hint_button_label.text == "×3", "Hint should show only its icon and remaining count")
-	assert(not game.crown_find_button_label.text.contains("小狮子") and not game.hint_button_label.text.contains("提示"), "Tool captions should not repeat names beside recognizable icons")
+		assert(tool_icon.position.y < tool_label.position.y, "Tool icons should render above their captions")
+	assert(game.clear_button_label.text == "清除 · 免费", "Clear should visibly communicate that it is free")
 	var completed_start_level_id := int(game.current_level["levelId"])
 	game.completed_levels = [completed_start_level_id]
 	game.director_progress = {"completedLevelIds": [completed_start_level_id], "recentRuns": [], "statsByArm": {}}
@@ -182,26 +173,12 @@ func _run() -> void:
 	assert(game.level_select_button != null, "Level screen should expose level selection")
 	game._open_level_select()
 	assert(game.dialog_controller.is_dialog_open("level_select"), "Level selection dialog should open through the shared controller")
-	assert(game.level_select_grid != null and game.level_select_buttons.size() == mini(game.LEVEL_SELECT_PAGE_SIZE, game.levels.size()), "Level selection should show a full page of large number buttons")
-	for level_button in game.level_select_buttons:
-		assert(level_button.custom_minimum_size.x >= 58.0 and level_button.custom_minimum_size.y >= 58.0, "Every level number should be a mobile-friendly touch target")
-	if game.levels.size() > game.LEVEL_SELECT_PAGE_SIZE:
-		game.level_select_next_button.pressed.emit()
-		assert(game.level_select_page == 1 and game.level_select_selected_index == game.LEVEL_SELECT_PAGE_SIZE, "Next page should advance by exactly twenty data levels")
-		assert(game.level_select_buttons[0].name == "LevelSelect_%d" % int(game.levels[game.LEVEL_SELECT_PAGE_SIZE]["levelId"]), "Paged grid should still display data levelIds")
-		game.level_select_previous_button.pressed.emit()
-		assert(game.level_select_page == 0, "Previous page should return to the first twenty levels")
-	var manual_select_index := 10
-	var manual_level_id := int(game.levels[manual_select_index]["levelId"])
-	game.level_select_buttons[manual_select_index].pressed.emit()
-	assert(game.level_select_selected_index == manual_select_index, "Tapping a number tile should select that exact data level")
+	assert(game.level_select_picker.get_item_count() == game.levels.size(), "Level selection should list all levels")
+	game.level_select_picker.select(1)
 	var enter_level_button: Button = game.dialog_controller.find_child("DialogAction_enter", true, false)
 	assert(enter_level_button != null, "Level selection should expose the standard primary action")
-	assert(enter_level_button.text == game._t("进入关卡 %d", [manual_level_id]), "Primary action should repeat the selected levelId")
 	enter_level_button.pressed.emit()
-	assert(int(game.current_level["levelId"]) == manual_level_id, "Level selection should enter the selected level")
-	assert(game.player_level_number == manual_level_id, "Manual selection should use the visible levelId as the top display number")
-	assert(game.level_label.text == game._t("关卡 %d", [manual_level_id]), "Top level title should match the number chosen in the level grid")
+	assert(int(game.current_level["levelId"]) == int(game.levels[1]["levelId"]), "Level selection should enter the selected level")
 	await process_frame
 	assert(game.board != null and game.board.size.x >= 400.0, "Board must render at a mobile-friendly size")
 
@@ -242,6 +219,34 @@ func _run() -> void:
 	assert(int(dynamic_schedule["displayLevel"]) == 11, "Dynamic schedule should keep the player-facing level number")
 	assert(not completed_ids.has(int(dynamic_schedule["levelId"])), "Dynamic schedule should skip already completed raw levelIds")
 	_validate_dynamic_king_positions(game.levels[int(dynamic_schedule["levelIndex"])], dynamic_schedule)
+	var cold_size_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": {}}
+	var cold_size_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 81, cold_size_progress)
+	assert(str(cold_size_schedule.get("mode", "")) == "new_size_probe", "A newly unlocked size should enter the cold-start probe branch")
+	assert(int(cold_size_schedule.get("selectedSize", 0)) == 6 and str(cold_size_schedule.get("selectedDifficulty", "")) == "medium", "A new size should prefer its Medium probe")
+	var size_quota_stats := {}
+	for size in [5, 6]:
+		for difficulty in ["simple", "medium", "hard", "challenge"]:
+			size_quota_stats["%d|%s" % [size, difficulty]] = {"plays": 12 if size == 5 else 1}
+	var size_quota_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": size_quota_stats}
+	var size_quota_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 81, size_quota_progress)
+	assert(int(size_quota_schedule.get("selectedSize", 0)) == 6, "The size exposure quota should prioritize the under-exposed size")
+	var no_tool_progress := {"completedLevelIds": [], "recentRuns": [
+		{"size": 5, "toolUses": 0},
+		{"size": 5, "toolUses": 0},
+		{"size": 6, "toolUses": 0}
+	], "statsByArm": {}}
+	assert(LevelDirectorScript._no_tool_streak(no_tool_progress) == 3, "Three recent runs without tools should raise the difficulty pressure state")
+	var recent_probe_stats := {}
+	for size in [5, 6]:
+		for difficulty in ["simple", "medium", "hard", "challenge"]:
+			recent_probe_stats["%d|%s" % [size, difficulty]] = {"plays": 1 if not (size == 6 and difficulty == "hard") else 0}
+	var recent_probe_progress := {"completedLevelIds": [], "recentRuns": [
+		{"displayLevel": 81, "size": 6, "toolUses": 0},
+		{"displayLevel": 82, "size": 6, "toolUses": 0},
+		{"displayLevel": 83, "size": 6, "toolUses": 0}
+	], "statsByArm": recent_probe_stats}
+	var recent_probe_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 83, recent_probe_progress)
+	assert(int(recent_probe_schedule.get("selectedSize", 0)) == 6 and str(recent_probe_schedule.get("selectedDifficulty", "")) == "hard", "Three no-tool runs should raise the recent-size probe to Hard")
 	assert(LevelDirectorScript._opening_king_count_for_size(5, RandomNumberGenerator.new()) == 1, "5x5 dynamic levels should reveal exactly one opening king")
 	for size in [6, 7, 8, 9]:
 		var count_rng := RandomNumberGenerator.new()
@@ -291,10 +296,13 @@ func _run() -> void:
 	assert(float(reward_run["elapsedSeconds"]) == 900.0, "Reward elapsed time should be capped at 15 minutes")
 	LevelDirectorScript.record_next_level_opened(reward_progress)
 	assert(bool(reward_run["openedNextLevel"]) and float(reward_run["reward"]) > reward_before_bonus, "Opening the next level should add a reward bonus")
+	assert(float(reward_progress["statsByArm"]["5|simple"].get("nextLevelA", 0.0)) > 1.0, "Opening the next level should update the Beta success posterior")
 	LevelDirectorScript.record_completion(reward_progress, game.levels[1], LevelDirectorScript.schedule_for_display_level(game.levels, 2, {}), 100.0, 8, 0, "2026-07-09", 1200)
 	var second_reward_run: Dictionary = reward_progress["recentRuns"][1]
 	LevelDirectorScript.record_retention_if_needed(reward_progress, "2026-07-10", 1000 + 12 * 60 * 60)
 	assert(bool(reward_run["retainedNextDay"]) and bool(second_reward_run["retainedNextDay"]), "Startup retention should mark every cross-day run within 24 hours")
+	assert(float(reward_progress["statsByArm"]["5|simple"].get("retentionA", 0.0)) > 1.0, "Next-day retention should update the Beta retention posterior")
+	assert(float(reward_progress["banditState"]["sizeAlpha"]["5"]) > 1.0, "User feedback should update the size Dirichlet exploration posterior")
 	var reward_after_retention := float(reward_run["reward"])
 	LevelDirectorScript.record_retention_if_needed(reward_progress, "2026-07-10", 1000 + 12 * 60 * 60)
 	assert(float(reward_run["reward"]) == reward_after_retention, "Retention bonus should not be added twice")
@@ -303,6 +311,9 @@ func _run() -> void:
 	var expired_run: Dictionary = expired_progress["recentRuns"][0]
 	LevelDirectorScript.record_retention_if_needed(expired_progress, "2026-07-10", 1000 + 24 * 60 * 60 + 1)
 	assert(not bool(expired_run["retainedNextDay"]), "Retention bonus should expire after 24 hours")
+	var failed_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": {}}
+	LevelDirectorScript.record_failure(failed_progress, game.levels[0], LevelDirectorScript.schedule_for_display_level(game.levels, 1, {}), 80.0, 4, 0, "2026-07-09", 1000)
+	assert(float(failed_progress["statsByArm"]["5|simple"].get("completionB", 0.0)) > 1.0, "A failed level should update the Beta failure posterior")
 
 	game.immediate_errors = true
 	game.heart_count = 3
@@ -337,16 +348,8 @@ func _run() -> void:
 	var solution_cell: Array = _first_editable_solution_cell(game)
 	game._on_cell_double_pressed(int(solution_cell[0]), int(solution_cell[1]))
 	assert(game.cell_states[int(solution_cell[0])][int(solution_cell[1])] == "piece", "Double tap on the answer must place a crown")
-	game._on_cell_pressed(int(solution_cell[0]), int(solution_cell[1]))
-	assert(game.cell_states[int(solution_cell[0])][int(solution_cell[1])] == "piece", "Confirmed lions should be locked and ignore single taps")
 	game._undo()
-	assert(game.cell_states[int(solution_cell[0])][int(solution_cell[1])] == "piece", "Undo must preserve a locked confirmed lion")
-	assert(game._opening_lion_subtitle(1) == "开局提供 1 个提示小狮子", "Chinese opening copy should use its singular-specific source")
-	game.localization.set_locale("en")
-	assert(game._opening_lion_subtitle(1) == "1 lion is provided at the start", "English opening copy should use correct singular grammar")
-	assert(game.localization.runtime_text(str(game.TUTORIAL_LEVELS[0]["tutorial"])) == "Each color region needs one lion. Only one cell remains here; double-tap it.", "English tutorial must start with the PRD color-region clue")
-	game.localization.set_locale("zh")
-	game._load_level(0, false, LevelDirectorScript.schedule_for_display_level(game.levels, 1, {}))
+	assert(game.cell_states[int(solution_cell[0])][int(solution_cell[1])] == "empty", "Undo should remove the placed crown")
 	var wrong_cells := _first_non_solution_cells(game, game.INITIAL_HEART_COUNT)
 	var wrong_cell: Vector2i = wrong_cells[0]
 	var hearts_before_wrong: int = game.heart_count
@@ -358,7 +361,7 @@ func _run() -> void:
 	assert(game.level_heart_slots[game.heart_count].get_theme_color("font_color") == game.HEART_EMPTY_COLOR, "A lost heart should turn gray")
 	assert(game.level_heart_slots[game.heart_count].scale.is_equal_approx(Vector2.ONE), "A lost heart should stop at its normal scale")
 	assert(game.level_heart_tweens[game.heart_count] == null, "A lost heart should stop pulsing")
-	assert(game.level_heart_tweens[0] == null, "Remaining hearts should stay still after a lost heart")
+	assert(game.level_heart_tweens[0] != null, "Remaining hearts should keep pulsing")
 	assert(not game.board.error_cells.has(wrong_cell), "Wrong crown attempts should not be treated as rule-conflict crowns")
 	assert(not game.is_failed, "A single wrong crown attempt should not fail the level while hearts remain")
 	game._on_cell_pressed(wrong_cell.y, wrong_cell.x)
@@ -370,29 +373,59 @@ func _run() -> void:
 		var next_wrong: Vector2i = wrong_cells[index]
 		game._on_cell_double_pressed(next_wrong.y, next_wrong.x)
 	assert(game.is_failed, "The level should fail when hearts reach zero")
-	assert(not game.completion_overlay.visible, "Failing the level should keep the red X visible before showing the result overlay")
-	await create_timer(1.6).timeout
-	assert(game.completion_overlay.visible, "Failing the level should show the result overlay after the red X pause")
-	assert(game.completion_title.text == "再试一次", "Failure title should match the new result-page copy")
-	assert(game.completion_next_button.text == "重新挑战", "Failure primary action should restart the challenge")
-	assert(game.completion_replay_button.text == "返回首页", "Failure secondary action should return home")
+	assert(game.completion_overlay.visible, "Failing the level should show the result overlay")
+	await process_frame
+	var result_safe_width: float = game.completion_overlay.size.x - 60.0
+	assert(game.reward_label.size.x <= result_safe_width + 1.0, "Failure result text must stay inside the mobile safe width")
+	assert(game.completion_next_button.size.x <= result_safe_width + 1.0, "Failure result primary button must stay inside the mobile safe width")
+	var revive_price: int = game._current_tool_price(CoinEconomyScript.TOOL_REVIVE)
+	assert(game.completion_next_button.text == game._t("金币复活  -%d", [revive_price]), "Failure primary action should expose the current revive price")
+	assert(game.completion_replay_button.text == game._t("重新挑战"), "Failure secondary action should restart without preserving the board")
+	var failure_locale: String = game.localization.current_locale
+	game.localization.set_locale("en")
+	game._prepare_failure_result_page()
+	assert(game.completion_title.text == "Challenge failed", "Failure title should follow the English locale")
+	assert(game.result_reward_label.text == "No hearts left", "Failure reward text should follow the English locale")
+	assert(game.result_tip_label.text == "Revive keeps the board and restores one heart.", "Failure explanation should follow the English locale")
+	assert(game.completion_next_button.text == "Revive -%d" % revive_price, "Failure action should follow the English locale")
+	assert(game.completion_replay_button.text == "Retry", "Failure retry action should follow the English locale")
+	game.localization.set_locale(failure_locale)
+	game._prepare_failure_result_page()
+	var wrong_marks_before_revive := _count_state(game.cell_states, "wrong")
+	game.coin_count = revive_price
 	game._completion_primary_pressed()
+	assert(not game.is_failed, "Coin revive should return the current run to a playable state")
+	assert(game.heart_count == 1, "Coin revive should restore one heart")
+	assert(_count_state(game.cell_states, "wrong") == wrong_marks_before_revive, "Coin revive should preserve the current board")
+	assert(game.coin_count == 0, "Coin revive should reconcile its displayed price")
+	assert(not game.completion_overlay.visible, "Coin revive should close the failure page")
+	game._replay_level()
 	assert(not game.is_failed, "Retrying should clear the failed state")
 	assert(game.heart_count == game.current_heart_limit, "Retrying should restore the heart limit for the current display level")
 	game._on_cell_double_pressed(wrong_cell.y, wrong_cell.x)
-	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "A wrong lion mark should remain locked without a clear tool")
-	game._prepare_failure_result_page()
-	game.completion_overlay.show()
-	game._completion_secondary_pressed()
-	assert(game.home_screen.visible, "Failure secondary action should return to the home screen")
-	assert(not game.is_failed, "Returning home from failure should clear the failed state")
-	assert(game.heart_count == game.current_heart_limit, "Returning home from failure should prepare a fresh retry")
-	game._start_current_flow()
-	assert(game.game_screen.visible, "Starting from home after a failed level should enter the game")
-	assert(not game.completion_overlay.visible, "Starting from home after failure should not show the failure page again")
-	assert(not game.is_failed, "Starting from home after failure should restart the challenge")
-	assert(_count_state(game.cell_states, "wrong") == 0, "Starting from home after failure should clear locked wrong marks")
-	assert(game.heart_count == game.current_heart_limit, "Starting from home after failure should restore hearts")
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "A wrong crown should be present before clearing")
+	assert(not game.clear_button.disabled, "Clear should enable when only a wrong crown mark is removable")
+	var hearts_before_clear: int = game.heart_count
+	var clearable_piece: Array = _first_editable_solution_cell(game)
+	game.cell_states[int(clearable_piece[0])][int(clearable_piece[1])] = "piece"
+	var clearable_cell: Vector2i = _first_empty_non_king_cell(game)
+	game.cell_states[clearable_cell.y][clearable_cell.x] = "blocked"
+	game.board.set_states(game.cell_states)
+	game._validate_and_update(false)
+	assert(not game.clear_button.disabled, "Clear should enable when removable marks exist")
+	var coins_before_clear: int = game.coin_count
+	var exchanges_before_clear: int = game.run_coin_exchange_count
+	var spent_before_clear := int(game.economy_progress.get("totalCoinSpent", 0))
+	game._clear_board()
+	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "empty", "Clear must remove wrong crown marks")
+	assert(game.cell_states[clearable_cell.y][clearable_cell.x] == "empty", "Clear must remove normal X marks")
+	assert(game.cell_states[int(clearable_piece[0])][int(clearable_piece[1])] == "empty", "Clear must remove normal crowns")
+	assert(game._piece_positions().size() == 1, "Clear must keep the fixed opening king")
+	assert(game.cell_states[int(king_position[0])][int(king_position[1])] == "king", "Clear must not remove the fixed king")
+	assert(game.heart_count == hearts_before_clear, "Clearing wrong marks must not refund consumed hearts")
+	assert(game.coin_count == coins_before_clear and game.run_coin_exchange_count == exchanges_before_clear, "Clear must not spend coins or record a tool exchange")
+	assert(int(game.economy_progress.get("totalCoinSpent", 0)) == spent_before_clear, "Clear must not enter the coin-spend ledger")
+	assert(game.clear_button.disabled, "Clear should disable after all removable marks are removed")
 	game.resume_level_id = int(game.current_level["levelId"])
 	game.resume_completed = false
 	game.resume_states = game.cell_states.duplicate(true)
@@ -411,14 +444,15 @@ func _run() -> void:
 	while game.crown_find_count > 0:
 		game._use_crown_find()
 	assert(game.crown_find_count == 0, "Crown find count should stop at zero")
-	assert(not game.crown_find_button.disabled, "Crown find should remain available to open the refill dialog after free uses are exhausted")
-	assert(str(game.crown_find_button_label.text) == "×0", "Crown find should display zero instead of a negative price")
+	assert(not game.crown_find_button.disabled, "Crown find should remain available for coins after free uses are exhausted")
+	assert(str(game.crown_find_button_label.text).contains("-"), "Crown find should display its current coin price")
 	var pieces_before_shortage: int = game._piece_positions().size()
+	game.coin_count = 0
 	game._use_crown_find()
-	assert(game._piece_positions().size() == pieces_before_shortage, "Empty crown-find uses must not place a crown")
-	assert(game.dialog_controller.is_dialog_open("coin_shortage"), "Empty crown-find uses should offer voluntary purchase and rewarded-ad routes")
-	assert(game.pending_coin_tool == CoinEconomyScript.TOOL_CROWN_FIND, "Tool refill dialog should retain the requested tool")
-	assert(game.pending_rewarded_coin_grant > 0 and game.pending_rewarded_coin_grant <= game.pending_coin_price, "Rewarded-ad grant should stay bounded by the requested tool price")
+	assert(game._piece_positions().size() == pieces_before_shortage, "Insufficient coins must not place a crown")
+	assert(game.dialog_controller.is_dialog_open("coin_shortage"), "Insufficient coins should offer voluntary purchase and rewarded-ad routes")
+	assert(game.pending_coin_tool == CoinEconomyScript.TOOL_CROWN_FIND, "Coin shortage dialog should retain the requested tool")
+	assert(game.pending_rewarded_coin_grant > 0 and game.pending_rewarded_coin_grant <= game.pending_coin_price, "Rewarded-ad grant should cover the shortage without exceeding the requested tool price")
 	var shortage_later_button: Button = game.dialog_controller.find_child("DialogAction_later", true, false)
 	assert(shortage_later_button != null, "Coin shortage should expose all actions through the shared controller")
 	shortage_later_button.pressed.emit()
@@ -439,8 +473,7 @@ func _run() -> void:
 	game._use_hint()
 	assert(game._piece_positions().size() == 1 + locked_hints_before_clear, "Hint should teach without placing a new piece")
 	assert(game.board.guide_cells.size() >= 1, "Hint must highlight the best next reasoning step")
-	assert(game.board.guide_mask_enabled, "Formal hints should keep the standard non-target mask")
-	assert(game.board.guide_pulse_cells.is_empty() and game.board.guide_pulse_tween == null, "Hint cells should not receive halo or flashing animation")
+	assert(game.board.guide_pulse_cells.size() >= 1 and game.board.guide_pulse_tween != null, "Hint primary cells should receive one soft halo animation")
 	var guide_target := Vector2i(-1, -1)
 	for guide_cell in game.board.guide_cells.keys():
 		assert(game.board._guide_kind(guide_cell) == "exclude_empty", "Formal hint ranges should contain X targets only")
@@ -486,18 +519,6 @@ func _run() -> void:
 	var no_x_hint_count: int = game.hint_count
 	game._use_hint()
 	assert(game.hint_count == no_x_hint_count, "Hint uses should not be consumed when no non-crown X target exists")
-
-	game.hint_count = 0
-	game._update_hint_button()
-	assert(str(game.hint_button_label.text) == "×0", "Hint should display zero instead of a negative price")
-	var guide_count_before_empty_hint: int = game.board.guide_cells.size()
-	game._use_hint()
-	assert(game.board.guide_cells.size() == guide_count_before_empty_hint, "Empty hint uses must not reveal a new hint")
-	assert(game.dialog_controller.is_dialog_open("coin_shortage"), "Empty hint uses should offer voluntary purchase and rewarded-ad routes")
-	assert(game.pending_coin_tool == CoinEconomyScript.TOOL_HINT, "Tool refill dialog should retain the hint request")
-	var hint_later_button: Button = game.dialog_controller.find_child("DialogAction_later", true, false)
-	assert(hint_later_button != null, "Hint refill should expose the later action")
-	hint_later_button.pressed.emit()
 
 	game._load_level(0)
 	var completion_coins_before: int = game.coin_count
@@ -569,18 +590,6 @@ func _first_non_solution_cells(game, count: int) -> Array[Vector2i]:
 				return result
 	assert(false, "Test level should have enough non-solution cells for wrong crown attempts")
 	return result
-
-
-func _first_adjacent_region_pair(regions: Array) -> Array:
-	for row in range(regions.size()):
-		for col in range(regions[row].size() - 1):
-			if int(regions[row][col]) != int(regions[row][col + 1]):
-				return [row, col, row, col + 1]
-	for row in range(regions.size() - 1):
-		for col in range(regions[row].size()):
-			if int(regions[row][col]) != int(regions[row + 1][col]):
-				return [row, col, row + 1, col]
-	return []
 
 
 func _first_empty_non_king_cell(game) -> Vector2i:

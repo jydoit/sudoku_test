@@ -13,6 +13,11 @@ const SOFT_BLUE := Color("#E7F1FF")
 const SUCCESS_GREEN := Color("#48B985")
 const WARNING_YELLOW := Color("#FFF1BD")
 const DANGER_RED := Color("#F25D72")
+const ASSEMBLY_TRAY := Color("#20283A")
+const ASSEMBLY_TRAY_EDGE := Color("#111827")
+const ASSEMBLY_WELL := Color("#D8D5D0")
+const ASSEMBLY_WELL_DARK := Color("#AAA9A7")
+const ASSEMBLY_WELL_LIGHT := Color("#F4F1EC")
 const CROWN_GOLD := Color("#E4A236")
 const PROGRESS_TRACK := Color("#E8E3DB")
 const PROGRESS_FILL := Color("#FFB84E")
@@ -63,7 +68,7 @@ const REGION_PATTERN_ALPHA := 0.30
 const CELL_GAP_RATIO := 0.033
 const CELL_GAP_MIN := 2.0
 const CELL_CORNER_RATIO := 0.085
-const ATTENTION_MASK_COLOR := Color(0.92, 0.94, 0.96, 0.58)
+const ATTENTION_MASK_COLOR := Color(0.92, 0.94, 0.96, 0.70)
 const ATTENTION_HALO_COLOR := Color(1.0, 0.82, 0.34, 0.30)
 const ATTENTION_HALO_INNER_COLOR := Color(1.0, 1.0, 1.0, 0.24)
 
@@ -88,8 +93,12 @@ static func cell_corner_radius(cell_size: float) -> int:
 	return int(round(cell_size * CELL_CORNER_RATIO))
 
 
-static func board_border_width(_board_size: int) -> float:
-	return 0.0
+static func board_border_width(board_size: int) -> float:
+	if board_size <= 6:
+		return 4.0
+	if board_size <= 8:
+		return 3.0
+	return 2.0
 
 
 static func same_region_gap_color(_base_color: Color) -> Color:

@@ -134,12 +134,16 @@ func play_wrong_feedback(row: int, col: int) -> void:
 func play_guide_feedback(row: int, col: int) -> void:
 	_reset_guide_feedback()
 	guide_pulse_cell = Vector2i(col, row)
-	queue_redraw()
+	guide_pulse_cells[guide_pulse_cell] = true
+	_play_guide_feedback_tween()
 
 
 func play_guide_feedback_for_cells(cells: Array) -> void:
 	_reset_guide_feedback()
-	queue_redraw()
+	for raw_cell in cells:
+		if raw_cell is Vector2i:
+			guide_pulse_cells[raw_cell] = true
+	_play_guide_feedback_tween()
 
 
 func play_king_reveal(cells: Array) -> void:
