@@ -240,7 +240,7 @@ func _draw_board() -> void:
 	var construction := _cell_set(assembly_data.get("constructionCells", []))
 	var placed_cells := _placed_cell_map()
 
-	draw_rect(board_rect.grow(4.0), UITokensScript.ASSEMBLY_TRAY_EDGE, true)
+	_draw_board_base(board_rect, cell_size)
 	for row in range(rows):
 		for col in range(cols):
 			var cell := Vector2i(col, row)
@@ -285,29 +285,70 @@ func _draw_board() -> void:
 			draw_rect(preview_rect.grow(1.0), Color.WHITE if allowed else UITokensScript.DANGER_RED, false, maxf(2.0, cell_size * 0.045))
 
 
+func _draw_board_base(board_rect: Rect2, cell_size: float) -> void:
+	var frame_width := maxi(2, int(round(cell_size * 0.055)))
+	var frame_radius := maxi(6, int(round(cell_size * 0.14)))
+	var board_base := StyleBoxFlat.new()
+	board_base.bg_color = UITokensScript.ASSEMBLY_BOARD_SURFACE
+	board_base.border_color = UITokensScript.ASSEMBLY_BOARD_EDGE
+	board_base.set_border_width_all(frame_width)
+	board_base.corner_radius_top_left = frame_radius
+	board_base.corner_radius_top_right = frame_radius
+	board_base.corner_radius_bottom_left = frame_radius
+	board_base.corner_radius_bottom_right = frame_radius
+	board_base.shadow_color = UITokensScript.ASSEMBLY_BOARD_SHADOW
+	board_base.shadow_size = maxi(4, int(round(cell_size * 0.09)))
+	board_base.shadow_offset = Vector2(0, maxf(2.0, round(cell_size * 0.055)))
+	draw_style_box(board_base, board_rect.grow(float(frame_width)))
+
+
 func _draw_well(rect: Rect2, cell_size: float) -> void:
-	var gap := maxf(1.0, cell_size * 0.025)
+	var gap := maxf(1.5, cell_size * 0.035)
 	var inner := rect.grow(-gap)
-	draw_rect(inner, UITokensScript.ASSEMBLY_WELL, true)
-	draw_line(inner.position, Vector2(inner.end.x, inner.position.y), UITokensScript.ASSEMBLY_WELL_DARK, 2.0)
-	draw_line(inner.position, Vector2(inner.position.x, inner.end.y), UITokensScript.ASSEMBLY_WELL_DARK, 2.0)
-	draw_line(Vector2(inner.position.x, inner.end.y), inner.end, UITokensScript.ASSEMBLY_WELL_LIGHT, 2.0)
-	draw_line(Vector2(inner.end.x, inner.position.y), inner.end, UITokensScript.ASSEMBLY_WELL_LIGHT, 2.0)
+	var bevel := maxf(2.0, round(cell_size * 0.045))
+	draw_rect(inner, UITokensScript.ASSEMBLY_WELL_DARK, true)
+	var cavity := inner.grow(-bevel)
+	draw_rect(cavity, UITokensScript.ASSEMBLY_WELL, true)
+	draw_line(cavity.position, Vector2(cavity.end.x, cavity.position.y), UITokensScript.ASSEMBLY_WELL_DARK.darkened(0.10), bevel)
+	draw_line(cavity.position, Vector2(cavity.position.x, cavity.end.y), UITokensScript.ASSEMBLY_WELL_DARK.darkened(0.10), bevel)
+	draw_line(Vector2(inner.position.x, inner.end.y), inner.end, UITokensScript.ASSEMBLY_WELL_LIGHT, bevel)
+	draw_line(Vector2(inner.end.x, inner.position.y), inner.end, UITokensScript.ASSEMBLY_WELL_LIGHT, bevel)
 
 
-func _draw_block(rect: Rect2, color: Color, cell_size: float, _movable: bool) -> void:
-	var gap := maxf(1.2, cell_size * 0.025)
+func _draw_block(rect: Rect2, color: Color, cell_size: float, movable: bool) -> void:
+	var gap := maxf(1.5, cell_size * 0.035)
 	var top_rect := rect.grow(-gap)
-	var depth := lerpf(clampf(cell_size * 0.10, 4.0, 8.0), 0.0, flatten_amount)
-	var side_rect := Rect2(top_rect.position + Vector2(depth * 0.48, depth), top_rect.size)
-	var side_color := color.darkened(0.24)
-	var shadow_color := Color(0.05, 0.08, 0.14, 0.20 * (1.0 - flatten_amount))
-	draw_rect(Rect2(side_rect.position + Vector2(0, 2.0), side_rect.size), shadow_color, true)
-	draw_rect(side_rect, side_color, true)
+	var depth_scale := 0.115 if movable else 0.095
+	var depth := lerpf(clampf(cell_size * depth_scale, 4.0, 8.0), 0.0, flatten_amount)
+	var side_offset := Vector2(depth * 0.46, depth)
+	var material_alpha := color.a
+	var shadow_alpha := (0.24 if movable else 0.19) * material_alpha * (1.0 - flatten_amount)
+	var shadow_offset := side_offset + Vector2(0, maxf(2.0, depth * 0.38))
+	var shadow_rect := Rect2(top_rect.position + shadow_offset, top_rect.size)
+	draw_rect(shadow_rect, Color(0.05, 0.07, 0.11, shadow_alpha), true)
+
+	var bottom_side := PackedVector2Array([
+		top_rect.position + Vector2(0, top_rect.size.y),
+		top_rect.end,
+		top_rect.end + side_offset,
+		top_rect.position + Vector2(0, top_rect.size.y) + side_offset
+	])
+	var right_side := PackedVector2Array([
+		top_rect.position + Vector2(top_rect.size.x, 0),
+		top_rect.end,
+		top_rect.end + side_offset,
+		top_rect.position + Vector2(top_rect.size.x, 0) + side_offset
+	])
+	draw_colored_polygon(bottom_side, color.darkened(0.18))
+	draw_colored_polygon(right_side, color.darkened(0.30))
 	draw_rect(top_rect, color, true)
-	var highlight := color.lightened(0.16)
-	draw_line(top_rect.position + Vector2(2, 2), Vector2(top_rect.end.x - 2, top_rect.position.y + 2), highlight, maxf(1.0, cell_size * 0.025))
-	draw_line(top_rect.position + Vector2(2, 2), Vector2(top_rect.position.x + 2, top_rect.end.y - 2), highlight, maxf(1.0, cell_size * 0.025))
+	var bevel_width := maxf(1.5, cell_size * 0.028)
+	var highlight := color.lightened(0.22)
+	var shade := color.darkened(0.13)
+	draw_line(top_rect.position + Vector2(2, 2), Vector2(top_rect.end.x - 2, top_rect.position.y + 2), highlight, bevel_width)
+	draw_line(top_rect.position + Vector2(2, 2), Vector2(top_rect.position.x + 2, top_rect.end.y - 2), highlight, bevel_width)
+	draw_line(Vector2(top_rect.position.x + 2, top_rect.end.y - 2), top_rect.end - Vector2(2, 2), shade, bevel_width)
+	draw_line(Vector2(top_rect.end.x - 2, top_rect.position.y + 2), top_rect.end - Vector2(2, 2), shade, bevel_width)
 
 
 func _draw_tray() -> void:
