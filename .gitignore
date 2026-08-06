@@ -2,6 +2,8 @@
 artifacts/release_validation/
 export/
 builds/
+build/*.apk
+build/*.apk.idsig
 *.tmp
 .DS_Store
 .idea/workspace.xml
