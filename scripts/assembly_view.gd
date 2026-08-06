@@ -6,6 +6,7 @@ signal return_requested(piece_id: int, slot_index: int)
 signal intro_finished()
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
+const BLOCK_TILE_TEXTURE: Texture2D = preload("res://assets/ui/block_tile_neutral.png")
 const BOARD_LAYOUT_INSET := 10.0
 const TRAY_CELL_SIZE := 21.0
 const TRAY_SLOT_HEIGHT := 94.0
@@ -61,6 +62,7 @@ var _intro_token := 0
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	set_process_input(true)
 	resized.connect(queue_redraw)
 	resized.connect(_position_hint_popup)
@@ -317,38 +319,20 @@ func _draw_well(rect: Rect2, cell_size: float) -> void:
 
 func _draw_block(rect: Rect2, color: Color, cell_size: float, movable: bool) -> void:
 	var gap := maxf(1.5, cell_size * 0.035)
-	var top_rect := rect.grow(-gap)
-	var depth_scale := 0.115 if movable else 0.095
-	var depth := lerpf(clampf(cell_size * depth_scale, 4.0, 8.0), 0.0, flatten_amount)
-	var side_offset := Vector2(depth * 0.46, depth)
+	var tile_rect := rect.grow(-gap)
 	var material_alpha := color.a
-	var shadow_alpha := (0.24 if movable else 0.19) * material_alpha * (1.0 - flatten_amount)
-	var shadow_offset := side_offset + Vector2(0, maxf(2.0, depth * 0.38))
-	var shadow_rect := Rect2(top_rect.position + shadow_offset, top_rect.size)
-	draw_rect(shadow_rect, Color(0.05, 0.07, 0.11, shadow_alpha), true)
-
-	var bottom_side := PackedVector2Array([
-		top_rect.position + Vector2(0, top_rect.size.y),
-		top_rect.end,
-		top_rect.end + side_offset,
-		top_rect.position + Vector2(0, top_rect.size.y) + side_offset
-	])
-	var right_side := PackedVector2Array([
-		top_rect.position + Vector2(top_rect.size.x, 0),
-		top_rect.end,
-		top_rect.end + side_offset,
-		top_rect.position + Vector2(top_rect.size.x, 0) + side_offset
-	])
-	draw_colored_polygon(bottom_side, color.darkened(0.18))
-	draw_colored_polygon(right_side, color.darkened(0.30))
-	draw_rect(top_rect, color, true)
-	var bevel_width := maxf(1.5, cell_size * 0.028)
-	var highlight := color.lightened(0.22)
-	var shade := color.darkened(0.13)
-	draw_line(top_rect.position + Vector2(2, 2), Vector2(top_rect.end.x - 2, top_rect.position.y + 2), highlight, bevel_width)
-	draw_line(top_rect.position + Vector2(2, 2), Vector2(top_rect.position.x + 2, top_rect.end.y - 2), highlight, bevel_width)
-	draw_line(Vector2(top_rect.position.x + 2, top_rect.end.y - 2), top_rect.end - Vector2(2, 2), shade, bevel_width)
-	draw_line(Vector2(top_rect.end.x - 2, top_rect.position.y + 2), top_rect.end - Vector2(2, 2), shade, bevel_width)
+	var texture_alpha := 1.0 - flatten_amount
+	if texture_alpha > 0.001:
+		var shadow_color := Color(0.05, 0.07, 0.11, (0.22 if movable else 0.16) * material_alpha * texture_alpha)
+		var shadow_offset := Vector2(0, maxf(1.0, cell_size * (0.045 if movable else 0.03)))
+		draw_texture_rect(BLOCK_TILE_TEXTURE, Rect2(tile_rect.position + shadow_offset, tile_rect.size), false, shadow_color)
+		var tint := color
+		tint.a = material_alpha * texture_alpha
+		draw_texture_rect(BLOCK_TILE_TEXTURE, tile_rect, false, tint)
+	if flatten_amount > 0.001:
+		var flat_color := color
+		flat_color.a = material_alpha * flatten_amount
+		draw_rect(tile_rect, flat_color, true)
 
 
 func _draw_tray() -> void:

@@ -3,6 +3,9 @@ extends SceneTree
 const LevelStoreScript = preload("res://scripts/level_store.gd")
 const CompositeLevelScript = preload("res://scripts/composite_level.gd")
 const LevelDirectorScript = preload("res://scripts/level_director.gd")
+const CompositeLevelDirectorScript = preload("res://scripts/composite_level_director.gd")
+const CompositeLevelStoreScript = preload("res://scripts/composite_level_store.gd")
+const CompositeCoinPolicyScript = preload("res://scripts/composite_coin_policy.gd")
 const SAVE_PATH := "user://color_queens_save.json"
 
 
@@ -16,6 +19,7 @@ func _run() -> void:
 	if had_save:
 		previous_save = FileAccess.get_file_as_string(SAVE_PATH)
 	var levels := LevelStoreScript.load_levels()
+	_test_composite_coin_policy()
 	var composite: Dictionary = {}
 	var fallback_composite: Dictionary = {}
 	var level: Dictionary = {}
@@ -120,40 +124,70 @@ func _run() -> void:
 	game.tutorial_started = false
 	game.in_tutorial = false
 	game.composite_tutorial_seen = true
+	game.home_composite_entry_active = false
+	game.home_composite_progress_snapshot.clear()
+	game.home_composite_history.clear()
+	game.composite_director_progress.clear()
+	game.composite_coin_progress = CompositeCoinPolicyScript.default_progress()
 	if int(game.current_level.get("levelId", -1)) < 0:
 		game._load_level(0, false, LevelDirectorScript.manual_schedule_for_level(game.levels, 0, 1))
+	var composite_unlock_display := LevelDirectorScript.minimum_display_for_size(6)
+	game.player_level_number = composite_unlock_display - 1
+	game.active_schedule["displayLevel"] = game.player_level_number
+	game.is_completed = false
+	game._update_home()
+	assert(not game.home_composite_button.disabled, "The locked block entry should remain clickable after the tutorial")
+	assert(game.home_composite_button.text == game._t("拼块玩法 · 第 %d 关解锁", [composite_unlock_display]), "The locked block entry should expose the required formal level")
+	var snapshot_before_locked_tap: Dictionary = game.formal_progress_snapshot.duplicate(true)
+	game._start_home_composite_flow()
+	await process_frame
+	assert(game.dialog_controller.is_dialog_open("home_composite_locked"), "Tapping the locked block entry should open its requirement dialog")
+	assert(not game.home_composite_entry_active, "A locked block entry must not create an isolated gameplay session")
+	assert(game.formal_progress_snapshot == snapshot_before_locked_tap, "A locked entry must not mutate the formal progress snapshot")
+	game.dialog_controller.hide_dialog(true)
+	game.player_level_number = LevelDirectorScript.minimum_display_for_size(6)
+	game.active_schedule["displayLevel"] = game.player_level_number
+	game._update_home()
+	assert(game._home_composite_is_unlocked(), "The home block entry should unlock with the ordinary 6x6 size condition")
 	var formal_index: int = game.current_level_index
 	var formal_display: int = game.player_level_number
 	var formal_states: Array = game.cell_states.duplicate(true)
 	var formal_coins: int = game.coin_count
 	assert(game.home_composite_button != null, "Home should expose a block gameplay entry")
+	_test_composite_director_model(game.levels, game.composite_levels)
 	game._start_home_composite_flow()
 	await process_frame
 	assert(game.home_composite_entry_active, "Home block entry should start an isolated experience")
 	assert(game._is_assembly_phase() and int(game.current_level.get("rows", 0)) == 6, "Home block entry should open a 6x6 assembly")
 	assert(not game.home_composite_progress_snapshot.is_empty(), "Home block entry should snapshot formal progress")
-	assert(game.home_composite_round == 1 and str(game.composite_data.get("difficulty", "")) == "simple", "The first debug round should use the Simple assembly pattern")
-	assert([1, 2].has(game.composite_data.get("selectedRegionIds", []).size()), "The Simple debug pattern should select one or two construction colors")
+	var first_pattern := str(game.composite_data.get("difficulty", ""))
+	assert(game.home_composite_round == 1 and CompositeLevelDirectorScript.PATTERNS.has(first_pattern), "The first block round should sample a supported assembly pattern")
+	assert(is_equal_approx(float(game.active_schedule.get("compositeExplorationProbability", 0.0)), 0.50), "A cold block model should start with 50% random exploration")
+	assert(["random_exploration", "posterior_multinomial"].has(str(game.active_schedule.get("compositePatternSelectionMode", ""))), "The schedule should expose its pattern selection branch")
+	assert(str(game.active_schedule.get("compositeBaseDifficultyClass", "")) == str(game.current_level.get("difficulty", "")), "The block director should retain the ordinary recommendation difficulty class")
 	assert(game.composite_data.get("validLayouts", []).size() == 1, "The debug flow should stop after its first legal layout")
 	assert(not game.active_schedule.has("assemblyPrebuiltData"), "Transient prebuilt assembly data must be consumed before the schedule is saved")
 	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [1]), "The isolated entry should display its round number")
-	assert(game.assembly_stage_label.text == "SIMPLE", "The compact stage badge should display the Simple debug pattern")
+	assert(game.assembly_stage_label.text == first_pattern.to_upper(), "The compact stage badge should display the sampled pattern")
 	assert(game.level_label.get_parent().get_combined_minimum_size().x <= 527.0, "The assembly header must fit the 539px viewport after safe margins")
 	assert(not game.level_select_button.visible, "The isolated block challenge should hide formal level selection")
 	var first_home_seed := int(game.composite_data.get("seed", 0))
 	game._start_next_home_composite_round()
 	await process_frame
-	assert(game.home_composite_round == 2 and str(game.composite_data.get("difficulty", "")) == "medium", "The second debug round should use the Medium assembly pattern")
-	assert(game.composite_data.get("selectedRegionIds", []).size() == 2, "The Medium debug pattern should select exactly two construction colors")
-	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [2]) and game.assembly_stage_label.text == "MEDIUM", "The second round should display its compact Medium pattern")
-	assert(game._is_assembly_phase() and int(game.composite_data.get("seed", 0)) != first_home_seed, "The next round should generate a different assembly")
+	var second_pattern := str(game.composite_data.get("difficulty", ""))
+	assert(game.home_composite_round == 2 and CompositeLevelDirectorScript.PATTERNS.has(second_pattern), "The second block round should sample a supported assembly pattern")
+	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [2]) and game.assembly_stage_label.text == second_pattern.to_upper(), "The second round should display its sampled pattern")
+	assert(game._is_assembly_phase() and int(game.composite_data.get("seed", 0)) > 0 and first_home_seed > 0, "Every recommended round should load an offline assembly seed")
 	game._start_next_home_composite_round()
 	await process_frame
-	assert(game.home_composite_round == 3 and str(game.composite_data.get("difficulty", "")) == "hard", "The third debug round should use the Hard assembly pattern")
-	assert(game.composite_data.get("selectedRegionIds", []).size() == 3, "The Hard debug pattern should select exactly three construction colors")
-	assert(game.composite_data.get("validLayouts", []).size() == 1, "The Hard debug pattern should not run the full multi-layout search")
-	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [3]) and game.assembly_stage_label.text == "HARD", "The third round should display its compact Hard pattern")
-	assert(game._home_composite_pattern_for_round(4) == "simple", "The debug difficulty sequence should loop back to Simple after Hard")
+	var third_pattern := str(game.composite_data.get("difficulty", ""))
+	assert(game.home_composite_round == 3 and CompositeLevelDirectorScript.PATTERNS.has(third_pattern), "The third block round should sample a supported assembly pattern")
+	assert(int(game.composite_coin_progress.get("dailyFreeRoundsUsed", 0)) == 3, "Starting three new block rounds should consume three daily free entries")
+	assert(game.coin_count == formal_coins, "The first five daily block rounds should not deduct entry coins")
+	assert(game.composite_data.get("validLayouts", []).size() == 1, "Recommended offline data should contain one approved layout")
+	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [3]) and game.assembly_stage_label.text == third_pattern.to_upper(), "The third round should display its sampled pattern")
+	if game.composite_data.get("pieces", []).size() < 2:
+		_load_multi_piece_home_fixture(game)
 	_test_tray_horizontal_scroll(game.assembly_view)
 	_test_tray_return_slot_focus(game.assembly_view)
 	var history_layout: Dictionary = game.composite_data["validLayouts"][0]
@@ -193,9 +227,17 @@ func _run() -> void:
 	assert(not game.home_composite_entry_active and game.current_level_index == formal_index, "Leaving the resumed block round should restore formal progress again")
 	assert(not game.opening_king_overlay.visible and not game.opening_king_reveal_pending, "Leaving block gameplay must not reveal the formal opening-king popup on the home screen")
 	var unfinished_history: Dictionary = game.home_composite_history.duplicate(true)
+	var saved_coin_progress: Dictionary = game.composite_coin_progress.duplicate(true)
+	game.composite_coin_progress["dailyDate"] = game._today_string()
+	game.composite_coin_progress["dailyFreeRoundsUsed"] = CompositeCoinPolicyScript.DAILY_FREE_ROUNDS
+	game._update_home()
+	assert(game.home_composite_button.text == game._t("拼块玩法 · 第 %d 局", [3]), "Resuming an unfinished round should remain free after the daily quota")
 	game.home_composite_history["isCompleted"] = true
 	assert(game._home_composite_resume_round() == 4, "A completed saved block round should advance the next entry instead of replaying the completed round")
+	game._update_home()
+	assert(game.home_composite_button.text == game._t("拼块玩法 · -%d 金币", [2]), "A new round after the daily quota should display its entry cost")
 	game.home_composite_history = unfinished_history
+	game.composite_coin_progress = saved_coin_progress
 	var crown_history: Dictionary = unfinished_history.duplicate(true)
 	var crown_state: Dictionary = crown_history["compositeState"].duplicate(true)
 	crown_state["phase"] = "crown"
@@ -350,6 +392,76 @@ func _run() -> void:
 
 	print("COMPOSITE SMOKE TEST PASSED: generation, %d valid layouts, assembly UI, transition and resume" % composite["validLayouts"].size())
 	quit(0)
+
+
+func _test_composite_director_model(levels: Array, entries: Dictionary) -> void:
+	var progress := {}
+	assert(is_equal_approx(CompositeLevelDirectorScript.exploration_probability(progress, 6), 0.50), "A new size should begin at 50% exploration")
+	var candidate := CompositeLevelDirectorScript.recommend(levels, entries, 1, 1, progress)
+	assert(not candidate.is_empty(), "The block director should recommend from the offline catalog")
+	var level_index := int(candidate.get("levelIndex", -1))
+	assert(level_index >= 0 and level_index < levels.size(), "The block director should return a source level index")
+	var level: Dictionary = levels[level_index]
+	assert(int(level.get("rows", 0)) == 6, "The ordinary unlock policy should start the isolated block mode at 6x6")
+	var schedule: Dictionary = candidate.get("schedule", {})
+	assert(str(schedule.get("compositeBaseDifficultyClass", "")) == str(level.get("difficulty", "")), "The base difficulty class must come from the ordinary level recommendation")
+	assert(not CompositeLevelStoreScript.find(entries, int(level.get("levelId", -1)), str(schedule.get("assemblyDifficultyPattern", ""))).is_empty(), "The recommended pattern must exist offline")
+	var advanced_candidate := CompositeLevelDirectorScript.recommend(levels, entries, 1, 180, {})
+	var advanced_level: Dictionary = levels[int(advanced_candidate.get("levelIndex", -1))]
+	assert(int(advanced_level.get("rows", 0)) == 7 and str(advanced_level.get("difficulty", "")) == "medium", "A newly unlocked composite size should reuse the ordinary director's Medium cold-start probe")
+
+	for sample_index in range(30):
+		var sampled_schedule := schedule.duplicate(true)
+		var pattern: String = CompositeLevelDirectorScript.PATTERNS[sample_index % CompositeLevelDirectorScript.PATTERNS.size()]
+		sampled_schedule["assemblyDifficultyPattern"] = pattern
+		sampled_schedule["homeCompositeRound"] = sample_index + 1
+		CompositeLevelDirectorScript.record_result(
+			progress,
+			level,
+			sampled_schedule,
+			true,
+			60.0,
+			10,
+			0
+		)
+	assert(is_equal_approx(CompositeLevelDirectorScript.exploration_probability(progress, 6), 0.20), "Balanced evidence should reduce exploration to its 20% floor")
+	var size_stats: Dictionary = progress.get("patternStatsBySize", {}).get("6", {})
+	for pattern in CompositeLevelDirectorScript.PATTERNS:
+		assert(int(size_stats.get(pattern, {}).get("plays", 0)) == 10, "Evidence sufficiency should count every pattern independently")
+	var selector_progress: Dictionary = progress.get("levelRecommendationProgress", {})
+	var arm_key := "%d|%s" % [int(level.get("rows", 0)), str(level.get("difficulty", "simple"))]
+	assert(int(selector_progress.get("statsByArm", {}).get(arm_key, {}).get("plays", 0)) == 30, "Block results should update the ordinary recommendation posterior in an isolated progress store")
+
+	var posterior_progress := {}
+	CompositeLevelDirectorScript.normalize_progress(posterior_progress)
+	var success_schedule := schedule.duplicate(true)
+	success_schedule["assemblyDifficultyPattern"] = "simple"
+	CompositeLevelDirectorScript.record_result(posterior_progress, level, success_schedule, true, 60.0, 10, 0)
+	var alpha_after_success: Dictionary = posterior_progress["patternAlphaBySize"]["6"]
+	assert(float(alpha_after_success["simple"]) > float(alpha_after_success["medium"]), "A successful pattern should gain posterior mass")
+	var medium_before_failure := float(alpha_after_success["medium"])
+	CompositeLevelDirectorScript.record_result(posterior_progress, level, success_schedule, false, 60.0, 10, 0)
+	var alpha_after_failure: Dictionary = posterior_progress["patternAlphaBySize"]["6"]
+	assert(float(alpha_after_failure["medium"]) > medium_before_failure, "A failed pattern should distribute posterior mass to the alternatives like the ordinary director")
+
+
+func _load_multi_piece_home_fixture(game) -> void:
+	for level_index in range(game.levels.size()):
+		var level: Dictionary = game.levels[level_index]
+		if int(level.get("rows", 0)) < 6:
+			continue
+		for pattern in CompositeLevelDirectorScript.PATTERNS:
+			var offline_data := CompositeLevelStoreScript.find(game.composite_levels, int(level.get("levelId", -1)), pattern)
+			if offline_data.get("pieces", []).size() < 2:
+				continue
+			var schedule := LevelDirectorScript.manual_schedule_for_level(game.levels, level_index, 1, "home_composite")
+			schedule["assemblyEnabled"] = true
+			schedule["assemblySeed"] = int(offline_data.get("seed", 0))
+			schedule["assemblyDifficultyPattern"] = pattern
+			schedule["homeCompositeRound"] = game.home_composite_round
+			game._load_level(level_index, false, schedule)
+			return
+	assert(false, "The offline catalog should include a multi-piece regression fixture")
 
 
 func _test_difficulty_region_selection() -> void:
@@ -636,3 +748,25 @@ func _test_tray_return_slot_focus(view) -> void:
 	view._drag_source = ""
 	view._return_slot_index = -1
 	view.queue_redraw()
+
+
+func _test_composite_coin_policy() -> void:
+	var progress := CompositeCoinPolicyScript.default_progress()
+	var today := "2026-08-06"
+	assert(CompositeCoinPolicyScript.base_reward_for_round(1) == 2, "Block rounds 1-10 should award two base coins")
+	assert(CompositeCoinPolicyScript.base_reward_for_round(10) == 2, "The first reward band should include round 10")
+	assert(CompositeCoinPolicyScript.base_reward_for_round(11) == 3, "Every ten played rounds should add one base coin")
+	assert(CompositeCoinPolicyScript.base_reward_for_round(61) == 8 and CompositeCoinPolicyScript.base_reward_for_round(100) == 8, "Block rewards should cap at eight base coins")
+	for round_number in range(1, 6):
+		var free_quote := CompositeCoinPolicyScript.round_quote(round_number, progress, today)
+		assert(not bool(free_quote.get("paid", true)) and int(free_quote.get("entryCost", -1)) == 0, "The first five block rounds of a day should be free")
+		CompositeCoinPolicyScript.record_round_started(progress, today, free_quote)
+	var paid_quote := CompositeCoinPolicyScript.round_quote(6, progress, today)
+	assert(bool(paid_quote.get("paid", false)), "The sixth newly started block round of a day should require coins")
+	assert(int(paid_quote.get("entryCost", 0)) == 2, "Paid block entry should cost reward minus two with a two-coin minimum")
+	assert(int(paid_quote.get("reward", 0)) == 4, "A paid two-coin reward round should receive the minimum two-coin completion bonus")
+	var late_paid_quote := CompositeCoinPolicyScript.round_quote(61, progress, today)
+	assert(int(late_paid_quote.get("entryCost", 0)) == 6, "An eight-coin block round should cost six coins after the free quota")
+	assert(int(late_paid_quote.get("reward", 0)) == 11, "Paid reward should add fifty percent of a six-coin entry fee")
+	var next_day_quote := CompositeCoinPolicyScript.round_quote(62, progress, "2026-08-07")
+	assert(not bool(next_day_quote.get("paid", true)) and int(progress.get("dailyFreeRoundsUsed", -1)) == 0, "A new local date should reset the five free block rounds")

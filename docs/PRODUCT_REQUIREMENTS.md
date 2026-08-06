@@ -125,13 +125,13 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - 中下部按“开始关卡 / 拼块玩法 / 新人流程”显示三个按钮；“开始关卡”保持最高视觉层级。
 - 首页不显示庭院、章节进度或装修进度。
 - “新人流程”按钮用于重新体验新手引导；已有正式进度时先保存正式现场，教程完成或跳过后恢复，新用户没有历史现场时进入第 1 关。
-- “拼块玩法”按钮在完成新人流程后可用，直接进入独立的 6x6 复合拼块挑战；进入前保存主线关卡、资源与未完成棋盘，返回首页时完整恢复。独立体验不增加主线关卡号、通关记录、金币或关卡导演统计；调试流程按 Simple、Medium、Hard 三种拼块 pattern 逐局循环生成，标题显示“拼块挑战 · 第 N 局”，右侧使用紧凑的 `SIMPLE/MEDIUM/HARD` 标识当前 pattern，完成后可连续进入 seed 不同的下一局。独立玩法另外保存最近局数、难度、seed、拼块位置、放置顺序、死局状态、红心、道具余量和皇冠阶段棋盘；退出仍恢复主线，再次进入时恢复未完成局，最近一局已完成则进入下一局。首页入口同步显示将要继续的局数。调试入口找到首个合法完整布局后立即停止搜索，并把候选阶段的生成结果直接交给关卡加载，避免 Hard 重复执行多布局枚举；主线复合关卡仍保留多布局质量搜索。
+- “拼块玩法”按钮在完成新人流程后可点击，并与普通关卡的 6x6 size 解锁条件保持一致：当前需玩到第 20 关。未达到条件时入口显示“第 20 关解锁”，点击弹窗提示所需关卡且不创建拼块现场；达到后进入独立的 6x6-9x9 复合拼块挑战。进入前保存主线关卡、资源与未完成棋盘，返回首页时完整恢复主线关卡现场；独立体验不增加主线关卡号、通关记录或主线导演统计，但拼块入场费和通关金币会同步保留到共享金币余额。每局先调用普通玩法推荐核心，从已解锁且存在离线拼块数据的棋盘中得到 `size × difficulty class`，再由独立拼块导演为该 size 采样 Simple/Medium/Hard 拆分 pattern。标题显示“拼块挑战 · 第 N 局”，右侧显示实际抽中的 pattern。独立玩法另外保存最近局数、推荐模型、pattern 后验、每日免费次数、入场费、应发奖励、seed、拼块位置、放置顺序、死局状态、红心、道具余量和皇冠阶段棋盘；退出仍恢复主线现场，再次进入时恢复未完成局且不重复计次或收费，最近一局已完成则进入下一局。
 
 当前实现：
 
 - UI 由 `scripts/main.gd` 中 `_build_home_screen()` 及其子函数动态构建。
 - 首页主操作由 `_build_home_primary_buttons()` 构建。
-- “开始关卡”调用当前关卡流程；“拼块玩法”调用 `_start_home_composite_flow()` 进入隔离的 6x6 拼块挑战；“新人流程”调用 `_replay_tutorial_preserving_progress()` 保存正式关卡快照并进入教程。
+- “开始关卡”调用当前关卡流程；“拼块玩法”调用 `_start_home_composite_flow()`，并通过 `CompositeLevelDirector` 进入隔离的自适应拼块挑战；“新人流程”调用 `_replay_tutorial_preserving_progress()` 保存正式关卡快照并进入教程。
 - 资源、活动、排行榜、宝箱和底部导航入口已从首页隐藏。
 
 功能截图与交互流转：
@@ -142,7 +142,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 
 - 点击开始关卡进入关卡页。
 - 点击新人流程会重新进入新手引导。
-- 点击拼块玩法会进入 6x6 拼接阶段；从关卡顶部或结果页返回首页后，主线关卡、棋盘现场和资源恢复到进入前状态。
+- 第 19 关及以前点击拼块玩法会弹出“玩到第 20 关即可解锁”的提示，不保存或替换当前主线现场；第 20 关起点击会进入 6x6 拼接阶段，从关卡顶部或结果页返回首页后，主线关卡、棋盘现场和资源恢复到进入前状态。
 - 首页不显示金币、生命、星数、左侧入口、右侧入口和底部导航。
 
 ### 6.2 关卡页模块
@@ -329,7 +329,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - 出关导演：`scripts/level_director.gd`，负责解耦玩家显示关卡顺序与 `levelId`。
 - 前 10 个显示关卡固定编排：1-5 为 5x5 simple，6-8 为 5x5 medium，9 为 5x5 simple，10 为 5x5 hard 挑战关。
 - 第 10 关之后根据玩家进度、size、难度和最近行为动态选择关卡；关卡选择按 size/difficulty 索引读取，并用最近 50 个 `levelId` 做去重。
-- 动态 size 解锁节奏为：30 关起保持 5x5；80 关起开放 5x5-6x6；180 关起开放 5x5-7x7；300 关起采样 6x6-8x8；450 关起采样 6x6-9x9。
+- 动态 size 解锁节奏由 `SIZE_UNLOCK_DISPLAY_LEVELS` 统一控制：第 1 关开放 5x5，第 20 关起开放 5x5-6x6，第 80 关起开放 5x5-7x7，第 160 关起采样 6x6-8x8，第 240 关起采样 6x6-9x9。
 - 每逢 10 的整数关为挑战关；挑战关后一关为缓冲关，保持挑战关 size、难度降低一档，并显示提示皇冠。
 - 普通关卡使用分层后验推荐：size 层使用 Dirichlet 多项分布，size 内的 difficulty 层使用 Dirichlet 多项分布，每个 size×difficulty 组合分别维护通关、下一关开启和次日留存三个 Beta-Bernoulli 后验，并用 Thompson Sampling 选择。
 - 新 size 解锁时降低旧 size 的历史探索权重，为新 size 写入冷启动加成并优先探测 Medium；每个 size 和组合都有最低曝光配额，未充分曝光的组合优先于稳定收益采样。
@@ -390,9 +390,9 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 棋盘与方块视觉：
 
 - 拼块棋盘的底板、外沿和施工凹槽统一使用浅暖灰色系，通过逐级明度和内外阴影区分承托面与空槽，避免底板出现割裂的灰色色块。
-- 已锁定颜色区域使用原“明亮经典”颜色，通过左上高光、下侧面、右侧面和柔和投影表现为立体方块；锁定区域不可点击、拖动或旋转。
+- 已锁定颜色区域使用原“明亮经典”颜色，并复用中性灰白的单格立体砖贴图 `assets/ui/block_tile_neutral.png`；运行时以区域颜色乘色，统一得到圆角顶面、左上高光、下沿厚度和柔和投影。锁定区域不可点击、拖动或旋转。
 - 施工区显示为低饱和浅暖灰凹槽，保留格子坐标和施工区外轮廓；施工颜色遗留的锁定原色格保持与待放置块一致的立体材质，作为颜色和连通方向线索，但不提前显示最终区域边界。
-- 托盘背景使用深色系，与暖白关卡背景形成明确层级；每个可见 slot 使用所属颜色的加粗发光外框，块本身保持所属区域颜色，并使用与棋盘一致的立体材质。
+- 托盘背景使用深色系，与暖白关卡背景形成明确层级；每个可见 slot 使用所属颜色的加粗发光外框。同一个拼图块中的所有格子必须共用该块所属区域的一种颜色，并复用与棋盘一致的单格立体砖贴图拼装成完整形状，不能为不同形状或不同颜色分别维护重复图片。
 - 用户拿起方块后，方块缩放到棋盘格尺寸并保持立体状态；拖动超过短距离即进入拖动状态并以当前指针位置实时更新预览，减少拿取延迟。只要完整位于施工区且不与其它已放方块重叠，就显示合法占格预览并允许吸附；越界或重叠时显示错误预览并回弹。
 - 方块成功放到棋盘后仍保持立体状态；只有所有施工格完成且布局通过校验后，才在过场动画中统一压平为标准二维区域。
 - 颜色不能成为唯一状态信息。合法/非法落点同时使用轮廓、占格预览和回弹反馈，锁定区与可拼区通过高度、凹槽和交互反馈区分。
@@ -476,10 +476,12 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 
 - `scripts/composite_level.gd` 将关卡难度归一为 Simple/Medium/Hard，按 `1-2/2/3` 个颜色区域策略选择施工区；线索先排除会切断区域的割点，再从安全边界格中按 `max(行异色格数, 列异色格数)` 选择，随后从线索邻域随机铺设条形、2×2、L/T/Z 和异构模板，最后用剩余块补齐。生成期保留质量合格布局，运行时同时支持任意空间合法吸附、动态最终布局校验和死局搜索。
 - 离线拼块数据生成器位于 `tools/generate_composite_levels.py`，直接读取 `data/levels.json`，完全在 Python 内执行区域选择、线索筛选、模板拆块、动态 MRV Exact Cover、皇冠唯一解求解和放置顺序生成，不启动 Godot 或调用 GDScript。生成结果写入 `data/composite_levels.json`：当前为 2000 个 6x6-9x9 基础关卡各生成 Simple/Medium/Hard 三档，共 6000 条；5x5 不进入复合拼块。运行时由 `scripts/composite_level_store.gd` 按 `levelId:difficulty` 加载，不再对正式关卡在线拆分；缺少离线条目时关闭本关拼块入口。线索点从非割点安全边界格中按 `max(行异色格数, 列异色格数)` 取最高分，同分时只按固化 seed 选择。离线唯一性只统计同时满足“每块一次、无重叠、填满施工区、方块颜色逐格匹配原始 `regionId`”的完整方案；同颜色、同形状、同方向的视觉相同块只交换内部编号时视为同一方案。每个颜色区域拆分后先独立证明区域铺法唯一，再进入整局搜索；整局搜索使用占格位掩码、剩余等价块组和候选下界组成的记忆化状态，结果截断为 `0/1/2+`。切分期按候选落点数量、重复形状和强制剥离链质量排序，并允许依据第二解对歧义块做同色连通边界局部修正。只有搜索空间耗尽、合法放置方案唯一、恢复布局逐格等于输入且皇冠答案唯一时才允许输出，具体流程见 `docs/COMPOSITE_OFFLINE_GENERATION.md`。
+- `scripts/composite_level_director.gd` 独立控制首页拼块玩法出关：内部调用 `LevelDirector.recommend_level_for_sizes()`，复用普通玩法的 size/difficulty 冷启动、曝光配额、Beta 与 Dirichlet 推荐逻辑，但把统计写入独立的 `compositeDirectorProgress.levelRecommendationProgress`，不污染主线。基础关卡确定后，再在该 size 下对 Simple/Medium/Hard 建立多项分布；冷启动随机探索概率为 50%，随着总样本达到 30 且每个 pattern 至少达到 6 次而线性降到 20%。探索分支均匀随机，非探索分支按 Dirichlet 后验权重进行多项采样。通关时增加当前 pattern 后验质量，失败时按普通导演相同的负反馈公式把证据分配给其它 pattern。
+- `scripts/composite_coin_policy.gd` 独立控制拼块玩法的每日免费、入场费和通关金币。每天前 5 个成功创建的新局免费，恢复未完成局或重玩当前失败局不重复计数或收费；第 6 个新局起，每局入场费为 `max(2, baseReward - 2)`。拼块基础奖励从 2 开始，每完成局数段每增加 10 局提升 1，最高 8；付费局完成奖励额外增加 `max(2, ceil(entryCost × 50%))`。本地日期变化时免费次数重置，首页和“下一局”按钮在付费局开始前展示价格，余额不足时拦截且不创建现场。
 - Hard 默认选择 3 个施工区域；原棋盘只有少数大区域或存在无法唯一拆分的极端分布时，离线生成允许写入显式回退标记（如 `hard_two_regions`、`simple_small_regions`、`medium_small_regions`），改用可证明唯一的 2-3 个小区域，仍保持对应难度的块数系数。
 - 拼块生成完成时缓存施工区整数索引、各颜色固定线索索引、每块的几何候选原点和候选占格索引。每次落块只构建一次共享占用图，并由同一次状态评估返回落块合法性、死局、可吸附原点或最终布局；界面不再深复制整份生成缓存，普通落块和死局落块只各写入一次存档，最终落块直接进入过场存档，不重复执行完整布局求解。
 - 新关卡优先在多个确定性种子中选择至少包含 2 个合法最终布局的切分，找不到时回退到至少 1 个合法布局；保存恢复始终复用已经写入的种子与布局，不重新抽取。
-- `scripts/assembly_view.gd` 绘制立体锁定区域、凹槽、深色横向待放置区、颜色发光 slot、拖动预览、提示浮窗和压平过场，并处理鼠标与单指触控的横向滚动/拖放仲裁。
+- `scripts/assembly_view.gd` 使用 `assets/ui/block_tile_neutral.png` 作为可运行时染色的单格纹理，拼装立体锁定区域、托盘方块、拖动预览和棋盘落块；同时绘制凹槽、深色横向待放置区、颜色发光 slot、提示浮窗和压平过场，并处理鼠标与单指触控的横向滚动/拖放仲裁。
 - `scripts/level_director.gd` 在 6x6 及以上里程碑挑战日程中写入 `assemblyEnabled`，拼块期间不安排开局提示皇冠。
 - `scripts/main.gd` 管理 `assembly / transition / crown` 阶段、放置历史、死局结果页、金币自动撤回复活、顶部待放置区、清除/直找/提示道具、Help 默认页、首次演示、最终运行时关卡替换及存档。
 - `tests/composite_smoke_test.gd` 覆盖随机切分、块数系数、边界线索评分、开放吸附、死局搜索、自动撤回复活、重新开始、拼块 UI、道具隔离、Hint、转换和两阶段重启恢复。
@@ -507,9 +509,10 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 功能逻辑：
 
 - 当皇冠数量等于目标数且无冲突时通关。
-- 每次成功完成关卡都会按本关参数结算金币，重玩也按实际表现重新结算。
+- 每次成功完成关卡都会按展示关卡序号结算金币，重玩也按实际表现重新结算。基础金币随 `SIZE_UNLOCK_DISPLAY_LEVELS` 的 size 开放阶段增长：第 1-19 关为 1，第 20-79 关为 2，第 80-159 关为 3，第 160-239 关为 4，第 240 关起为 5。
+- 本关初始体力大于 1 且通关时没有消耗任何体力，评为 `EXCELLENT`，奖励为 `ceil(base × 1.3)` 并播放一次花瓣飘落庆祝动画；只有 1 点初始体力或发生过体力损失时评为 `GOOD`，奖励为 base 且不播放花瓣动画。
 - 通关结果页使用整屏奖励结构：蓝色背景、顶部完成文案、中部皇冠展位和底部按钮；标题、副标题和奖励文案必须在移动端安全宽度内自适应换行，不能被英文长文本的最小宽度撑出屏幕，卡片和按钮始终保留左右安全边距。
-- 顶部核心文案为“太棒了！”和“第 X 关 已完成”。
+- 顶部核心文案按表现显示 `EXCELLENT / GOOD` 和“第 X 关 已完成”。
 - 中部排行榜位置先使用皇冠展位，不显示排行榜；广告位置先不显示。
 - 不显示奖励进度栏和广告位置。
 - 主按钮文案为“下一关”，进入下一关；次按钮文案为“主菜单”，返回首页。
@@ -517,9 +520,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 当前实现：
 
 - `_complete_level()` 处理完成状态、奖励、保存和弹窗。
-- 金币奖励由 `scripts/coin_economy.gd` 统一计算：5x5 到 9x9 的尺寸基础值依次为 `10 / 14 / 18 / 23 / 28`。
-- 有开局提示皇冠时，本关奖励基数为尺寸基础值的 `80%`。
-- 每次错误皇冠尝试使奖励在本关基数上降低 `25%`，最终奖励最低不低于本关基数的 `50%`。
+- 金币发放策略独立位于 `scripts/coin_reward_policy.gd`，直接读取 `LevelDirector.SIZE_UNLOCK_DISPLAY_LEVELS` 判断当前展示关卡所属的 `1-5` 金币档位，并负责 Excellent 判定与最终发放数量；`scripts/coin_economy.gd` 只负责道具价格、金币核销和流水。棋盘实际 size、开局提示皇冠和错误次数不再额外改变 Good 的基础金币。
 - `_next_level()` 和 `_replay_level()` 处理弹窗按钮。
 - `completion_overlay` 为全屏通关结果页；成功结算的角色展位显示一只开心站立的橘色皇冠狮子。每次进入结算页时随机选择自然挥手、逐步吐舌头或眨眼做鬼脸动画。角色身体保持固定位置、固定比例且不旋转，仅通过逐帧贴图表现动作；逐帧动画使用不等长帧时长与动作停顿，避免机械循环感。
 - 结算页只展示真实产生的金币奖励，不展示没有后续用途的“获得皇冠 +1”虚拟奖励。
@@ -533,8 +534,8 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 回归测试重点：
 
 - 正确解完成后显示通关结果页。
-- 通关金币与棋盘尺寸、开局提示皇冠数和错误次数一致。
-- 错误次数再多，通关奖励也不会低于本关奖励基数的一半。
+- 验证第 `1 / 20 / 80 / 160 / 240` 关基础奖励依次为 `1 / 2 / 3 / 4 / 5`。
+- 多体力关卡无体力消耗时显示 Excellent、奖励按 1.3 倍向上取整并播放花瓣；损失体力或单体力关卡显示 Good、只发 base 且无花瓣。
 - 已完成关卡重复通关按本次表现重新结算，不能重复写入已完成关卡 ID。
 - 下一关按钮尺寸足够明显且可点击。
 - 主菜单按钮返回首页。
@@ -545,12 +546,10 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 
 功能逻辑：
 
-- 金币发放、道具价格和流水统计统一由 `scripts/coin_economy.gd` 管理，页面层不独立硬编码价格。
+- 金币发放由 `scripts/coin_reward_policy.gd` 管理；道具价格、金币核销和流水统计由 `scripts/coin_economy.gd` 管理，页面层不独立硬编码价格。
 - 清除不属于付费道具，价格固定为 0，不调用金币核销、不写入兑换次数或累计消费。
-- 免费逻辑提示和免费皇冠直找次数耗尽后仍可继续使用，对应价格分别为本关奖励基数的 `1 倍`、`3 倍`。
+- 免费逻辑提示和免费皇冠直找次数耗尽后仍可继续使用。逻辑提示价格为最近 3 次新规则通关实际金币奖励之和，皇冠直找价格为最近 6 次之和；记录不足时按当前关卡之前对应数量关卡的 base 补齐，关卡序号小于 1 的补位按第 1 关 base 计算。
 - 红心耗尽时失败页提供“金币复活”，价格为本关奖励基数的 `2 倍`；复活保留当前棋盘和错误红色 X，并恢复 1 颗红心。
-- 若最近 3 次通关均未使用金币兑换道具，则下一次道具价格减去 `max(1, 本关奖励基数 × 20%)`，降低首次付费使用门槛。
-- 同一局中每发生一次金币兑换，折扣逐步减弱；累计 3 次兑换后回到标准价格。
 - 金币不足时只弹出“购买金币 / 观看激励广告 / 稍后再说”选择，不自动播放广告、不打断正常解题。
 - 单次激励广告补币至少为本关一个奖励基数，同时保证足够补齐当前道具缺口，且不超过本次道具价格；目标是一次广告可解决当前需求，但不制造大量额外囤币。
 - 当前版本购买和激励广告按钮为 SDK 接入占位，不直接伪造到账；后续接入时必须在回调成功后才发放金币。
@@ -558,7 +557,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 
 统计字段：
 
-- `recentCompletions`：最近通关的关卡、尺寸、提示皇冠数、错误次数、奖励和本局金币兑换次数。
+- `recentCompletions`：最近通关的关卡 ID、展示关卡序号、尺寸、初始/剩余体力、Excellent 标记、奖励规则版本、实际奖励和本局金币兑换次数；旧奖励版本不进入新道具价格累计。
 - `toolExchangeCounts`：按逻辑提示、皇冠直找、复活分别累计兑换次数。
 - `totalCoinEarned`、`totalCoinSpent`：累计发放和核销金币，用于后续平衡经济系统。
 
@@ -587,10 +586,10 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - 存档路径：`user://color_queens_save.json`。
 - `_load_save()` 加载并兼容旧版本。
 - `_save_game()` 在关键状态变化后写入。
-- 当前保存字段包括 `currentLevelIndex`、`currentLevelId`、`playerLevelNumber`、`activeSchedule`、`directorProgress`、`economyProgress`、`runStartedUnix`、`runMoveCount`、`runHintCount`、`runDirectFindCount`、`runCoinExchangeCount`、`cellStates`、`isCompleted`、`isFailed`、`coinCount`、`heartCount`、`hintCount`、`completedLevels`、`immediateErrors`、`tutorialCompleted`、`tutorialStarted`、`tutorialStepIndex`、`formalProgressSnapshot`、`homeCompositeEntryActive`、`homeCompositeRound`、`homeCompositeProgressSnapshot`、`homeCompositeHistory`、`compositeState`、`compositeTutorialSeen`。
+- 当前保存字段包括 `currentLevelIndex`、`currentLevelId`、`playerLevelNumber`、`activeSchedule`、`directorProgress`、`compositeDirectorProgress`、`compositeCoinProgress`、`economyProgress`、`runStartedUnix`、`runMoveCount`、`runHintCount`、`runDirectFindCount`、`runCoinExchangeCount`、`cellStates`、`isCompleted`、`isFailed`、`coinCount`、`heartCount`、`hintCount`、`completedLevels`、`immediateErrors`、`tutorialCompleted`、`tutorialStarted`、`tutorialStepIndex`、`formalProgressSnapshot`、`homeCompositeEntryActive`、`homeCompositeRound`、`homeCompositeProgressSnapshot`、`homeCompositeHistory`、`compositeState`、`compositeTutorialSeen`。
 - `directorProgress` 保存最近通关和失败记录、size/difficulty 统计、下一关开启和次留补记状态、各组合的 Beta 后验，以及 `banditState` 中的 size/difficulty Dirichlet 参数和新 size 发布 epoch。
 - 首页点击“开始关卡”时，如果当前恢复的正式关卡已经完成，会自动推进并加载下一关，避免停留在已完成且不可操作的棋盘。
-- `SAVE_VERSION` 当前为 13；`formalProgressSnapshot` 在重看教程时持久保存正式关卡索引、调度、通关记录、经济资源、棋盘状态、红心、本局统计和复合拼块现场，成功恢复后清除。
+- `SAVE_VERSION` 当前为 15；`formalProgressSnapshot` 在重看教程时持久保存正式关卡索引、调度、通关记录、经济资源、棋盘状态、红心、本局统计和复合拼块现场，成功恢复后清除。`compositeDirectorProgress` 独立保留拼块玩法的基础关卡推荐统计、各 size 的 pattern Dirichlet 参数、曝光次数和最近结果；`compositeCoinProgress` 保存本地日期、当日已用免费局、累计付费局、累计入场消费和累计拼块奖励。
 - `homeCompositeProgressSnapshot` 与 `homeCompositeEntryActive` 用于隔离首页拼块入口：即使在独立拼块体验中退出应用，下次启动回到首页时也先恢复进入前的主线现场。`homeCompositeHistory` 独立保留拼块玩法的最近局数和未完成现场，不会随主线快照恢复而清空。
 - `compositeState` 保存关卡 ID、阶段、切分种子、拆块数据版本、已放方块、放置历史、死局状态、最终布局签名、`regions` 与 `solution`；版本 8 及更早的旧存档没有该字段时按当前关卡日程重新开始拼块或直接加载普通皇冠关卡。拆块数据版本变化时继续复用 seed，但清空旧形状对应的放置坐标，避免把旧现场套到新拼块。
 
@@ -717,16 +716,15 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 | 参数 | 当前值 | 位置 | 说明 |
 | --- | --- | --- | --- |
 | 初始金币 | 55 | `scripts/main.gd` | 新存档默认金币 |
-| 初始免费提示 | 3 | `INITIAL_HINT_COUNT` | 新存档默认提示次数 |
+| 初始免费提示 | 5 | `INITIAL_HINT_COUNT` | 新存档默认提示次数；旧存档保留原有剩余数量 |
 | 初始皇冠直找 | 3 | `INITIAL_CROWN_FIND_COUNT` | 新存档默认直找皇冠次数 |
-| 尺寸奖励基数 | 10 / 14 / 18 / 23 / 28 | `CoinEconomy.SIZE_BASE_REWARDS` | 对应 5x5 到 9x9 |
-| 开局皇冠奖励系数 | 80% | `OPENING_KING_REWARD_MULTIPLIER` | 有提示皇冠时降低奖励 |
-| 错误奖励扣减 | 每次 25%，最低 50% | `MISTAKE_PENALTY_PER_COUNT` | 只影响本局通关结算 |
-| 逻辑提示价格 | 1 × 本关奖励基数 | `TOOL_HINT` | 免费提示耗尽后核销 |
-| 皇冠直找价格 | 3 × 本关奖励基数 | `TOOL_CROWN_FIND` | 免费直找耗尽后核销 |
+| 展示关卡基础奖励 | 1 / 2 / 3 / 4 / 5 | `CoinRewardPolicy.base_reward_for_display_level()`、`SIZE_UNLOCK_DISPLAY_LEVELS` | 对应第 1 / 20 / 80 / 160 / 240 关起的阶段 |
+| Excellent 奖励 | `ceil(base × 1.3)` | `CoinRewardPolicy.EXCELLENT_REWARD_MULTIPLIER` | 仅初始体力大于 1 且零体力损失时触发，同时播放花瓣动画 |
+| Good 奖励 | `base` | `CoinRewardPolicy.completion_reward()` | 单体力关卡或发生过体力损失，无花瓣动画 |
+| 逻辑提示价格 | 最近 3 关实际奖励之和 | `HINT_REWARD_WINDOW` | 免费提示耗尽后核销；不足记录用历史关卡 base 补齐 |
+| 皇冠直找价格 | 最近 6 关实际奖励之和 | `CROWN_FIND_REWARD_WINDOW` | 免费直找耗尽后核销；不足记录用历史关卡 base 补齐 |
 | 清除价格 | 0 | `_clear_board()` | 永久免费，清理普通 X、普通皇冠和错误红色 X，保留两类提示皇冠 |
 | 保盘复活价格 | 2 × 本关奖励基数 | `TOOL_REVIVE` | 红心耗尽后恢复 1 颗红心 |
-| 首次兑换折扣 | 20% 基数，3 次兑换内回归 | `INACTIVE_TOOL_DISCOUNT_RATE` | 最近 3 次通关未兑换时生效 |
 | 每关红心 | 1-10 关为 3；11-30 关为 2；31 关起为 1 | `_heart_limit_for_display_level()` | 正式关卡每次进入/重试时按展示关卡序号重置 |
 | 关卡红心动效 | 所有剩余红心同步双跳 | `HEART_PULSE_STAGGER_SECONDS`、`_update_heart_label()` | 不使用依次错峰动画；失去的红心停止跳动并恢复正常大小 |
 | 默认棋盘尺寸 | 5x5-9x9 | `data/levels.json` | 由关卡导演按进度解锁 |
@@ -737,7 +735,12 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 | 道具使用策略 | 直找 15%；提示 25%；收益权重 0.08 / 0.28 | `TOOL_*_PROBABILITY`、`TOOL_REWARD_*` | 没有未探测组合后使用最高道具收益权重 |
 | 复合拼块最小尺寸 | 6x6 | `LevelDirector.assemblyEnabled` | 5x5 不进入复合拼块玩法 |
 | 复合拼块触发 | 10 的整数倍里程碑且尺寸 ≥6 | `LevelDirector._make_schedule()` | 其它关卡直接进入皇冠阶段 |
-| 首页拼块入口 | 完成新人流程后常驻 | `_start_home_composite_flow()` | 独立 6x6 连续挑战；第 1/2/3 局使用 Simple/Medium/Hard pattern，之后循环；退出后恢复主线现场，不结算主线奖励 |
+| 首页拼块入口 | 完成新人流程后常驻；第 20 关解锁 | `_start_home_composite_flow()`、`LevelDirector.minimum_display_for_size()`、`CompositeLevelDirector` | 未满足普通关卡 6x6 size 条件时点击弹窗提示所需关卡且不创建现场；解锁后由普通导演先推荐 size/difficulty class，再按该 size 的独立多项后验采样 Simple/Medium/Hard；退出后恢复主线现场并保留拼块金币净变化 |
+| 拼块每日免费 | 每日本地日期前 5 个新局 | `CompositeCoinPolicy.DAILY_FREE_ROUNDS` | 恢复未完成局和重玩当前局不重复计数或收费 |
+| 拼块基础奖励 | 2 → 8 | `CompositeCoinPolicy.base_reward_for_round()` | 第 1-10 局为 2，之后每 10 局 +1，第 61 局起封顶 8 |
+| 拼块付费入场 | `max(2, base - 2)` | `CompositeCoinPolicy.entry_cost_for_round()` | 当日第 6 个新局起收取；按钮预显价格，余额不足不创建现场 |
+| 拼块付费奖励 | `base + max(2, ceil(entry × 50%))` | `CompositeCoinPolicy.paid_reward_bonus()` | 只在付费入场并成功通关时增加 |
+| 拼块 pattern 探索率 | 50% → 20% | `CompositeLevelDirector.exploration_probability()` | 总样本 30 且每档至少 6 次视为充分；探索时均匀随机，非探索时按后验权重采样 |
 | 复合拼块施工颜色 | Simple 1-2；Medium 2；Hard 3 | `data/composite_levels.json`、`CompositeLevelStore`、`tools/generate_composite_levels.py` | 6x6-9x9 每个基础关卡预生成三档；普通区域至少 3 格，极端分布使用带标记的 2 格小区域回退；每种颜色保留 1 个锁定原色线索格 |
 | 复合拼块数量 | `ceil((C / 2) × factor)` | `scripts/composite_level.gd` | factor：Simple 0.5、Medium 0.6、Hard 0.8；正常避免单位块 |
 | 复合拼块旋转 | 生成时允许 0/90/180/270 度 | `scripts/composite_level.gd` | 第一版玩家不主动旋转或镜像 |
@@ -762,7 +765,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 
 1. 运行核心冒烟测试。
 2. 运行新手教程冒烟测试。
-3. 手动验证首页“开始关卡 / 拼块玩法 / 新人流程”三个主要入口；拼块入口应进入 6x6 拼接阶段，返回首页后主线现场与资源不变。
+3. 手动验证首页“开始关卡 / 拼块玩法 / 新人流程”三个主要入口；第 19 关及以前拼块入口应显示第 20 关解锁并弹窗拦截，第 20 关起应进入 6x6 拼接阶段，返回首页后主线现场与资源不变。
 4. 手动验证关卡页在目标移动端尺寸下不溢出。
 5. 新存档手动验证启动后会直接进入单张 5x5 新手教程棋盘。
 6. 手动验证首页“新人流程”按钮可重新进入新手引导，并在完成、跳过或教程中途重启应用后恢复原正式关卡、通关记录和未完成棋盘。
@@ -773,6 +776,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 11. 如果修改了存档结构，必须验证旧存档兼容。
 12. 手动确认首页、关卡页、弹窗和关卡编辑器中的中文均正常显示，不出现缺字方框。
 13. 至少完成 1 个 Simple 单/双区域、1 个 Medium 双区域和 1 个 Hard 三区域的 6x6 复合关卡，验证首次动画、Help 重播、顶部单行待放置区左右滚动、3-4 个块可见、颜色发光边框、自动排序、放置撤回、直找、提示浮窗、唯一解转换和中途恢复。
+14. 同一本地日期连续新开 6 个首页拼块局：前 5 局免费，第 6 局按钮显示入场费并正确扣币；中途退出恢复不重复收费。修改为下一本地日期后再次获得 5 个免费局，并验证付费局奖励包含 50% 入场费或至少 2 金币的加成。
 14. 更新本文档对应模块。
 
 ## 9. 自动测试命令

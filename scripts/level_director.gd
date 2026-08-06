@@ -29,6 +29,13 @@ const TOOL_REWARD_MAX_WEIGHT := 0.28
 const NO_TOOL_DIFFICULTY_STREAK := 3
 const KING_SOLUTION_ORDINALS := [2, 4, 6, 8]
 const DIFFICULTY_ORDER := ["simple", "medium", "hard", "challenge"]
+const SIZE_UNLOCK_DISPLAY_LEVELS := {
+	5: 1,
+	6: 20,
+	7: 80,
+	8: 160,
+	9: 240
+}
 const FIXED_OPENING_PLAN := [
 	{"size": 5, "difficulty": "simple", "ordinal": 1},
 	{"size": 5, "difficulty": "simple", "ordinal": 2},
@@ -109,6 +116,46 @@ static func schedule_for_display_level(levels: Array, display_level: int, progre
 	return schedule
 
 
+static func recommend_level_for_sizes(levels: Array, allowed_sizes: Array, display_level: int, progress: Dictionary) -> Dictionary:
+	normalize_progress(progress)
+	if levels.is_empty() or allowed_sizes.is_empty():
+		return {}
+	var level_index := build_level_index(levels)
+	var supported_sizes: Array = []
+	for raw_size in allowed_sizes:
+		var size := int(raw_size)
+		if level_index.has(size) and not supported_sizes.has(size):
+			supported_sizes.append(size)
+	if supported_sizes.is_empty():
+		return {}
+	supported_sizes.sort()
+	var display := maxi(FIXED_OPENING_COUNT + 1, display_level)
+	var rng := _make_rng(display, "catalog:%d" % _progress_signature(progress))
+	var completed_ids := _completed_ids(progress)
+	var recent_ids := _recent_level_ids(progress, DEDUPE_HISTORY_WINDOW)
+	var arm := _recommended_arm(levels, level_index, supported_sizes, completed_ids, progress, display, rng)
+	var selected_size := int(arm.get("size", supported_sizes[0]))
+	var selected_difficulty := str(arm.get("difficulty", "simple"))
+	var index := _choose_level_index(levels, level_index, selected_size, selected_difficulty, completed_ids, recent_ids, rng)
+	if index < 0:
+		index = _choose_any_level_index(levels, level_index, supported_sizes, completed_ids, recent_ids, rng)
+	if index < 0:
+		return {}
+	var level: Dictionary = levels[index]
+	var schedule := _make_schedule(
+		level,
+		index,
+		display,
+		str(arm.get("mode", "bayes")),
+		false,
+		supported_sizes,
+		int(level.get("rows", selected_size)),
+		str(level.get("difficulty", selected_difficulty))
+	)
+	schedule["recommendationReason"] = str(arm.get("reason", schedule["mode"]))
+	return schedule
+
+
 static func build_level_index(levels: Array) -> Dictionary:
 	var result := {}
 	for index in range(levels.size()):
@@ -174,17 +221,25 @@ static func _find_nth_level_index(level_index: Dictionary, size: int, difficulty
 	return -1
 
 
+static func minimum_display_for_size(size: int) -> int:
+	return maxi(1, int(SIZE_UNLOCK_DISPLAY_LEVELS.get(size, 1)))
+
+
+static func is_size_unlocked(size: int, display_level: int) -> bool:
+	return maxi(1, display_level) >= minimum_display_for_size(size)
+
+
 static func unlocked_sizes(display_level: int) -> Array:
 	var display := maxi(1, display_level)
-	if display >= 450:
-		return [6, 7, 8,9]
-	if display >= 300:
+	if display >= minimum_display_for_size(9):
+		return [6, 7, 8, 9]
+	if display >= minimum_display_for_size(8):
 		return [6, 7, 8]
-	if display >= 180:
-		return [5, 6, 7]
-	if display >= 80:
+	if display >= minimum_display_for_size(7):
+		return [5,6, 7]
+	if display >= minimum_display_for_size(6):
 		return [5, 6]
-	if display >= 30:
+	if display >= minimum_display_for_size(5):
 		return [5]
 	return [5]
 
@@ -948,24 +1003,28 @@ static func _update_dirichlet_feedback(progress: Dictionary, size: int, difficul
 	var difficulty_values: Dictionary = difficulty_alpha[size_key]
 	if not difficulty_values.has(difficulty):
 		difficulty_values[difficulty] = DIRICHLET_PRIOR_ALPHA
-	var positive := maxf(0.0, quality - 0.5) * 2.0
-	var negative := maxf(0.0, 0.5 - quality) * 2.0
-	if positive > 0.0:
-		size_alpha[size_key] = float(size_alpha[size_key]) + DIRICHLET_POSITIVE_RATE * evidence_weight * positive
-		difficulty_values[difficulty] = float(difficulty_values[difficulty]) + DIRICHLET_POSITIVE_RATE * evidence_weight * positive
-	elif negative > 0.0:
-		var size_share := 1.0 / float(maxi(1, size_alpha.size() - 1))
-		for other_size in size_alpha.keys():
-			if str(other_size) != size_key:
-				size_alpha[other_size] = float(size_alpha[other_size]) + DIRICHLET_NEGATIVE_RATE * evidence_weight * negative * size_share
-		var difficulty_share := 1.0 / float(maxi(1, difficulty_values.size() - 1))
-		for other_difficulty in difficulty_values.keys():
-			if str(other_difficulty) != difficulty:
-				difficulty_values[other_difficulty] = float(difficulty_values[other_difficulty]) + DIRICHLET_NEGATIVE_RATE * evidence_weight * negative * difficulty_share
+	size_alpha = update_multinomial_posterior(size_alpha, size_key, quality, evidence_weight)
+	difficulty_values = update_multinomial_posterior(difficulty_values, difficulty, quality, evidence_weight)
 	difficulty_alpha[size_key] = difficulty_values
 	state["sizeAlpha"] = size_alpha
 	state["difficultyAlpha"] = difficulty_alpha
 	progress["banditState"] = state
+
+
+static func update_multinomial_posterior(raw_alpha: Dictionary, selected_key, quality: float, evidence_weight: float = 1.0) -> Dictionary:
+	var alpha := raw_alpha.duplicate(true)
+	if not alpha.has(selected_key):
+		alpha[selected_key] = DIRICHLET_PRIOR_ALPHA
+	var positive := maxf(0.0, quality - 0.5) * 2.0
+	var negative := maxf(0.0, 0.5 - quality) * 2.0
+	if positive > 0.0:
+		alpha[selected_key] = float(alpha[selected_key]) + DIRICHLET_POSITIVE_RATE * evidence_weight * positive
+	elif negative > 0.0:
+		var share := 1.0 / float(maxi(1, alpha.size() - 1))
+		for other_key in alpha.keys():
+			if other_key != selected_key:
+				alpha[other_key] = float(alpha[other_key]) + DIRICHLET_NEGATIVE_RATE * evidence_weight * negative * share
+	return alpha
 
 
 static func _no_tool_streak(progress: Dictionary) -> int:

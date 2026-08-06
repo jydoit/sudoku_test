@@ -2,6 +2,7 @@ extends SceneTree
 
 const LevelDirectorScript = preload("res://scripts/level_director.gd")
 const CoinEconomyScript = preload("res://scripts/coin_economy.gd")
+const CoinRewardPolicyScript = preload("res://scripts/coin_reward_policy.gd")
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const SAVE_PATH := "user://color_queens_save.json"
 
@@ -64,23 +65,30 @@ func _run() -> void:
 	assert(UITokensScript.board_border_width(7) == 3.0, "7x7 board border should follow the UI guide")
 	assert(UITokensScript.board_border_width(9) == 2.0, "9x9 board border should follow the UI guide")
 	assert(UITokensScript.CROWN_MAX_FONT_RATIO <= 0.72, "Opening crown scale should stay inside its cell")
-	assert(CoinEconomyScript.size_base_reward(5) < CoinEconomyScript.size_base_reward(9), "Larger boards should grant a larger base coin reward")
-	assert(CoinEconomyScript.level_base_reward(5, 1) < CoinEconomyScript.level_base_reward(5, 0), "Opening king levels should grant fewer coins")
-	var clean_reward := CoinEconomyScript.completion_reward(5, 0, 0)
-	var mistake_floor_reward := CoinEconomyScript.completion_reward(5, 0, 9)
-	assert(mistake_floor_reward == int(round(float(clean_reward) * 0.5)), "Mistake deductions should stop at half of the level base reward")
+	assert(CoinRewardPolicyScript.base_reward_for_display_level(1) == 1, "Opening levels should grant one base coin")
+	var size_six_unlock := LevelDirectorScript.minimum_display_for_size(6)
+	var size_seven_unlock := LevelDirectorScript.minimum_display_for_size(7)
+	var size_eight_unlock := LevelDirectorScript.minimum_display_for_size(8)
+	var size_nine_unlock := LevelDirectorScript.minimum_display_for_size(9)
+	assert(CoinRewardPolicyScript.base_reward_for_display_level(size_six_unlock - 1) == 1 and CoinRewardPolicyScript.base_reward_for_display_level(size_six_unlock) == 2, "The 6x6 unlock should raise the base reward to two coins")
+	assert(CoinRewardPolicyScript.base_reward_for_display_level(size_seven_unlock) == 3, "The 7x7 unlock should raise the base reward to three coins")
+	assert(CoinRewardPolicyScript.base_reward_for_display_level(size_eight_unlock) == 4, "The 8x8 unlock should raise the base reward to four coins")
+	assert(CoinRewardPolicyScript.base_reward_for_display_level(size_nine_unlock) == 5, "The 9x9 unlock should cap the base reward at five coins")
+	assert(CoinRewardPolicyScript.completion_reward(1, 3, 3) == 2, "A no-heart-loss multi-heart completion should round its 1.3x reward upward")
+	assert(CoinRewardPolicyScript.completion_reward(size_nine_unlock, 2, 2) == 7, "Excellent rewards should round five times 1.3 upward")
+	assert(CoinRewardPolicyScript.completion_reward(size_nine_unlock, 2, 1) == 5, "A heart-loss completion should receive the base reward")
+	assert(CoinRewardPolicyScript.completion_reward(size_nine_unlock, 1, 1) == 5, "Single-heart levels should not qualify for Excellent")
 	var economy_test_progress := CoinEconomyScript.default_progress()
-	var economy_base := CoinEconomyScript.level_base_reward(5, 0)
-	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_HINT, 5, 0) == economy_base, "Logic hint should cost one level base")
-	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_REVIVE, 5, 0) == economy_base * 2, "Revive should cost two level bases")
-	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_CROWN_FIND, 5, 0) == economy_base * 3, "Crown find should cost three level bases")
-	assert(CoinEconomyScript.rewarded_ad_coin_grant(economy_base * 3, 0, 5, 0) == economy_base * 3, "A rewarded ad should cover a full tool shortage")
-	assert(CoinEconomyScript.rewarded_ad_coin_grant(economy_base * 3, economy_base * 3 - 1, 5, 0) == economy_base, "A rewarded ad should grant at least one level base without over-funding the wallet")
+	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_HINT, 1) == 3, "A new user's hint fallback price should sum three one-coin rewards")
+	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_CROWN_FIND, 1) == 6, "A new user's crown-find fallback price should sum six one-coin rewards")
+	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_REVIVE, size_six_unlock) == 4, "Revive should retain a two-base price")
+	assert(CoinEconomyScript.rewarded_ad_coin_grant(6, 0, 1) == 6, "A rewarded ad should cover a full tool shortage")
+	assert(CoinEconomyScript.rewarded_ad_coin_grant(6, 5, 1) == 1, "A rewarded ad should grant at least one current base without over-funding the wallet")
 	for completion_index in range(3):
-		CoinEconomyScript.record_completion(economy_test_progress, completion_index + 1, 5, 0, 0, economy_base, 0)
-	var discounted_hint_price := CoinEconomyScript.tool_price(CoinEconomyScript.TOOL_HINT, 5, 0, economy_test_progress, 0)
-	assert(discounted_hint_price < economy_base, "Three completions without a coin exchange should discount the next tool price")
-	assert(CoinEconomyScript.tool_price(CoinEconomyScript.TOOL_HINT, 5, 0, economy_test_progress, 3) == economy_base, "Repeated exchanges should restore the standard tool price")
+		CoinEconomyScript.record_completion(economy_test_progress, completion_index + 1, completion_index + 1, 5, 3, 3, 2, 0)
+	assert(CoinEconomyScript.tool_price(CoinEconomyScript.TOOL_HINT, 4, economy_test_progress, 0) == 6, "Hint pricing should sum the latest three actual rewards")
+	assert(CoinEconomyScript.tool_price(CoinEconomyScript.TOOL_CROWN_FIND, 4, economy_test_progress, 0) == 9, "Crown-find pricing should use three actual rewards and backfill the remaining three")
+	assert(game.INITIAL_HINT_COUNT == 5 and game.INITIAL_CROWN_FIND_COUNT == 3, "New users should start with five hints and three crown finds")
 	assert(game._heart_limit_for_display_level(10) == 3, "The first ten display levels should keep three hearts")
 	assert(game._heart_limit_for_display_level(11) == 2 and game._heart_limit_for_display_level(30) == 2, "Display levels 11-30 should use two hearts")
 	assert(game._heart_limit_for_display_level(31) == 1, "Display level 31 onward should use one heart")
@@ -205,6 +213,10 @@ func _run() -> void:
 	assert(scheduled_opening_ids[9] == 7, "Display level 10 should use the first 5x5 hard board")
 	var level_index: Dictionary = LevelDirectorScript.build_level_index(game.levels)
 	assert(level_index[5]["simple"].slice(0, 5) == [0, 1, 2, 10, 11], "Level index should group levels by size and difficulty")
+	var composite_unlock_display := int(LevelDirectorScript.SIZE_UNLOCK_DISPLAY_LEVELS[6])
+	assert(LevelDirectorScript.minimum_display_for_size(6) == composite_unlock_display, "The 6x6 unlock display should have one shared source of truth")
+	assert(not LevelDirectorScript.is_size_unlocked(6, composite_unlock_display - 1), "6x6 should stay locked before its configured display level")
+	assert(LevelDirectorScript.is_size_unlocked(6, composite_unlock_display), "6x6 should unlock at its configured display level")
 	var recent_medium_ids := []
 	for raw_index in level_index[6]["medium"].slice(0, 3):
 		recent_medium_ids.append(int(game.levels[int(raw_index)]["levelId"]))
@@ -219,8 +231,9 @@ func _run() -> void:
 	assert(int(dynamic_schedule["displayLevel"]) == 11, "Dynamic schedule should keep the player-facing level number")
 	assert(not completed_ids.has(int(dynamic_schedule["levelId"])), "Dynamic schedule should skip already completed raw levelIds")
 	_validate_dynamic_king_positions(game.levels[int(dynamic_schedule["levelIndex"])], dynamic_schedule)
+	var size_six_probe_display := LevelDirectorScript.minimum_display_for_size(6) + 1
 	var cold_size_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": {}}
-	var cold_size_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 81, cold_size_progress)
+	var cold_size_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, size_six_probe_display, cold_size_progress)
 	assert(str(cold_size_schedule.get("mode", "")) == "new_size_probe", "A newly unlocked size should enter the cold-start probe branch")
 	assert(int(cold_size_schedule.get("selectedSize", 0)) == 6 and str(cold_size_schedule.get("selectedDifficulty", "")) == "medium", "A new size should prefer its Medium probe")
 	var size_quota_stats := {}
@@ -228,7 +241,7 @@ func _run() -> void:
 		for difficulty in ["simple", "medium", "hard", "challenge"]:
 			size_quota_stats["%d|%s" % [size, difficulty]] = {"plays": 12 if size == 5 else 1}
 	var size_quota_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": size_quota_stats}
-	var size_quota_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 81, size_quota_progress)
+	var size_quota_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, size_six_probe_display, size_quota_progress)
 	assert(int(size_quota_schedule.get("selectedSize", 0)) == 6, "The size exposure quota should prioritize the under-exposed size")
 	var no_tool_progress := {"completedLevelIds": [], "recentRuns": [
 		{"size": 5, "toolUses": 0},
@@ -241,11 +254,11 @@ func _run() -> void:
 		for difficulty in ["simple", "medium", "hard", "challenge"]:
 			recent_probe_stats["%d|%s" % [size, difficulty]] = {"plays": 1 if not (size == 6 and difficulty == "hard") else 0}
 	var recent_probe_progress := {"completedLevelIds": [], "recentRuns": [
-		{"displayLevel": 81, "size": 6, "toolUses": 0},
-		{"displayLevel": 82, "size": 6, "toolUses": 0},
-		{"displayLevel": 83, "size": 6, "toolUses": 0}
+		{"displayLevel": size_six_probe_display, "size": 6, "toolUses": 0},
+		{"displayLevel": size_six_probe_display + 1, "size": 6, "toolUses": 0},
+		{"displayLevel": size_six_probe_display + 2, "size": 6, "toolUses": 0}
 	], "statsByArm": recent_probe_stats}
-	var recent_probe_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 83, recent_probe_progress)
+	var recent_probe_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, size_six_probe_display + 2, recent_probe_progress)
 	assert(int(recent_probe_schedule.get("selectedSize", 0)) == 6 and str(recent_probe_schedule.get("selectedDifficulty", "")) == "hard", "Three no-tool runs should raise the recent-size probe to Hard")
 	assert(LevelDirectorScript._opening_king_count_for_size(5, RandomNumberGenerator.new()) == 1, "5x5 dynamic levels should reveal exactly one opening king")
 	for size in [6, 7, 8, 9]:
@@ -288,7 +301,7 @@ func _run() -> void:
 	assert(bool(challenge_schedule["isMilestoneChallenge"]), "Every tenth display level should be marked as a challenge")
 	assert(str(challenge_schedule["mode"]) == "challenge", "Milestone levels should use the challenge branch")
 	var challenge_arm := "%d|%s" % [int(challenge_schedule["selectedSize"]), str(challenge_schedule["selectedDifficulty"])]
-	assert(["5|challenge", "5|hard"].has(challenge_arm), "Milestone should either raise difficulty or keep the current size when larger boards are locked")
+	assert(["5|challenge", "5|hard", "6|challenge", "6|hard"].has(challenge_arm), "Milestone should choose a supported hard or challenge arm from the currently unlocked sizes")
 	var reward_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": {}}
 	LevelDirectorScript.record_completion(reward_progress, game.levels[0], LevelDirectorScript.schedule_for_display_level(game.levels, 1, {}), 2000.0, 10, 0, "2026-07-09", 1000)
 	var reward_run: Dictionary = reward_progress["recentRuns"][0]
@@ -522,10 +535,10 @@ func _run() -> void:
 
 	game._load_level(0)
 	var completion_coins_before: int = game.coin_count
-	var expected_completion_reward := CoinEconomyScript.completion_reward(
-		int(game.current_level["rows"]),
-		game.active_king_positions.size(),
-		0
+	var expected_completion_reward := CoinRewardPolicyScript.completion_reward(
+		game.player_level_number,
+		game.current_heart_limit,
+		game.heart_count
 	)
 	for coordinate in game.current_level["solution"]:
 		game._on_cell_double_pressed(int(coordinate[0]), int(coordinate[1]))
@@ -535,11 +548,19 @@ func _run() -> void:
 
 	await create_timer(1.2).timeout
 	assert(not game.result_reward_label.visible, "Success result should not show an unused crown reward")
+	assert(game.completion_title.text == game._t("EXCELLENT"), "A no-heart-loss multi-heart completion should display Excellent")
+	assert(game.result_petals_layer.visible and game.result_petals_layer.get_child_count() > 0, "Excellent should play the falling-petal celebration")
 	assert(game.result_piece_icon.texture in game.LION_KING_VICTORY_FRAMES, "Success result should animate with the lion wave frames")
 	assert(game.result_lion_wave_tween != null, "Success result should run the lion wave animation")
 	assert(game.result_lion_animation_name in ["wave", "tongue", "funny"], "Success result should randomly choose a supported lion animation")
 	assert(game.result_piece_icon.scale.is_equal_approx(Vector2.ONE), "Success lion should keep a fixed body scale")
 	assert(is_zero_approx(game.result_piece_icon.rotation), "Success lion should keep a fixed body position without rotation")
+	game.current_heart_limit = 1
+	game.heart_count = 1
+	game._prepare_success_result_page(5)
+	await process_frame
+	assert(game.completion_title.text == game._t("GOOD"), "A single-heart completion should display Good")
+	assert(not game.result_petals_layer.visible, "Good should stop and hide the falling-petal celebration")
 	game.queue_free()
 	await process_frame
 	_restore_save(had_save, previous_save)

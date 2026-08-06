@@ -4,6 +4,8 @@ const LevelStoreScript = preload("res://scripts/level_store.gd")
 const GameBoardScript = preload("res://scripts/game_board.gd")
 const LevelDirectorScript = preload("res://scripts/level_director.gd")
 const CoinEconomyScript = preload("res://scripts/coin_economy.gd")
+const CoinRewardPolicyScript = preload("res://scripts/coin_reward_policy.gd")
+const CompositeCoinPolicyScript = preload("res://scripts/composite_coin_policy.gd")
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const ToolIconScript = preload("res://scripts/tool_icon.gd")
 const RuleIllustrationScript = preload("res://scripts/rule_illustration.gd")
@@ -12,6 +14,7 @@ const LocalizationControllerScript = preload("res://scripts/localization_control
 const AudioControllerScript = preload("res://scripts/audio_controller.gd")
 const CompositeLevelScript = preload("res://scripts/composite_level.gd")
 const CompositeLevelStoreScript = preload("res://scripts/composite_level_store.gd")
+const CompositeLevelDirectorScript = preload("res://scripts/composite_level_director.gd")
 const AssemblyViewScript = preload("res://scripts/assembly_view.gd")
 const UI_FONT: Font = preload("res://assets/fonts/NotoSansSC-Regular.ttf")
 const ARABIC_FONT: Font = preload("res://assets/fonts/NotoSansArabic-Regular.ttf")
@@ -39,8 +42,8 @@ const LION_KING_VICTORY_FRAMES = [
 	LION_KING_VICTORY_FUNNY_ICON
 ]
 const SAVE_PATH := "user://color_queens_save.json"
-const SAVE_VERSION := 13
-const INITIAL_HINT_COUNT := 3
+const SAVE_VERSION := 15
+const INITIAL_HINT_COUNT := 5
 const INITIAL_HEART_COUNT := 3
 const INITIAL_CROWN_FIND_COUNT := 3
 const INK := UITokensScript.INK
@@ -62,8 +65,6 @@ const TUTORIAL_PHASE_CROWN_FIND := 5
 const TUTORIAL_PHASE_DONE := 6
 const REGION_COLOR_NAMES = UITokensScript.REGION_COLOR_NAMES
 const REGION_COLORS = UITokensScript.REGION_COLORS
-const HOME_COMPOSITE_DIFFICULTY_PATTERNS := ["simple", "medium", "hard"]
-
 const TUTORIAL_LEVELS = [
 	{
 		"levelId": -101,
@@ -96,6 +97,8 @@ var cell_states: Array = []
 var move_history: Array = []
 var completed_levels: Array = []
 var director_progress: Dictionary = {}
+var composite_director_progress: Dictionary = {}
+var composite_coin_progress: Dictionary = CompositeCoinPolicyScript.default_progress()
 var economy_progress: Dictionary = CoinEconomyScript.default_progress()
 var coin_count := 55
 var heart_count := INITIAL_HEART_COUNT
@@ -200,6 +203,7 @@ var result_icon_label: Label
 var result_piece_icon: TextureRect
 var result_reward_label: Label
 var result_tip_label: Label
+var result_petals_layer: Control
 var completion_next_button: Button
 var completion_replay_button: Button
 var toast_label: Label
@@ -223,6 +227,7 @@ var tutorial_hand_tween: Tween
 var opening_king_tween: Tween
 var result_lion_tween: Tween
 var result_lion_wave_tween: Tween
+var result_petal_tweens: Array[Tween] = []
 var result_lion_animation_name := ""
 var opening_king_flyers: Array[TextureRect] = []
 var opening_king_animation_token := 0
@@ -926,6 +931,13 @@ func _build_completion_overlay() -> void:
 	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	completion_overlay.add_child(glow)
 
+	result_petals_layer = Control.new()
+	result_petals_layer.name = "ResultPetalsLayer"
+	result_petals_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	result_petals_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	result_petals_layer.hide()
+	completion_overlay.add_child(result_petals_layer)
+
 	var safe_area := MarginContainer.new()
 	safe_area.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	safe_area.add_theme_constant_override("margin_left", 30)
@@ -1348,6 +1360,7 @@ func _sync_director_completed_levels() -> void:
 
 func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = {}, force_resume: bool = false) -> void:
 	_cancel_opening_king_intro()
+	_stop_result_petals()
 	in_tutorial = false
 	if coach_panel:
 		coach_panel.hide()
@@ -2382,11 +2395,16 @@ func _current_tool_price(tool: String) -> int:
 		return 1
 	return CoinEconomyScript.tool_price(
 		tool,
-		int(current_level.get("rows", 5)),
-		active_king_positions.size(),
+		_economy_display_level(),
 		economy_progress,
 		run_coin_exchange_count
 	)
+
+
+func _economy_display_level() -> int:
+	if home_composite_entry_active and not home_composite_progress_snapshot.is_empty():
+		return maxi(1, int(home_composite_progress_snapshot.get("playerLevelNumber", player_level_number)))
+	return maxi(1, player_level_number)
 
 
 func _spend_coins_for_tool(tool: String) -> bool:
@@ -2409,8 +2427,7 @@ func _show_coin_shortage_dialog(tool: String, price: int) -> void:
 	pending_rewarded_coin_grant = CoinEconomyScript.rewarded_ad_coin_grant(
 		price,
 		coin_count,
-		int(current_level.get("rows", 5)),
-		active_king_positions.size()
+		_economy_display_level()
 	)
 	var tool_name := "逻辑提示"
 	if tool == CoinEconomyScript.TOOL_CROWN_FIND:
@@ -4640,6 +4657,7 @@ func _push_tutorial_history() -> void:
 func _show_tutorial_challenge_ready() -> void:
 	is_completed = true
 	result_overlay_mode = "tutorial"
+	_stop_result_petals()
 	coach_label.text = "已经了解全部规则，开始真正的挑战吧！"
 	coach_label.add_theme_color_override("font_color", Color("#31506D"))
 	coach_label.add_theme_font_size_override("font_size", COACH_TUTORIAL_SIZE)
@@ -4744,11 +4762,21 @@ func _complete_level() -> void:
 		return
 	is_completed = true
 	if home_composite_entry_active:
+		var composite_reward := int(active_schedule.get(
+			"compositeCoinReward",
+			CompositeCoinPolicyScript.base_reward_for_round(home_composite_round)
+		))
+		coin_count += maxi(0, composite_reward)
+		CompositeCoinPolicyScript.record_round_completed(composite_coin_progress, composite_reward)
+		_sync_home_composite_shared_coin_balance()
+		_record_home_composite_result(true)
+		_update_coin_label()
+		_update_home()
 		board.play_victory()
 		audio_controller.play_victory()
 		_save_game()
 		await get_tree().create_timer(0.55).timeout
-		_prepare_success_result_page()
+		_prepare_success_result_page(composite_reward)
 		completion_overlay.show()
 		completion_overlay.modulate.a = 0.0
 		var entry_tween := create_tween()
@@ -4757,15 +4785,15 @@ func _complete_level() -> void:
 	var level_id := int(current_level["levelId"])
 	if not completed_levels.has(level_id):
 		completed_levels.append(level_id)
-	var mistake_count := maxi(0, current_heart_limit - heart_count)
-	var reward := CoinEconomyScript.completion_reward(int(current_level.get("rows", 5)), active_king_positions.size(), mistake_count)
+	var reward := CoinRewardPolicyScript.completion_reward(player_level_number, current_heart_limit, heart_count)
 	coin_count += reward
 	CoinEconomyScript.record_completion(
 		economy_progress,
 		level_id,
+		player_level_number,
 		int(current_level.get("rows", 5)),
-		active_king_positions.size(),
-		mistake_count,
+		current_heart_limit,
+		heart_count,
 		reward,
 		run_coin_exchange_count
 	)
@@ -4785,7 +4813,8 @@ func _complete_level() -> void:
 
 func _prepare_success_result_page(reward: int = 0) -> void:
 	result_overlay_mode = "success"
-	completion_title.text = _t("太棒了！")
+	var excellent := not home_composite_entry_active and CoinRewardPolicyScript.is_excellent_completion(current_heart_limit, heart_count)
+	completion_title.text = _t("EXCELLENT") if excellent else _t("GOOD")
 	reward_label.text = _t("拼块挑战 · 第 %d 局完成", [maxi(1, home_composite_round)]) if home_composite_entry_active else _t("第 %d 关 已完成", [player_level_number])
 	if result_icon_label:
 		result_icon_label.hide()
@@ -4795,18 +4824,31 @@ func _prepare_success_result_page(reward: int = 0) -> void:
 	if result_reward_label:
 		result_reward_label.hide()
 	if result_tip_label:
-		result_tip_label.text = _t("主线进度保持不变") if home_composite_entry_active else (_t("金币 +%d", [reward]) if reward > 0 else _t("本关已完成，继续挑战"))
+		if reward <= 0:
+			if home_composite_entry_active:
+				reward = int(active_schedule.get("compositeCoinReward", CompositeCoinPolicyScript.base_reward_for_round(home_composite_round)))
+			else:
+				reward = CoinRewardPolicyScript.completion_reward(player_level_number, current_heart_limit, heart_count)
+		result_tip_label.text = _t("金币 +%d", [reward]) if reward > 0 else _t("本关已完成，继续挑战")
 	if completion_next_button:
-		completion_next_button.text = _t("下一局") if home_composite_entry_active else _t("下一关")
+		if home_composite_entry_active:
+			var next_quote := _home_composite_round_quote(home_composite_round + 1)
+			completion_next_button.text = _t("下一局 -%d", [int(next_quote.get("entryCost", 0))]) if bool(next_quote.get("paid", false)) else _t("下一局")
+		else:
+			completion_next_button.text = _t("下一关")
 	if completion_replay_button:
 		completion_replay_button.text = _t("主菜单")
 		completion_replay_button.show()
+	_stop_result_petals()
+	if excellent:
+		call_deferred("_play_result_petals")
 	call_deferred("_play_result_lion_animation")
 
 
 func _prepare_failure_result_page() -> void:
 	result_overlay_mode = "failure"
 	_stop_result_lion_animation()
+	_stop_result_petals()
 	completion_title.text = _t("挑战失败")
 	reward_label.text = _t("拼块挑战 · 第 %d 局未完成", [maxi(1, home_composite_round)]) if home_composite_entry_active else _t("第 %d 关 未完成", [player_level_number])
 	if result_icon_label:
@@ -4833,6 +4875,7 @@ func _show_composite_deadlock() -> void:
 		return
 	result_overlay_mode = "assembly_deadlock"
 	_stop_result_lion_animation()
+	_stop_result_petals()
 	assembly_view.input_locked = true
 	completion_title.text = _t("拼块死局")
 	reward_label.text = _t("同色区域已被隔离")
@@ -4953,6 +4996,58 @@ func _stop_result_lion_animation() -> void:
 		result_piece_icon.modulate = Color.WHITE
 
 
+func _play_result_petals() -> void:
+	if not result_petals_layer or not completion_overlay.visible or result_overlay_mode != "success":
+		return
+	_stop_result_petals()
+	result_petals_layer.show()
+	var viewport_size := completion_overlay.size
+	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+		viewport_size = get_viewport_rect().size
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var colors := [Color("#FFD86B"), Color("#FF8FA8"), Color("#F7A7D8"), Color("#FFF3C4"), Color("#A8E6CF")]
+	for index in range(24):
+		var petal := Polygon2D.new()
+		var scale_factor := rng.randf_range(0.72, 1.22)
+		petal.polygon = PackedVector2Array([
+			Vector2(-4, 1), Vector2(-3, -5), Vector2(0, -9),
+			Vector2(4, -5), Vector2(5, 1), Vector2(0, 7)
+		])
+		petal.scale = Vector2.ONE * scale_factor
+		petal.color = colors[index % colors.size()]
+		petal.position = Vector2(rng.randf_range(8.0, viewport_size.x - 8.0), rng.randf_range(-110.0, -18.0))
+		petal.rotation = rng.randf_range(-PI, PI)
+		petal.visible = false
+		result_petals_layer.add_child(petal)
+		var delay := rng.randf_range(0.0, 0.95)
+		var duration := rng.randf_range(1.85, 2.75)
+		var end_position := Vector2(
+			clampf(petal.position.x + rng.randf_range(-90.0, 90.0), 8.0, viewport_size.x - 8.0),
+			viewport_size.y + 35.0
+		)
+		var petal_tween := petal.create_tween()
+		petal_tween.tween_interval(delay)
+		petal_tween.tween_callback(petal.show)
+		petal_tween.tween_property(petal, "position", end_position, duration).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+		petal_tween.parallel().tween_property(petal, "rotation", petal.rotation + rng.randf_range(PI * 2.0, PI * 5.0), duration)
+		petal_tween.parallel().tween_property(petal, "modulate:a", 0.08, duration * 0.28).set_delay(duration * 0.72)
+		petal_tween.tween_callback(petal.queue_free)
+		result_petal_tweens.append(petal_tween)
+
+
+func _stop_result_petals() -> void:
+	for petal_tween in result_petal_tweens:
+		if petal_tween and petal_tween.is_valid():
+			petal_tween.kill()
+	result_petal_tweens.clear()
+	if not result_petals_layer:
+		return
+	for child in result_petals_layer.get_children():
+		child.queue_free()
+	result_petals_layer.hide()
+
+
 func _record_level_result() -> void:
 	_sync_director_completed_levels()
 	var completed_unix := int(Time.get_unix_time_from_system())
@@ -4967,6 +5062,23 @@ func _record_level_failure() -> void:
 	var elapsed := maxf(1.0, float(failed_unix - run_started_unix))
 	LevelDirectorScript.record_failure(director_progress, current_level, active_schedule, elapsed, run_move_count, run_hint_count, _today_string(), failed_unix, run_direct_find_count)
 	_sync_director_completed_levels()
+
+
+func _record_home_composite_result(completed: bool) -> void:
+	var completed_unix := int(Time.get_unix_time_from_system())
+	var elapsed := maxf(1.0, float(completed_unix - run_started_unix))
+	CompositeLevelDirectorScript.record_result(
+		composite_director_progress,
+		current_level,
+		active_schedule,
+		completed,
+		elapsed,
+		run_move_count,
+		run_hint_count,
+		_today_string(),
+		completed_unix,
+		run_direct_find_count
+	)
 
 
 func _next_level() -> void:
@@ -5348,6 +5460,12 @@ func _load_save() -> void:
 	var loaded_progress = data.get("directorProgress", {})
 	director_progress = loaded_progress if loaded_progress is Dictionary else {}
 	LevelDirectorScript.normalize_progress(director_progress)
+	var loaded_composite_director_progress = data.get("compositeDirectorProgress", {})
+	composite_director_progress = loaded_composite_director_progress if loaded_composite_director_progress is Dictionary else {}
+	CompositeLevelDirectorScript.normalize_progress(composite_director_progress)
+	var loaded_composite_coin_progress = data.get("compositeCoinProgress", {})
+	composite_coin_progress = loaded_composite_coin_progress if loaded_composite_coin_progress is Dictionary else CompositeCoinPolicyScript.default_progress()
+	CompositeCoinPolicyScript.normalize_progress(composite_coin_progress, _today_string())
 	var loaded_economy = data.get("economyProgress", {})
 	economy_progress = loaded_economy if loaded_economy is Dictionary else CoinEconomyScript.default_progress()
 	CoinEconomyScript.normalize_progress(economy_progress)
@@ -5542,6 +5660,8 @@ func _save_game() -> void:
 		"playerLevelNumber": player_level_number,
 		"activeSchedule": active_schedule,
 		"directorProgress": director_progress,
+		"compositeDirectorProgress": composite_director_progress,
+		"compositeCoinProgress": composite_coin_progress,
 		"economyProgress": economy_progress,
 		"runStartedUnix": run_started_unix,
 		"runMoveCount": run_move_count,
@@ -5659,7 +5779,9 @@ func _fail_level() -> void:
 	if is_completed or is_failed:
 		return
 	is_failed = true
-	if not home_composite_entry_active and not _is_assembly_phase():
+	if home_composite_entry_active:
+		_record_home_composite_result(false)
+	elif not _is_assembly_phase():
 		_record_level_failure()
 	active_hint_step.clear()
 	active_hint_stage = 0
@@ -5732,6 +5854,7 @@ func _show_home() -> void:
 	_hide_tutorial_hand()
 	_cancel_opening_king_intro(false)
 	_stop_result_lion_animation()
+	_stop_result_petals()
 	_stop_heart_tweens()
 	if home_composite_entry_active:
 		_update_home_composite_history()
@@ -5764,14 +5887,29 @@ func _start_home_composite_flow() -> void:
 	if not tutorial_completed:
 		_start_current_flow()
 		return
+	if not _home_composite_is_unlocked():
+		_show_home_composite_locked_dialog()
+		return
+	var history := home_composite_history.duplicate(true)
+	var can_resume_history := _home_composite_history_is_valid(history) and not bool(history.get("isCompleted", false))
+	var target_round := _home_composite_resume_round()
+	var candidate: Dictionary = {}
+	var round_quote: Dictionary = {}
+	if not can_resume_history:
+		round_quote = _home_composite_round_quote(target_round)
+		if bool(round_quote.get("paid", false)) and coin_count < int(round_quote.get("entryCost", 0)):
+			_show_home_composite_coin_shortage(round_quote)
+			return
+		candidate = _home_composite_candidate(target_round)
+		if candidate.is_empty():
+			_show_toast("暂时没有可用的拼块关卡")
+			return
 	if not _capture_formal_progress_snapshot():
 		_show_toast("当前关卡现场暂时无法保存")
 		return
 	home_composite_progress_snapshot = formal_progress_snapshot.duplicate(true)
 	formal_progress_snapshot.clear()
 	home_composite_entry_active = true
-	var history := home_composite_history.duplicate(true)
-	var can_resume_history := _home_composite_history_is_valid(history) and not bool(history.get("isCompleted", false))
 	if can_resume_history:
 		home_composite_round = maxi(1, int(history.get("round", 1)))
 		resume_level_id = int(history.get("levelId", -1))
@@ -5792,30 +5930,31 @@ func _start_home_composite_flow() -> void:
 		var schedule: Dictionary = saved_schedule.duplicate(true) if saved_schedule is Dictionary else {}
 		_load_level(int(history.get("levelIndex", 0)), true, schedule, true)
 	else:
-		var target_round := _home_composite_resume_round()
-		var candidate := _home_composite_candidate(target_round)
-		if candidate.is_empty():
-			_restore_home_composite_progress()
-			_show_toast("暂时没有可用的 6×6 拼块关卡")
-			return
 		home_composite_round = target_round
 		resume_level_id = -1
 		resume_states.clear()
 		resume_completed = false
 		resume_failed = false
 		resume_composite_state.clear()
-		var schedule: Dictionary = candidate["schedule"]
+		var schedule := _home_composite_schedule_with_coin_quote(candidate["schedule"], round_quote)
 		_load_level(int(candidate["levelIndex"]), false, schedule)
 	if not composite_mode:
 		_restore_home_composite_progress()
 		_show_toast("拼块关卡加载失败，请重试")
 		return
+	if not can_resume_history:
+		_apply_home_composite_round_entry(round_quote)
 	_show_game()
 	_save_game()
 
 
 func _start_next_home_composite_round() -> void:
 	var next_round := home_composite_round + 1
+	var round_quote := _home_composite_round_quote(next_round)
+	if bool(round_quote.get("paid", false)) and coin_count < int(round_quote.get("entryCost", 0)):
+		_show_home_composite_coin_shortage(round_quote)
+		completion_overlay.show()
+		return
 	var candidate := _home_composite_candidate(next_round)
 	if candidate.is_empty():
 		_show_toast("下一局生成失败，请重试")
@@ -5825,53 +5964,105 @@ func _start_next_home_composite_round() -> void:
 	resume_level_id = -1
 	resume_states.clear()
 	resume_composite_state.clear()
-	_load_level(int(candidate["levelIndex"]), false, candidate["schedule"])
+	var schedule := _home_composite_schedule_with_coin_quote(candidate["schedule"], round_quote)
+	_load_level(int(candidate["levelIndex"]), false, schedule)
 	if not _is_assembly_phase():
 		home_composite_round -= 1
 		_show_toast("下一局生成失败，请重试")
 		completion_overlay.show()
 		return
+	_apply_home_composite_round_entry(round_quote)
 	_show_game()
 	_save_game()
 
 
+func _home_composite_round_quote(round_number: int) -> Dictionary:
+	return CompositeCoinPolicyScript.round_quote(
+		maxi(1, round_number),
+		composite_coin_progress,
+		_today_string()
+	)
+
+
+func _home_composite_schedule_with_coin_quote(raw_schedule: Dictionary, quote: Dictionary) -> Dictionary:
+	var schedule := raw_schedule.duplicate(true)
+	schedule["compositeCoinBaseReward"] = int(quote.get("baseReward", 0))
+	schedule["compositeCoinReward"] = int(quote.get("reward", 0))
+	schedule["compositeEntryCost"] = int(quote.get("entryCost", 0))
+	schedule["compositePaidEntry"] = bool(quote.get("paid", false))
+	return schedule
+
+
+func _apply_home_composite_round_entry(quote: Dictionary) -> void:
+	var entry_cost := int(quote.get("entryCost", 0))
+	if bool(quote.get("paid", false)):
+		coin_count = maxi(0, coin_count - entry_cost)
+	CompositeCoinPolicyScript.record_round_started(composite_coin_progress, _today_string(), quote)
+	_sync_home_composite_shared_coin_balance()
+	_update_coin_label()
+	_update_home()
+	if entry_cost > 0:
+		_show_toast(_t("拼块入场 -%d 金币", [entry_cost]))
+
+
+func _sync_home_composite_shared_coin_balance() -> void:
+	if not home_composite_progress_snapshot.is_empty():
+		home_composite_progress_snapshot["coinCount"] = coin_count
+
+
+func _show_home_composite_coin_shortage(quote: Dictionary) -> void:
+	var entry_cost := int(quote.get("entryCost", 0))
+	var reward := int(quote.get("reward", 0))
+	dialog_controller.show_dialog(
+		"home_composite_coin_shortage",
+		_t("金币不足"),
+		_t("今日免费拼块次数已用完。本局需要 %d 金币，完成后可获得 %d 金币。", [entry_cost, reward]),
+		"",
+		[{"id": "confirm", "text": _t("知道了"), "variant": "primary"}],
+		UITokensScript.DIALOG_STANDARD_WIDTH,
+		false
+	)
+
+
 func _home_composite_candidate(round_number: int = 1) -> Dictionary:
-	var candidate_indices: Array[int] = []
-	for index in range(levels.size()):
-		var level: Dictionary = levels[index]
-		if int(level.get("rows", 0)) == 6 and int(level.get("cols", 0)) == 6:
-			candidate_indices.append(index)
-	if candidate_indices.is_empty():
-		return {}
-	var safe_round := maxi(1, round_number)
-	var difficulty_pattern := _home_composite_pattern_for_round(safe_round)
-	var start_offset := posmod(safe_round - 1, candidate_indices.size())
-	for candidate_offset in range(candidate_indices.size()):
-		var index := candidate_indices[(start_offset + candidate_offset) % candidate_indices.size()]
-		var level: Dictionary = levels[index]
-		var offline_data := CompositeLevelStoreScript.find(
-			composite_levels,
-			int(level.get("levelId", -1)),
-			difficulty_pattern
-		)
-		if offline_data.is_empty():
-			continue
-		var schedule := LevelDirectorScript.manual_schedule_for_level(levels, index, 1, "home_composite")
-		schedule["assemblyEnabled"] = true
-		schedule["assemblySeed"] = int(offline_data.get("seed", 0))
-		schedule["assemblyDifficultyPattern"] = difficulty_pattern
-		schedule["homeCompositeRound"] = safe_round
-		return {
-			"levelIndex": index,
-			"difficultyPattern": difficulty_pattern,
-			"schedule": schedule
-		}
-	return {}
+	var formal_display := int(home_composite_progress_snapshot.get("playerLevelNumber", player_level_number))
+	return CompositeLevelDirectorScript.recommend(
+		levels,
+		composite_levels,
+		maxi(1, round_number),
+		maxi(1, formal_display),
+		composite_director_progress
+	)
 
 
-func _home_composite_pattern_for_round(round_number: int) -> String:
-	var safe_round := maxi(1, round_number)
-	return HOME_COMPOSITE_DIFFICULTY_PATTERNS[posmod(safe_round - 1, HOME_COMPOSITE_DIFFICULTY_PATTERNS.size())]
+func _home_composite_unlock_display_level() -> int:
+	return LevelDirectorScript.minimum_display_for_size(CompositeLevelDirectorScript.MIN_BOARD_SIZE)
+
+
+func _home_composite_formal_display_level() -> int:
+	if home_composite_entry_active and not home_composite_progress_snapshot.is_empty():
+		return maxi(1, int(home_composite_progress_snapshot.get("playerLevelNumber", player_level_number)))
+	return maxi(1, player_level_number)
+
+
+func _home_composite_is_unlocked() -> bool:
+	return LevelDirectorScript.is_size_unlocked(
+		CompositeLevelDirectorScript.MIN_BOARD_SIZE,
+		_home_composite_formal_display_level()
+	)
+
+
+func _show_home_composite_locked_dialog() -> void:
+	var unlock_display := _home_composite_unlock_display_level()
+	dialog_controller.show_dialog(
+		"home_composite_locked",
+		_t("拼块玩法尚未解锁"),
+		_t("玩到第 %d 关，即可解锁 6×6 拼块玩法。", [unlock_display]),
+		"",
+		[{"id": "confirm", "text": _t("知道了"), "variant": "primary"}],
+		UITokensScript.DIALOG_STANDARD_WIDTH,
+		false
+	)
 
 
 func _replay_tutorial_preserving_progress() -> void:
@@ -5952,7 +6143,15 @@ func _update_home() -> void:
 			home_start_button.text = "开始新手教程"
 	if home_composite_button:
 		var saved_round := _home_composite_resume_round()
-		home_composite_button.text = _t("拼块玩法") if home_composite_history.is_empty() else _t("拼块玩法 · 第 %d 局", [saved_round])
+		if tutorial_completed and not _home_composite_is_unlocked():
+			home_composite_button.text = _t("拼块玩法 · 第 %d 关解锁", [_home_composite_unlock_display_level()])
+		else:
+			var has_unfinished_round := _home_composite_history_is_valid(home_composite_history) and not bool(home_composite_history.get("isCompleted", false))
+			var quote := _home_composite_round_quote(saved_round)
+			if not has_unfinished_round and bool(quote.get("paid", false)):
+				home_composite_button.text = _t("拼块玩法 · -%d 金币", [int(quote.get("entryCost", 0))])
+			else:
+				home_composite_button.text = _t("拼块玩法") if home_composite_history.is_empty() else _t("拼块玩法 · 第 %d 局", [saved_round])
 		home_composite_button.disabled = not tutorial_completed
 	_refresh_level_select_picker()
 
