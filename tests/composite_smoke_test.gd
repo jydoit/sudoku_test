@@ -184,6 +184,13 @@ func _run() -> void:
 	assert(game.home_composite_round == 3 and CompositeLevelDirectorScript.PATTERNS.has(third_pattern), "The third block round should sample a supported assembly pattern")
 	assert(int(game.composite_coin_progress.get("dailyFreeRoundsUsed", 0)) == 3, "Starting three new block rounds should consume three daily free entries")
 	assert(game.coin_count == formal_coins, "The first five daily block rounds should not deduct entry coins")
+	game._play_coin_deduction_animation(10, 8, 2)
+	await process_frame
+	assert(game.coin_delta_panel != null and game.coin_delta_panel.visible, "A paid block entry should show a floating coin deduction indicator")
+	assert(game.coin_delta_label.text == "−2", "The entry animation should expose the exact deducted amount")
+	await create_timer(0.85).timeout
+	assert(game.coin_label.text == "8" and not game.coin_delta_panel.visible, "The level coin balance should roll down and finish at the deducted balance")
+	game._update_coin_label()
 	game.localization.set_locale("en")
 	assert(game._composite_result_coin_text(2, 0, false) == "Daily free round · No entry coins deducted\nCompletion reward: 2 coins", "A free block result should clearly state that no entry coins were deducted")
 	assert(game._composite_result_coin_text(4, 2, true) == "Entry: -2 coins · Reward: +4 coins\nNet change: +2 coins", "A paid block result should clearly separate entry cost, reward, and net change")

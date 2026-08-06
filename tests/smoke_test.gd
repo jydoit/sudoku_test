@@ -187,6 +187,35 @@ func _run() -> void:
 	var localized_dialog_action: Button = game.dialog_controller.find_child("DialogAction_close", true, false)
 	assert(localized_dialog_title.text == "Rules" and localized_dialog_action.text == "Got it", "Raw dialog copy must be localized by DialogController")
 	game.dialog_controller.hide_dialog(true)
+	var saved_formal_snapshot: Dictionary = game.formal_progress_snapshot.duplicate(true)
+	assert(game._capture_formal_progress_snapshot(), "Skip-tutorial localization requires a saved formal level fixture")
+	game.in_tutorial = true
+	game._request_skip_tutorial()
+	await process_frame
+	var skip_dialog_message := game.dialog_controller.find_child("DialogMessage", true, false) as Label
+	var continue_tutorial_action := game.dialog_controller.find_child("DialogAction_continue", true, false) as Button
+	var confirm_skip_action := game.dialog_controller.find_child("DialogAction_skip", true, false) as Button
+	assert(localized_dialog_title.text == "Skip the tutorial?", "Skip-tutorial title must follow the active English locale")
+	assert(skip_dialog_message.text == "You will return to your saved level and the tutorial will no longer open automatically.", "Skip-tutorial snapshot copy must not retain hard-coded Chinese")
+	assert(continue_tutorial_action.text == "Continue" and confirm_skip_action.text == "Skip", "Skip-tutorial actions must follow the active English locale")
+	game.dialog_controller.hide_dialog(true)
+	await process_frame
+	for locale in ["ar", "fr", "la"]:
+		game.localization.set_locale(locale)
+		game._request_skip_tutorial()
+		await process_frame
+		var localized_skip_actions: Array[Node] = game.dialog_controller._action_row.get_children()
+		assert(localized_skip_actions.size() == 2, "Skip-tutorial dialog should expose two actions in locale %s" % locale)
+		continue_tutorial_action = localized_skip_actions[0] as Button
+		confirm_skip_action = localized_skip_actions[1] as Button
+		assert(not _contains_cjk(localized_dialog_title.text), "Skip-tutorial title must not leak Chinese in locale %s" % locale)
+		assert(not _contains_cjk(skip_dialog_message.text), "Skip-tutorial message must not leak Chinese in locale %s" % locale)
+		assert(not _contains_cjk(continue_tutorial_action.text) and not _contains_cjk(confirm_skip_action.text), "Skip-tutorial actions must not leak Chinese in locale %s" % locale)
+		game.dialog_controller.hide_dialog(true)
+		await process_frame
+	game.localization.set_locale("en")
+	game.in_tutorial = false
+	game.formal_progress_snapshot = saved_formal_snapshot
 	var leaked_english_copy := _cjk_control_copy(game, game.language_picker)
 	assert(leaked_english_copy.is_empty(), "English UI must not retain hard-coded CJK copy: %s" % ", ".join(leaked_english_copy))
 	game.localization.set_locale("zh")
@@ -588,7 +617,9 @@ func _run() -> void:
 	assert(int(game.economy_progress["totalCoinEarned"]) >= expected_completion_reward, "Economy progress should retain earned-coin totals")
 
 	await create_timer(1.2).timeout
-	assert(not game.result_reward_label.visible, "Success result should not show an unused crown reward")
+	assert(game.result_reward_label.visible, "Success result should show the real coin reward counter")
+	assert(game.result_reward_label.text == game._t("金币 +%d", [expected_completion_reward]), "The result coin counter should finish at the granted reward")
+	assert(game.result_coin_tween != null, "Granted coins should use a rolling count-up animation on the result page")
 	assert(game.completion_title.text == game._t("EXCELLENT"), "A no-heart-loss multi-heart completion should display Excellent")
 	assert(game.result_petals_layer.visible and game.result_petals_layer.get_child_count() > 0, "Excellent should play the falling-petal celebration")
 	assert(game.result_piece_icon.texture in game.LION_KING_VICTORY_FRAMES, "Success result should animate with the lion wave frames")

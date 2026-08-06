@@ -237,7 +237,12 @@ var tutorial_hand_tween: Tween
 var opening_king_tween: Tween
 var result_lion_tween: Tween
 var result_lion_wave_tween: Tween
+var coin_balance_tween: Tween
+var coin_delta_tween: Tween
+var result_coin_tween: Tween
 var result_petal_tweens: Array[Tween] = []
+var coin_delta_panel: PanelContainer
+var coin_delta_label: Label
 var result_lion_animation_name := ""
 var opening_king_flyers: Array[TextureRect] = []
 var opening_king_animation_token := 0
@@ -4697,6 +4702,7 @@ func _push_tutorial_history() -> void:
 func _show_tutorial_challenge_ready() -> void:
 	is_completed = true
 	result_overlay_mode = "tutorial"
+	_stop_result_coin_animation()
 	_stop_result_petals()
 	coach_label.text = _t("已经了解全部规则，开始真正的挑战吧！")
 	coach_label.add_theme_color_override("font_color", Color("#31506D"))
@@ -4755,11 +4761,15 @@ func _next_tutorial_step() -> void:
 
 func _request_skip_tutorial() -> void:
 	if in_tutorial:
-		var destination := "返回进入教程前的关卡现场。" if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else "直接进入第 1 关。"
+		var skip_message := (
+			"跳过后会返回进入教程前的关卡现场，之后不再自动显示新手教程。"
+			if _formal_progress_snapshot_is_valid(formal_progress_snapshot)
+			else "跳过后会直接进入第 1 关，之后不再自动显示新手教程。"
+		)
 		dialog_controller.show_dialog(
 			"tutorial_skip",
 			"跳过新手教程？",
-			"跳过后会%s之后不再自动显示新手教程。" % destination,
+			skip_message,
 			"",
 			[
 				{"id": "continue", "text": "继续教程", "variant": "secondary"},
@@ -4856,27 +4866,33 @@ func _prepare_success_result_page(reward: int = 0) -> void:
 	var excellent := not home_composite_entry_active and CoinRewardPolicyScript.is_excellent_completion(current_heart_limit, heart_count)
 	completion_title.text = _t("EXCELLENT") if excellent else _t("GOOD")
 	reward_label.text = _t("拼块挑战 · 第 %d 局完成", [maxi(1, home_composite_round)]) if home_composite_entry_active else _t("第 %d 关 已完成", [player_level_number])
+	if reward <= 0:
+		if home_composite_entry_active:
+			reward = int(active_schedule.get("compositeCoinReward", CompositeCoinPolicyScript.base_reward_for_round(home_composite_round)))
+		else:
+			reward = CoinRewardPolicyScript.completion_reward(player_level_number, current_heart_limit, heart_count)
 	if result_icon_label:
 		result_icon_label.hide()
 	if result_piece_icon:
 		result_piece_icon.texture = LION_KING_VICTORY_ICON
 		result_piece_icon.show()
+	_stop_result_coin_animation()
 	if result_reward_label:
-		result_reward_label.hide()
+		if reward > 0:
+			result_reward_label.text = _t("金币 +%d", [0])
+			result_reward_label.show()
+			call_deferred("_play_result_coin_animation", reward)
+		else:
+			result_reward_label.hide()
 	if result_tip_label:
-		if reward <= 0:
-			if home_composite_entry_active:
-				reward = int(active_schedule.get("compositeCoinReward", CompositeCoinPolicyScript.base_reward_for_round(home_composite_round)))
-			else:
-				reward = CoinRewardPolicyScript.completion_reward(player_level_number, current_heart_limit, heart_count)
-			if home_composite_entry_active and reward > 0:
-				result_tip_label.text = _composite_result_coin_text(
-					reward,
-					int(active_schedule.get("compositeEntryCost", 0)),
-					bool(active_schedule.get("compositePaidEntry", false))
-				)
-			else:
-				result_tip_label.text = _t("金币 +%d", [reward]) if reward > 0 else _t("本关已完成，继续挑战")
+		if home_composite_entry_active and reward > 0:
+			result_tip_label.text = _composite_result_coin_text(
+				reward,
+				int(active_schedule.get("compositeEntryCost", 0)),
+				bool(active_schedule.get("compositePaidEntry", false))
+			)
+		else:
+			result_tip_label.text = _t("金币 +%d", [reward]) if reward > 0 else _t("本关已完成，继续挑战")
 	if completion_next_button:
 		if home_composite_entry_active:
 			var next_quote := _home_composite_round_quote(home_composite_round + 1)
@@ -4892,6 +4908,36 @@ func _prepare_success_result_page(reward: int = 0) -> void:
 	call_deferred("_play_result_lion_animation")
 
 
+func _play_result_coin_animation(reward: int) -> void:
+	if not result_reward_label or reward <= 0 or result_overlay_mode != "success":
+		return
+	_stop_result_coin_animation()
+	result_reward_label.text = _t("金币 +%d", [0])
+	result_reward_label.scale = Vector2(0.94, 0.94)
+	result_reward_label.pivot_offset = result_reward_label.size * 0.5
+	var duration := clampf(0.50 + float(reward) * 0.055, 0.55, 1.05)
+	result_coin_tween = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	result_coin_tween.tween_method(_set_result_coin_display, 0.0, float(reward), duration)
+	result_coin_tween.parallel().tween_property(result_reward_label, "scale", Vector2.ONE, duration)
+	result_coin_tween.tween_callback(func() -> void:
+		if result_reward_label:
+			result_reward_label.text = _t("金币 +%d", [reward])
+	)
+
+
+func _set_result_coin_display(value: float) -> void:
+	if result_reward_label:
+		result_reward_label.text = _t("金币 +%d", [int(round(value))])
+
+
+func _stop_result_coin_animation() -> void:
+	if result_coin_tween and result_coin_tween.is_valid():
+		result_coin_tween.kill()
+	result_coin_tween = null
+	if result_reward_label:
+		result_reward_label.scale = Vector2.ONE
+
+
 func _composite_result_coin_text(reward: int, entry_cost: int, paid_entry: bool) -> String:
 	if paid_entry and entry_cost > 0:
 		return _t(
@@ -4903,6 +4949,7 @@ func _composite_result_coin_text(reward: int, entry_cost: int, paid_entry: bool)
 
 func _prepare_failure_result_page() -> void:
 	result_overlay_mode = "failure"
+	_stop_result_coin_animation()
 	_stop_result_lion_animation()
 	_stop_result_petals()
 	completion_title.text = _t("挑战失败")
@@ -4930,6 +4977,7 @@ func _show_composite_deadlock() -> void:
 	if not _is_assembly_phase() or not composite_deadlocked:
 		return
 	result_overlay_mode = "assembly_deadlock"
+	_stop_result_coin_animation()
 	_stop_result_lion_animation()
 	_stop_result_petals()
 	assembly_view.input_locked = true
@@ -5775,6 +5823,81 @@ func _update_coin_label() -> void:
 		home_coin_label.text = str(coin_count)
 
 
+func _play_coin_deduction_animation(balance_before: int, balance_after: int, amount: int) -> void:
+	if not coin_label or amount <= 0:
+		return
+	if coin_balance_tween and coin_balance_tween.is_valid():
+		coin_balance_tween.kill()
+	if coin_delta_tween and coin_delta_tween.is_valid():
+		coin_delta_tween.kill()
+	_ensure_coin_delta_feedback()
+	coin_label.text = str(balance_before)
+	coin_balance_tween = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	coin_balance_tween.tween_method(_set_level_coin_display, float(balance_before), float(balance_after), 0.72)
+	coin_balance_tween.tween_callback(func() -> void:
+		if coin_label:
+			coin_label.text = str(balance_after)
+	)
+	var badge := coin_label.get_parent() as Control
+	var badge_rect := badge.get_global_rect() if badge else coin_label.get_global_rect()
+	var screen_origin := game_screen.get_global_rect().position if game_screen else Vector2.ZERO
+	var start_position := Vector2(
+		badge_rect.get_center().x - screen_origin.x - coin_delta_panel.size.x * 0.5,
+		badge_rect.end.y - screen_origin.y + 4.0
+	)
+	coin_delta_label.text = "−%d" % amount
+	coin_delta_panel.position = start_position
+	coin_delta_panel.modulate.a = 0.0
+	coin_delta_panel.show()
+	coin_delta_tween = create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	coin_delta_tween.tween_property(coin_delta_panel, "modulate:a", 1.0, 0.12)
+	coin_delta_tween.parallel().tween_property(coin_delta_panel, "position", start_position - Vector2(0, 8), 0.12)
+	coin_delta_tween.tween_interval(0.34)
+	coin_delta_tween.tween_property(coin_delta_panel, "modulate:a", 0.0, 0.24)
+	coin_delta_tween.parallel().tween_property(coin_delta_panel, "position", start_position - Vector2(0, 28), 0.24)
+	coin_delta_tween.tween_callback(func() -> void:
+		if coin_delta_panel:
+			coin_delta_panel.hide()
+	)
+
+
+func _set_level_coin_display(value: float) -> void:
+	if coin_label:
+		coin_label.text = str(int(round(value)))
+
+
+func _ensure_coin_delta_feedback() -> void:
+	if coin_delta_panel or not game_screen:
+		return
+	coin_delta_panel = PanelContainer.new()
+	coin_delta_panel.name = "CoinDeductionFeedback"
+	coin_delta_panel.custom_minimum_size = Vector2(92, 36)
+	coin_delta_panel.size = Vector2(92, 36)
+	coin_delta_panel.z_index = 40
+	coin_delta_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	coin_delta_panel.add_theme_stylebox_override("panel", _card_style(Color("#FFF1BD"), 18, true, 5))
+	game_screen.add_child(coin_delta_panel)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 4)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	coin_delta_panel.add_child(row)
+	var icon := TextureRect.new()
+	icon.texture = COIN_ICON
+	icon.custom_minimum_size = Vector2(22, 22)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(icon)
+	coin_delta_label = Label.new()
+	coin_delta_label.name = "CoinDeductionAmount"
+	coin_delta_label.add_theme_color_override("font_color", Color("#B86D10"))
+	coin_delta_label.add_theme_font_size_override("font_size", 17)
+	coin_delta_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(coin_delta_label)
+	coin_delta_panel.hide()
+
+
 func _update_heart_label() -> void:
 	_stop_heart_tweens()
 	if not level_heart_slots.is_empty():
@@ -6066,6 +6189,7 @@ func _home_composite_schedule_with_coin_quote(raw_schedule: Dictionary, quote: D
 
 func _apply_home_composite_round_entry(quote: Dictionary) -> void:
 	var entry_cost := int(quote.get("entryCost", 0))
+	var balance_before := coin_count
 	if bool(quote.get("paid", false)):
 		coin_count = maxi(0, coin_count - entry_cost)
 	CompositeCoinPolicyScript.record_round_started(composite_coin_progress, _today_string(), quote)
@@ -6073,6 +6197,7 @@ func _apply_home_composite_round_entry(quote: Dictionary) -> void:
 	_update_coin_label()
 	_update_home()
 	if entry_cost > 0:
+		call_deferred("_play_coin_deduction_animation", balance_before, coin_count, entry_cost)
 		_show_toast(_t("拼块入场 -%d 金币", [entry_cost]))
 
 
