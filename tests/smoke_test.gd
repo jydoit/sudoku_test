@@ -170,6 +170,27 @@ func _run() -> void:
 	for tool_button in [game.clear_button, game.crown_find_button, game.hint_button]:
 		var status_pill: PanelContainer = tool_button.find_child("ToolStatusPill", true, false)
 		assert(status_pill != null and status_pill.custom_minimum_size.y >= 20.0, "Every tool should keep an aligned fixed-height status pill")
+	game.localization.set_locale("en")
+	await process_frame
+	await process_frame
+	assert(game.clear_button_label.text == "Clear", "Clear must follow the active English locale")
+	assert(game.crown_find_button_label.text == "Find", "Crown finder must follow the active English locale")
+	assert(game.hint_button_label.text == "Hint", "Hint must follow the active English locale")
+	assert(game.clear_status_label.text == "Free", "The permanent free status must be localized")
+	assert(game.crown_find_status_label.text == "Free ×%d" % game.crown_find_count, "Crown finder free uses must be localized")
+	assert(game.hint_status_label.text == "Free ×%d" % game.hint_count, "Hint free uses must be localized")
+	assert(game.settings_button.tooltip_text == "Settings" and game.help_button.tooltip_text == "View rules", "Top-bar tooltips must refresh with the locale")
+	assert(game.help_tabs.get_tab_title(0) == "Rules" and game.help_tabs.get_tab_title(1) == "Block assembly", "Help tabs must refresh through the shared localization controller")
+	game._on_help()
+	await process_frame
+	var localized_dialog_title: Label = game.dialog_controller.find_child("DialogTitle", true, false)
+	var localized_dialog_action: Button = game.dialog_controller.find_child("DialogAction_close", true, false)
+	assert(localized_dialog_title.text == "Rules" and localized_dialog_action.text == "Got it", "Raw dialog copy must be localized by DialogController")
+	game.dialog_controller.hide_dialog(true)
+	var leaked_english_copy := _cjk_control_copy(game, game.language_picker)
+	assert(leaked_english_copy.is_empty(), "English UI must not retain hard-coded CJK copy: %s" % ", ".join(leaked_english_copy))
+	game.localization.set_locale("zh")
+	await process_frame
 	var completed_start_level_id := int(game.current_level["levelId"])
 	game.completed_levels = [completed_start_level_id]
 	game.director_progress = {"completedLevelIds": [completed_start_level_id], "recentRuns": [], "statsByArm": {}}
@@ -683,6 +704,41 @@ func _count_state(states: Array, target: String) -> int:
 			if str(state) == target:
 				count += 1
 	return count
+
+
+func _cjk_control_copy(root_node: Node, excluded_option_button: OptionButton) -> Array[String]:
+	var leaked: Array[String] = []
+	if root_node is Label or root_node is Button:
+		var visible_text := str(root_node.get("text"))
+		if _contains_cjk(visible_text):
+			leaked.append("%s=%s" % [str(root_node.get_path()), visible_text])
+	if root_node is Control:
+		var tooltip := (root_node as Control).tooltip_text
+		if _contains_cjk(tooltip):
+			leaked.append("%s.tooltip=%s" % [str(root_node.get_path()), tooltip])
+	if root_node is OptionButton and root_node != excluded_option_button:
+		var option_button := root_node as OptionButton
+		for item_index in range(option_button.item_count):
+			var item_text := option_button.get_item_text(item_index)
+			if _contains_cjk(item_text):
+				leaked.append("%s.item%d=%s" % [str(root_node.get_path()), item_index, item_text])
+	if root_node is TabContainer:
+		var tabs := root_node as TabContainer
+		for tab_index in range(tabs.get_tab_count()):
+			var tab_title := tabs.get_tab_title(tab_index)
+			if _contains_cjk(tab_title):
+				leaked.append("%s.tab%d=%s" % [str(root_node.get_path()), tab_index, tab_title])
+	for child in root_node.get_children():
+		leaked.append_array(_cjk_control_copy(child, excluded_option_button))
+	return leaked
+
+
+func _contains_cjk(value: String) -> bool:
+	for index in range(value.length()):
+		var codepoint := value.unicode_at(index)
+		if codepoint >= 0x3400 and codepoint <= 0x9FFF:
+			return true
+	return false
 
 
 func _validate_dynamic_king_positions(level: Dictionary, schedule: Dictionary) -> void:

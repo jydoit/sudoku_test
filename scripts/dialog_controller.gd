@@ -10,6 +10,7 @@ const UITokensScript = preload("res://scripts/ui_tokens.gd")
 var current_dialog_id := ""
 var _registered_contents: Dictionary = {}
 var _active_tween: Tween
+var _localizer: Callable
 
 var _scrim: ColorRect
 var _card: PanelContainer
@@ -36,6 +37,10 @@ func register_content(content_id: String, content: Control) -> void:
 	_registered_contents[content_id] = content
 
 
+func set_localizer(localizer: Callable) -> void:
+	_localizer = localizer
+
+
 func show_dialog(
 	dialog_id: String,
 	title_text: String,
@@ -48,9 +53,9 @@ func show_dialog(
 	if visible:
 		hide_dialog(true)
 	current_dialog_id = dialog_id
-	_title_label.text = title_text
+	_title_label.text = _localized(title_text)
 	_close_button.visible = show_close
-	_message_label.text = message_text
+	_message_label.text = _localized(message_text)
 	_message_label.visible = not message_text.is_empty()
 	for registered_content in _registered_contents.values():
 		(registered_content as Control).hide()
@@ -186,7 +191,7 @@ func _build_actions(actions: Array) -> void:
 		var action_id := str(action_data.get("id", ""))
 		var button := Button.new()
 		button.name = "DialogAction_%s" % action_id
-		button.text = str(action_data.get("text", ""))
+		button.text = _localized(str(action_data.get("text", "")))
 		button.custom_minimum_size.y = UITokensScript.DIALOG_BUTTON_HEIGHT
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.add_theme_font_size_override("font_size", 16)
@@ -196,6 +201,12 @@ func _build_actions(actions: Array) -> void:
 		if str(action_data.get("variant", "secondary")) == "primary":
 			_primary_button = button
 	_action_row.visible = not actions.is_empty()
+
+
+func _localized(source: String) -> String:
+	if source.is_empty() or not _localizer.is_valid():
+		return source
+	return str(_localizer.call(source))
 
 
 func _apply_button_variant(button: Button, variant: String) -> void:

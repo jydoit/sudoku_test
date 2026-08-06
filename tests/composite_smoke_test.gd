@@ -184,6 +184,9 @@ func _run() -> void:
 	assert(game.home_composite_round == 3 and CompositeLevelDirectorScript.PATTERNS.has(third_pattern), "The third block round should sample a supported assembly pattern")
 	assert(int(game.composite_coin_progress.get("dailyFreeRoundsUsed", 0)) == 3, "Starting three new block rounds should consume three daily free entries")
 	assert(game.coin_count == formal_coins, "The first five daily block rounds should not deduct entry coins")
+	game.localization.set_locale("en")
+	assert(game._composite_result_coin_text(2, 0, false) == "Daily free round · No entry coins deducted\nCompletion reward: 2 coins", "A free block result should clearly state that no entry coins were deducted")
+	assert(game._composite_result_coin_text(4, 2, true) == "Entry: -2 coins · Reward: +4 coins\nNet change: +2 coins", "A paid block result should clearly separate entry cost, reward, and net change")
 	assert(game.composite_data.get("validLayouts", []).size() == 1, "Recommended offline data should contain one approved layout")
 	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [3]) and game.assembly_stage_label.text == third_pattern.to_upper(), "The third round should display its sampled pattern")
 	if game.composite_data.get("pieces", []).size() < 2:
@@ -302,9 +305,16 @@ func _run() -> void:
 	assert(not game.composite_placements.has(str(hint_target["pieceId"])), "Assembly hint should prefer an unplaced block")
 	var hint_origin: Vector2i = hint_target["origin"]
 	assert(game._assembly_origin_in_list([hint_origin.y, hint_origin.x], game.assembly_view.allowed_by_piece.get(str(hint_target["pieceId"]), [])), "Assembly hint should point to a currently open origin")
+	var hint_locale: String = game.localization.current_locale
+	game.localization.set_locale("en")
 	game._use_hint()
 	assert(game.assembly_view._hint_piece_id >= 0 and game.hint_count == hint_before - 1, "Assembly hint should show a correct block position and consume one hint")
+	assert(str(game.assembly_view._hint_title.text).begins_with("Hint: place the "), "Runtime assembly hint titles must use the shared English localization")
+	assert(game.assembly_view._hint_copy.text == "Correct position: row %d, column %d" % [hint_origin.y + 1, hint_origin.x + 1], "Runtime assembly coordinates must use the shared English localization")
+	var hint_close_button := game.assembly_view.find_child("HintCloseButton", true, false) as Button
+	assert(hint_close_button != null and hint_close_button.text == "Got it", "Runtime assembly hint actions must use the shared English localization")
 	game.assembly_view.hide_piece_hint()
+	game.localization.set_locale(hint_locale)
 	assert(not game.crown_find_button.disabled and not game._assembly_direct_find_target().is_empty(), "Assembly direct find should expose a smallest remaining color target")
 	assert(game.crown_find_count == crown_find_before, "Inspecting the assembly direct-find target should not consume a use")
 	game._update_assembly_tool_buttons()

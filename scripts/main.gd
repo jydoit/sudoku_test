@@ -308,6 +308,7 @@ func _build_ui() -> void:
 	_build_help_dialog()
 	_build_level_select_dialog()
 	_build_settings_dialog()
+	localization.localize_tree(self, true)
 
 
 func _build_home_screen() -> Control:
@@ -662,6 +663,7 @@ func _build_game_screen() -> Control:
 	root.add_child(safe_margin)
 
 	assembly_view = AssemblyViewScript.new()
+	assembly_view.set_localizer(Callable(localization, "text"))
 	assembly_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	assembly_view.z_index = 4
 	assembly_view.placement_requested.connect(_on_assembly_placement_requested)
@@ -1121,6 +1123,7 @@ func _build_tutorial_hand_pointer() -> void:
 
 func _build_dialog_controller() -> void:
 	dialog_controller = DialogControllerScript.new()
+	dialog_controller.set_localizer(Callable(localization, "text"))
 	dialog_controller.action_selected.connect(_on_dialog_action_selected)
 	dialog_controller.cancelled.connect(_on_dialog_cancelled)
 	add_child(dialog_controller)
@@ -1204,6 +1207,8 @@ func _build_help_dialog() -> void:
 	replay_button.add_theme_stylebox_override("normal", _button_style(UITokensScript.SOFT_BLUE, 14))
 	replay_button.pressed.connect(_replay_composite_intro_from_help)
 	assembly_column.add_child(replay_button)
+	help_tabs.set_tab_title(0, _t("消除规则"))
+	help_tabs.set_tab_title(1, _t("拼块玩法"))
 	dialog_controller.register_content("help_rules", help_content)
 
 
@@ -1430,9 +1435,9 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 	if help_button:
 		help_button.show()
 	if completion_next_button:
-		completion_next_button.text = "下一关"
+		completion_next_button.text = _t("下一关")
 	if completion_replay_button:
-		completion_replay_button.text = "主菜单"
+		completion_replay_button.text = _t("主菜单")
 		completion_replay_button.show()
 	if hint_button:
 		hint_button.show()
@@ -1881,7 +1886,7 @@ func _apply_composite_phase_ui() -> void:
 		)
 		assembly_view.input_locked = composite_deadlocked
 		if clear_button_label:
-			clear_button_label.text = "清除"
+			clear_button_label.text = _t("清除")
 		_set_tool_status(clear_status_panel, clear_status_icon, clear_status_label, "free_forever")
 		_update_assembly_tool_buttons()
 		if composite_deadlocked:
@@ -1895,7 +1900,7 @@ func _apply_composite_phase_ui() -> void:
 		board.mouse_filter = Control.MOUSE_FILTER_STOP
 		assembly_view.deactivate()
 		if clear_button_label:
-			clear_button_label.text = "清除"
+			clear_button_label.text = _t("清除")
 		_set_tool_status(clear_status_panel, clear_status_icon, clear_status_label, "free_forever")
 		for button in [clear_button, crown_find_button, hint_button]:
 			if button:
@@ -2092,8 +2097,8 @@ func _play_opening_king_intro(cells: Array) -> void:
 	var token := opening_king_animation_token
 	var total_count := int(current_level.get("targetCount", cells.size()))
 	var base_progress := maxi(0, _piece_positions().size() - cells.size())
-	opening_king_title.text = _t("本关需要找到 %d 个皇冠", [total_count])
-	opening_king_count_label.text = _t("开局提供 %d 个提示皇冠", [cells.size()])
+	localization.set_control_text(opening_king_title, "本关需要找到 %d 个皇冠", [total_count])
+	localization.set_control_text(opening_king_count_label, "开局提供 %d 个提示皇冠", [cells.size()])
 	opening_king_source_count_label.text = "×%d" % cells.size()
 	if progress_bar:
 		progress_bar.value = base_progress
@@ -2288,13 +2293,13 @@ func _on_cell_double_pressed(row: int, col: int) -> void:
 	if is_answer:
 		audio_controller.play_correct()
 		_validate_and_update(true)
-		coach_label.text = "已放置皇冠。继续用行、列、颜色区域和相邻规则检查其它位置。"
+		coach_label.text = _t("已放置皇冠。继续用行、列、颜色区域和相邻规则检查其它位置。")
 		coach_label.add_theme_color_override("font_color", Color("#72552B"))
 	else:
 		audio_controller.play_wrong()
 		var crown_find_count_before_wrong := crown_find_count
 		_validate_and_update(false)
-		coach_label.text = "这个位置不是皇冠，已标记为 X。"
+		coach_label.text = _t("这个位置不是皇冠，已标记为 X。")
 		coach_label.add_theme_color_override("font_color", Color("#B93D4D"))
 		_consume_heart_for_wrong_crown()
 		crown_find_count = crown_find_count_before_wrong
@@ -3603,10 +3608,10 @@ func _start_tutorial_step(index: int) -> void:
 	if tutorial_skip_button:
 		_update_tutorial_button()
 	if completion_next_button:
-		var final_action := "返回关卡  →" if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else "进入第 1 关  →"
-		completion_next_button.text = "下一步  →" if tutorial_step_index < TUTORIAL_LEVELS.size() - 1 else final_action
+		var final_action := "%s  →" % (_t("返回关卡") if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else _t("进入第 1 关，开始真正的挑战"))
+		completion_next_button.text = _t("下一步  →") if tutorial_step_index < TUTORIAL_LEVELS.size() - 1 else final_action
 	if completion_replay_button:
-		completion_replay_button.text = "重来本步"
+		completion_replay_button.text = _t("重来本步")
 		completion_replay_button.show()
 	board.set_level(current_level, cell_states, REGION_COLORS)
 	_set_tutorial_guides()
@@ -3687,9 +3692,9 @@ func _update_tutorial_action_bar() -> void:
 		_update_hint_button()
 		_update_crown_find_button()
 		if tutorial_interaction_stage == TUTORIAL_PHASE_HINT:
-			coach_label.text = "点一下提示，看看下一步该观察哪里。"
+			coach_label.text = _t("点一下提示，看看下一步该观察哪里。")
 		elif tutorial_interaction_stage == TUTORIAL_PHASE_CROWN_FIND:
-			coach_label.text = "点击皇冠直找，直接找到一个皇冠。教程中不会消耗使用次数。"
+			coach_label.text = _t("点击皇冠直找，直接找到一个皇冠。教程中不会消耗使用次数。")
 			_apply_action_button_style(crown_find_button, Color("#FFE06F"))
 			crown_find_button.add_theme_color_override("font_color", INK)
 		return
@@ -3700,7 +3705,7 @@ func _update_tutorial_action_bar() -> void:
 	hint_button.disabled = tutorial_button_stage != 2
 	_update_tutorial_action_button_styles()
 	if tutorial_button_stage == 2:
-		coach_label.text = "点一下提示，看看下一步该观察哪里。"
+		coach_label.text = _t("点一下提示，看看下一步该观察哪里。")
 
 
 func _update_tutorial_action_button_styles() -> void:
@@ -3959,7 +3964,7 @@ func _on_tutorial_single_map_double_pressed(row: int, col: int) -> void:
 		_advance_tutorial_single_map_after_exclusions()
 		_save_game()
 		return
-	coach_label.text = "皇冠不能和皇冠挨着。滑过它周围的格子，把这些位置标记为 X。"
+	coach_label.text = _t("皇冠不能和皇冠挨着。滑过它周围的格子，把这些位置标记为 X。")
 	coach_label.add_theme_color_override("font_color", Color("#31506D"))
 	coach_label.add_theme_font_size_override("font_size", COACH_TUTORIAL_SIZE)
 	_set_tutorial_guides()
@@ -4007,7 +4012,7 @@ func _advance_tutorial_single_map_after_exclusions() -> void:
 		if _next_tutorial_single_map_exclusion_cell().x < 0:
 			_advance_tutorial_single_map_after_exclusions()
 			return
-		coach_label.text = "每行、每列都只能有一个皇冠。这个皇冠所在的行和列，其他格都可以标记 X。"
+		coach_label.text = _t("每行、每列都只能有一个皇冠。这个皇冠所在的行和列，其他格都可以标记 X。")
 		_set_tutorial_guides()
 		_focus_tutorial_cell(_next_tutorial_single_map_exclusion_cell(), 0.12)
 		_update_tutorial_action_bar()
@@ -4017,14 +4022,14 @@ func _advance_tutorial_single_map_after_exclusions() -> void:
 		return
 	if not tutorial_hint_button_taught:
 		tutorial_interaction_stage = TUTORIAL_PHASE_HINT
-		coach_label.text = "点一下提示，看看下一步该观察哪里。"
+		coach_label.text = _t("点一下提示，看看下一步该观察哪里。")
 		_set_tutorial_guides()
 		_update_tutorial_action_bar()
 		_focus_tutorial_control(hint_button, 0.18)
 		return
 	if not tutorial_crown_find_taught:
 		tutorial_interaction_stage = TUTORIAL_PHASE_CROWN_FIND
-		coach_label.text = "点击皇冠直找，直接找到一个皇冠。教程中不会消耗使用次数。"
+		coach_label.text = _t("点击皇冠直找，直接找到一个皇冠。教程中不会消耗使用次数。")
 		_set_tutorial_guides()
 		_update_tutorial_action_bar()
 		_focus_tutorial_control(crown_find_button, 0.18)
@@ -4107,11 +4112,11 @@ func _validate_tutorial_step(row: int, col: int) -> void:
 					progress_bar.value = 1
 				if progress_label:
 					progress_label.text = "1 / 1"
-				coach_label.text = "成功找到皇冠"
+				coach_label.text = _runtime_text("成功找到皇冠")
 				_hide_tutorial_hand()
 				_complete_tutorial_step("你学会了找到皇冠。")
 			else:
-				coach_label.text = "这一关需要双击高亮格找到皇冠。"
+				coach_label.text = _runtime_text("这一关需要双击高亮格找到皇冠。")
 		"color":
 			var blocked_count := _tutorial_blocked_color_count(_tutorial_target())
 			if progress_bar:
@@ -4155,7 +4160,7 @@ func _validate_tutorial_step(row: int, col: int) -> void:
 				_hide_tutorial_hand()
 				_complete_tutorial_step("皇冠周围和同行同列都已排除")
 			elif _tutorial_blocked_adjacent_count(_tutorial_target()) >= 8:
-				coach_label.text = "周围一圈已排除。现在继续排除同行同列剩下的格子。"
+				coach_label.text = _runtime_text("周围一圈已排除。现在继续排除同行同列剩下的格子。")
 			else:
 				coach_label.text = _runtime_text("先把皇冠周围一圈点成 X，还剩 %d 个。" % [8 - _tutorial_blocked_adjacent_count(_tutorial_target())])
 		"tools":
@@ -4608,14 +4613,14 @@ func _use_tutorial_crown_find() -> void:
 		return
 	tutorial_interaction_stage = TUTORIAL_PHASE_ADJACENT
 	if _next_tutorial_single_map_exclusion_cell().x >= 0:
-		coach_label.text = "皇冠直找会直接找到并锁定皇冠。继续把皇冠周围的格子标记为 X。"
+		coach_label.text = _runtime_text("皇冠直找会直接找到并锁定皇冠。继续把皇冠周围的格子标记为 X。")
 		_set_tutorial_guides()
 		_update_tutorial_action_bar()
 		_focus_tutorial_cell(_next_tutorial_single_map_exclusion_cell(), 0.18)
 	else:
 		tutorial_interaction_stage = TUTORIAL_PHASE_ROW_COL
 		if _next_tutorial_single_map_exclusion_cell().x >= 0:
-			coach_label.text = "皇冠直找已直接找到并锁定皇冠，周围位置已经排除。继续排除同行同列。"
+			coach_label.text = _runtime_text("皇冠直找已直接找到并锁定皇冠，周围位置已经排除。继续排除同行同列。")
 			_set_tutorial_guides()
 			_update_tutorial_action_bar()
 			_focus_tutorial_cell(_next_tutorial_single_map_exclusion_cell(), 0.18)
@@ -4652,7 +4657,7 @@ func _use_tutorial_hint() -> void:
 	})
 	board.play_guide_feedback(target.y, target.x)
 	_focus_tutorial_cell(target, 0.18)
-	coach_label.text = "每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。"
+	coach_label.text = _t("每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。")
 	coach_label.add_theme_color_override("font_color", Color("#31506D"))
 	coach_label.add_theme_font_size_override("font_size", COACH_TUTORIAL_SIZE)
 	tutorial_button_stage = 3
@@ -4693,7 +4698,7 @@ func _show_tutorial_challenge_ready() -> void:
 	is_completed = true
 	result_overlay_mode = "tutorial"
 	_stop_result_petals()
-	coach_label.text = "已经了解全部规则，开始真正的挑战吧！"
+	coach_label.text = _t("已经了解全部规则，开始真正的挑战吧！")
 	coach_label.add_theme_color_override("font_color", Color("#31506D"))
 	coach_label.add_theme_font_size_override("font_size", COACH_TUTORIAL_SIZE)
 	board.play_victory()
@@ -4705,19 +4710,19 @@ func _show_tutorial_challenge_ready() -> void:
 		hint_button.hide()
 	if crown_find_button:
 		crown_find_button.hide()
-	completion_title.text = "已经了解全部规则"
-	reward_label.text = "开始真正的挑战吧！"
+	completion_title.text = _t("已经了解全部规则")
+	reward_label.text = _t("开始真正的挑战吧！")
 	if result_icon_label:
 		result_icon_label.hide()
 	if result_piece_icon:
 		result_piece_icon.texture = LION_KING_VICTORY_ICON
 		result_piece_icon.show()
 	if result_reward_label:
-		result_reward_label.text = "新手教程完成"
+		result_reward_label.text = _t("新手教程完成")
 		result_reward_label.show()
 	if result_tip_label:
-		result_tip_label.text = "返回进入教程前的关卡现场" if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else "进入第 1 关，开始真正的挑战"
-	completion_next_button.text = "返回关卡" if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else "开始挑战"
+		result_tip_label.text = _t("返回进入教程前的关卡现场") if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else _t("进入第 1 关，开始真正的挑战")
+	completion_next_button.text = _t("返回关卡") if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else _t("开始挑战")
 	if completion_replay_button:
 		completion_replay_button.hide()
 	completion_overlay.show()
@@ -4864,7 +4869,14 @@ func _prepare_success_result_page(reward: int = 0) -> void:
 				reward = int(active_schedule.get("compositeCoinReward", CompositeCoinPolicyScript.base_reward_for_round(home_composite_round)))
 			else:
 				reward = CoinRewardPolicyScript.completion_reward(player_level_number, current_heart_limit, heart_count)
-		result_tip_label.text = _t("金币 +%d", [reward]) if reward > 0 else _t("本关已完成，继续挑战")
+			if home_composite_entry_active and reward > 0:
+				result_tip_label.text = _composite_result_coin_text(
+					reward,
+					int(active_schedule.get("compositeEntryCost", 0)),
+					bool(active_schedule.get("compositePaidEntry", false))
+				)
+			else:
+				result_tip_label.text = _t("金币 +%d", [reward]) if reward > 0 else _t("本关已完成，继续挑战")
 	if completion_next_button:
 		if home_composite_entry_active:
 			var next_quote := _home_composite_round_quote(home_composite_round + 1)
@@ -4878,6 +4890,15 @@ func _prepare_success_result_page(reward: int = 0) -> void:
 	if excellent:
 		call_deferred("_play_result_petals")
 	call_deferred("_play_result_lion_animation")
+
+
+func _composite_result_coin_text(reward: int, entry_cost: int, paid_entry: bool) -> String:
+	if paid_entry and entry_cost > 0:
+		return _t(
+			"入场扣除 %d 金币 · 通关奖励 %d 金币\n本局净增加 %d 金币",
+			[entry_cost, reward, reward - entry_cost]
+		)
+	return _t("本局使用每日免费额度 · 未扣除金币\n通关奖励 %d 金币", [reward])
 
 
 func _prepare_failure_result_page() -> void:
@@ -4929,7 +4950,7 @@ func _show_composite_deadlock() -> void:
 	if completion_next_button:
 		completion_next_button.text = _t("金币复活  -%d", [_current_tool_price(CoinEconomyScript.TOOL_REVIVE)])
 	if completion_replay_button:
-		completion_replay_button.text = "重新开始本局"
+		completion_replay_button.text = _t("重新开始本局")
 		completion_replay_button.show()
 	completion_overlay.show()
 	completion_overlay.modulate.a = 0.0
@@ -5350,9 +5371,13 @@ func _apply_layout_direction() -> void:
 
 
 func _refresh_localized_ui() -> void:
+	localization.localize_tree(self)
 	_update_home()
 	_update_hint_button()
 	_update_crown_find_button()
+	if help_tabs and help_tabs.get_tab_count() >= 2:
+		help_tabs.set_tab_title(0, _t("消除规则"))
+		help_tabs.set_tab_title(1, _t("拼块玩法"))
 	if in_tutorial:
 		level_label.text = _t("新手教程")
 		_update_tutorial_action_bar()
@@ -5847,7 +5872,7 @@ func _update_hint_button() -> void:
 		return
 	if in_tutorial:
 		if hint_button_label:
-			hint_button_label.text = "提示"
+			hint_button_label.text = _t("提示")
 		_set_tool_status(hint_status_panel, hint_status_icon, hint_status_label, "tutorial")
 		_refresh_tool_button_visual(hint_button)
 		return
@@ -5872,7 +5897,7 @@ func _update_crown_find_button() -> void:
 		return
 	if in_tutorial:
 		if crown_find_button_label:
-			crown_find_button_label.text = "皇冠直找"
+			crown_find_button_label.text = _t("皇冠直找")
 		_set_tool_status(crown_find_status_panel, crown_find_status_icon, crown_find_status_label, "tutorial")
 		crown_find_button.disabled = tutorial_interaction_stage != TUTORIAL_PHASE_CROWN_FIND
 		_refresh_tool_button_visual(crown_find_button)
@@ -6145,8 +6170,8 @@ func _update_tutorial_button() -> void:
 	if not tutorial_skip_button:
 		return
 	if in_tutorial:
-		tutorial_skip_button.text = "跳过"
-		tutorial_skip_button.tooltip_text = "跳过新手教程"
+		tutorial_skip_button.text = _t("跳过")
+		tutorial_skip_button.tooltip_text = _t("跳过新手教程")
 		tutorial_skip_button.show()
 	else:
 		tutorial_skip_button.hide()
@@ -6184,9 +6209,9 @@ func _update_home() -> void:
 		if tutorial_completed:
 			home_start_button.text = _t("开始第 %d 关", [player_level_number])
 		elif tutorial_started:
-			home_start_button.text = "继续新手教程"
+			home_start_button.text = _t("继续新手教程")
 		else:
-			home_start_button.text = "开始新手教程"
+			home_start_button.text = _t("开始新手教程")
 	if home_composite_button:
 		var saved_round := _home_composite_resume_round()
 		if tutorial_completed and not _home_composite_is_unlocked():

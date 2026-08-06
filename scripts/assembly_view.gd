@@ -31,6 +31,7 @@ var active := false
 var input_locked := false
 var tray_scroll := 0.0
 var flatten_amount := 0.0
+var _localizer: Callable
 
 var _piece_hit_rects: Dictionary = {}
 var _pointer_down := false
@@ -69,6 +70,10 @@ func _ready() -> void:
 	_build_intro_controls()
 	_build_hint_popup()
 	hide()
+
+
+func set_localizer(localizer: Callable) -> void:
+	_localizer = localizer
 
 
 func _process(_delta: float) -> void:
@@ -143,19 +148,19 @@ func play_intro() -> void:
 	_intro_hand.show()
 	var board_rect := _board_draw_rect()
 	var tray_rect := _tray_rect()
-	_intro_caption.text = tr("锁定区域不需要移动")
+	_intro_caption.text = _localized("锁定区域不需要移动")
 	_intro_hand.position = board_rect.position + board_rect.size * Vector2(0.24, 0.28) - _intro_hand.size * 0.5
 	await get_tree().create_timer(0.95).timeout
 	if not _intro_is_current(token):
 		return
-	_intro_caption.text = tr("把彩色方块拖进空白凹槽")
+	_intro_caption.text = _localized("把彩色方块拖进空白凹槽")
 	await _move_intro_hand(board_rect.get_center() - Vector2(0, 16), 0.72)
 	if not _intro_is_current(token):
 		return
 	await get_tree().create_timer(0.65).timeout
 	if not _intro_is_current(token):
 		return
-	_intro_caption.text = tr("左右滑动待放置区查看更多")
+	_intro_caption.text = _localized("左右滑动托盘查看更多")
 	_intro_hand.position = tray_rect.position + Vector2(tray_rect.size.x * 0.72, tray_rect.size.y * 0.50) - _intro_hand.size * 0.5
 	await _move_intro_hand(tray_rect.position + Vector2(tray_rect.size.x * 0.28, tray_rect.size.y * 0.50), 0.72)
 	if not _intro_is_current(token):
@@ -173,7 +178,7 @@ func play_intro() -> void:
 			_drag_source = "tray"
 			_preview_origin = _demo_origin
 			_intro_dragging_piece = true
-			_intro_caption.text = tr("把彩色方块拖进空白凹槽")
+			_intro_caption.text = _localized("把彩色方块拖进空白凹槽")
 			await _move_intro_hand(_cell_center(_demo_origin), 0.78)
 			if not _intro_is_current(token):
 				return
@@ -183,7 +188,7 @@ func play_intro() -> void:
 			await get_tree().create_timer(0.55).timeout
 			if not _intro_is_current(token):
 				return
-	_intro_caption.text = tr("已放方块可以拖回托盘")
+	_intro_caption.text = _localized("已放方块可以拖回托盘")
 	if _demo_piece_id >= 0:
 		_drag_piece_id = _demo_piece_id
 		_drag_source = "board"
@@ -834,8 +839,8 @@ func show_piece_hint(piece_id: int, origin: Vector2i) -> void:
 	var color_index := region_id - 1
 	if color_index >= 0 and color_index < UITokensScript.REGION_COLOR_NAMES.size():
 		color_name = str(UITokensScript.REGION_COLOR_NAMES[color_index])
-	_hint_title.text = "提示：%s块放这里" % color_name
-	_hint_copy.text = "正确位置：第 %d 行，第 %d 列" % [origin.y + 1, origin.x + 1]
+	_hint_title.text = _localized("提示：%s块放这里", [_localized(color_name)])
+	_hint_copy.text = _localized("正确位置：第 %d 行，第 %d 列", [origin.y + 1, origin.x + 1])
 	_hint_swatch.text = "■"
 	_hint_swatch.add_theme_color_override("font_color", _region_color(region_id))
 	_position_hint_popup()
@@ -909,7 +914,8 @@ func _build_hint_popup() -> void:
 	_hint_copy.add_theme_font_size_override("font_size", 13)
 	copy_column.add_child(_hint_copy)
 	var close_button := Button.new()
-	close_button.text = "知道了"
+	close_button.name = "HintCloseButton"
+	close_button.text = _localized("知道了")
 	close_button.custom_minimum_size = Vector2(62, 34)
 	close_button.pressed.connect(hide_piece_hint)
 	row.add_child(close_button)
@@ -944,6 +950,13 @@ func _build_intro_controls() -> void:
 	_intro_hand.z_index = 21
 	add_child(_intro_hand)
 	_hide_intro_controls()
+
+
+func _localized(source: String, values: Array = []) -> String:
+	if _localizer.is_valid():
+		return str(_localizer.call(source, values))
+	var translated := tr(source)
+	return translated if values.is_empty() else translated % values
 
 
 func _move_intro_hand(target: Vector2, duration: float) -> void:
