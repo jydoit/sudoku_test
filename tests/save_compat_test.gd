@@ -13,13 +13,24 @@ func _run() -> void:
 	if had_save:
 		previous_save = FileAccess.get_file_as_string(SAVE_PATH)
 
+	await _verify_new_user_defaults()
 	await _verify_current_round_trip()
 	await _verify_version_one_migration()
 
 	_restore_save(had_save, previous_save)
 	print("PASS SAVE-001 current save round trip")
 	print("PASS SAVE-002 previous save migration")
+	print("PASS SAVE-003 new user defaults")
 	quit()
+
+
+func _verify_new_user_defaults() -> void:
+	_remove_save()
+	var game = await _new_game()
+	assert(game.coin_count == game.INITIAL_COIN_COUNT, "SAVE-003 should grant the configured initial coins")
+	assert(game.coin_count == 10, "SAVE-003 new users should start with 10 coins")
+	game.queue_free()
+	await process_frame
 
 
 func _verify_current_round_trip() -> void:

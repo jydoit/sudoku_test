@@ -179,6 +179,7 @@ func _run() -> void:
 	game._load_level(0)
 	game._show_game()
 	assert(game.level_select_button != null, "Level screen should expose level selection")
+	assert(game.level_select_picker.get_item_count() == 0, "Debug level choices should stay lazy until the dialog opens")
 	game._open_level_select()
 	assert(game.dialog_controller.is_dialog_open("level_select"), "Level selection dialog should open through the shared controller")
 	assert(game.level_select_picker.get_item_count() == game.levels.size(), "Level selection should list all levels")

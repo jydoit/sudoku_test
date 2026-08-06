@@ -428,14 +428,17 @@ static func _opening_king_count_for_size(size: int, rng: RandomNumberGenerator) 
 		return 1
 	var roll := rng.randf()
 	if size == 6:
-		return 1 if roll < 0.7 else 2
-	if size == 7:
+		return 1 if roll < 0.9 else 2
+	if size >= 7 and size <=8:
 		if roll < 0.5:
 			return 1
 		return 2 if roll < 0.9 else 3
-	if roll < 0.3:
-		return 1
-	return 2 if roll < 0.7 else 3
+	if size >=9:
+		if roll < 0.3:
+			return 1
+		return 2 if roll < 0.7 else 3
+	return 1 
+
 
 
 static func _should_reveal_dynamic_kings(display: int) -> bool:

@@ -43,6 +43,7 @@ const LION_KING_VICTORY_FRAMES = [
 ]
 const SAVE_PATH := "user://color_queens_save.json"
 const SAVE_VERSION := 15
+const INITIAL_COIN_COUNT := 10
 const INITIAL_HINT_COUNT := 5
 const INITIAL_HEART_COUNT := 3
 const INITIAL_CROWN_FIND_COUNT := 3
@@ -100,7 +101,7 @@ var director_progress: Dictionary = {}
 var composite_director_progress: Dictionary = {}
 var composite_coin_progress: Dictionary = CompositeCoinPolicyScript.default_progress()
 var economy_progress: Dictionary = CoinEconomyScript.default_progress()
-var coin_count := 55
+var coin_count := INITIAL_COIN_COUNT
 var heart_count := INITIAL_HEART_COUNT
 var current_heart_limit := INITIAL_HEART_COUNT
 var hint_count := INITIAL_HINT_COUNT
@@ -1286,7 +1287,6 @@ func _build_level_select_dialog() -> void:
 	level_select_picker.add_theme_stylebox_override("normal", _button_style(Color("#F1F4F7"), 12))
 	margin.add_child(level_select_picker)
 	dialog_controller.register_content("level_select", level_select_content)
-	_refresh_level_select_picker()
 
 
 func _build_settings_dialog() -> void:
@@ -5318,7 +5318,6 @@ func _refresh_localized_ui() -> void:
 	_update_home()
 	_update_hint_button()
 	_update_crown_find_button()
-	_refresh_level_select_picker()
 	if in_tutorial:
 		level_label.text = _t("新手教程")
 		_update_tutorial_action_bar()
@@ -5440,7 +5439,7 @@ func _load_save() -> void:
 		return
 	current_level_index = int(data.get("currentLevelIndex", 0))
 	player_level_number = maxi(1, int(data.get("playerLevelNumber", current_level_index + 1)))
-	coin_count = int(data.get("coinCount", 55))
+	coin_count = int(data.get("coinCount", INITIAL_COIN_COUNT))
 	if int(data.get("saveVersion", 1)) >= 2:
 		hint_count = maxi(0, int(data.get("hintCount", INITIAL_HINT_COUNT)))
 	else:
@@ -6153,7 +6152,6 @@ func _update_home() -> void:
 			else:
 				home_composite_button.text = _t("拼块玩法") if home_composite_history.is_empty() else _t("拼块玩法 · 第 %d 局", [saved_round])
 		home_composite_button.disabled = not tutorial_completed
-	_refresh_level_select_picker()
 
 
 func _show_toast(message: String) -> void:
