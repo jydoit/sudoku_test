@@ -192,10 +192,19 @@ var opening_king_source_count_label: Label
 var undo_button: Button
 var clear_button: Button
 var clear_button_label: Label
+var clear_status_panel: PanelContainer
+var clear_status_icon: TextureRect
+var clear_status_label: Label
 var crown_find_button: Button
 var crown_find_button_label: Label
+var crown_find_status_panel: PanelContainer
+var crown_find_status_icon: TextureRect
+var crown_find_status_label: Label
 var hint_button: Button
 var hint_button_label: Label
+var hint_status_panel: PanelContainer
+var hint_status_icon: TextureRect
+var hint_status_label: Label
 var tutorial_skip_button: Button
 var completion_overlay: ColorRect
 var completion_title: Label
@@ -843,24 +852,34 @@ func _build_coach() -> Control:
 func _build_action_bar() -> Control:
 	var row := HBoxContainer.new()
 	row.name = "LevelToolBar"
-	row.custom_minimum_size.y = 94
+	row.custom_minimum_size.y = 98
 	row.add_theme_constant_override("separation", 10)
 
-	var clear_tool := _tool_button("clear", "清除 · 免费", Color("#EEF5FF"), Color("#477DB7"))
+	var clear_tool := _tool_button("clear", "清除", Color("#EEF5FF"), Color("#477DB7"))
 	clear_button = clear_tool["button"]
 	clear_button_label = clear_tool["label"]
+	clear_status_panel = clear_tool["status_panel"]
+	clear_status_icon = clear_tool["status_icon"]
+	clear_status_label = clear_tool["status_label"]
+	_set_tool_status(clear_status_panel, clear_status_icon, clear_status_label, "free_forever")
 	clear_button.pressed.connect(_clear_board)
 	row.add_child(clear_button)
 
-	var crown_tool := _tool_button("crown", "皇冠直找", Color("#FFF4CE"), Color("#B97A09"))
+	var crown_tool := _tool_button("crown", "直找", Color("#FFF4CE"), Color("#B97A09"))
 	crown_find_button = crown_tool["button"]
 	crown_find_button_label = crown_tool["label"]
+	crown_find_status_panel = crown_tool["status_panel"]
+	crown_find_status_icon = crown_tool["status_icon"]
+	crown_find_status_label = crown_tool["status_label"]
 	crown_find_button.pressed.connect(_use_crown_find)
 	row.add_child(crown_find_button)
 
 	var hint_tool := _tool_button("hint", "提示", Color("#EAF8F0"), Color("#23845C"))
 	hint_button = hint_tool["button"]
 	hint_button_label = hint_tool["label"]
+	hint_status_panel = hint_tool["status_panel"]
+	hint_status_icon = hint_tool["status_icon"]
+	hint_status_label = hint_tool["status_label"]
 	hint_button.pressed.connect(_use_hint)
 	row.add_child(hint_button)
 	_update_crown_find_button()
@@ -1814,13 +1833,27 @@ func _update_assembly_tool_buttons() -> void:
 	var direct_target := _assembly_direct_find_target()
 	if crown_find_button:
 		if crown_find_button_label:
-			crown_find_button_label.text = _t("直找 ×%d", [crown_find_count]) if crown_find_count > 0 else _t("直找 -%d", [_current_tool_price(CoinEconomyScript.TOOL_CROWN_FIND)])
+			crown_find_button_label.text = _t("直找")
+		_set_tool_status(
+			crown_find_status_panel,
+			crown_find_status_icon,
+			crown_find_status_label,
+			"free" if crown_find_count > 0 else "paid",
+			crown_find_count if crown_find_count > 0 else _current_tool_price(CoinEconomyScript.TOOL_CROWN_FIND)
+		)
 		crown_find_button.disabled = composite_deadlocked or direct_target.is_empty()
 		_refresh_tool_button_visual(crown_find_button)
 	var hint_target := _assembly_hint_target()
 	if hint_button:
 		if hint_button_label:
-			hint_button_label.text = _t("提示 ×%d", [hint_count]) if hint_count > 0 else _t("提示 -%d", [_current_tool_price(CoinEconomyScript.TOOL_HINT)])
+			hint_button_label.text = _t("提示")
+		_set_tool_status(
+			hint_status_panel,
+			hint_status_icon,
+			hint_status_label,
+			"free" if hint_count > 0 else "paid",
+			hint_count if hint_count > 0 else _current_tool_price(CoinEconomyScript.TOOL_HINT)
+		)
 		hint_button.disabled = composite_deadlocked or hint_target.is_empty()
 		_refresh_tool_button_visual(hint_button)
 
@@ -1849,6 +1882,7 @@ func _apply_composite_phase_ui() -> void:
 		assembly_view.input_locked = composite_deadlocked
 		if clear_button_label:
 			clear_button_label.text = "清除"
+		_set_tool_status(clear_status_panel, clear_status_icon, clear_status_label, "free_forever")
 		_update_assembly_tool_buttons()
 		if composite_deadlocked:
 			call_deferred("_show_composite_deadlock")
@@ -1861,7 +1895,8 @@ func _apply_composite_phase_ui() -> void:
 		board.mouse_filter = Control.MOUSE_FILTER_STOP
 		assembly_view.deactivate()
 		if clear_button_label:
-			clear_button_label.text = "清除 · 免费"
+			clear_button_label.text = "清除"
+		_set_tool_status(clear_status_panel, clear_status_icon, clear_status_label, "free_forever")
 		for button in [clear_button, crown_find_button, hint_button]:
 			if button:
 				button.show()
@@ -5813,15 +5848,19 @@ func _update_hint_button() -> void:
 	if in_tutorial:
 		if hint_button_label:
 			hint_button_label.text = "提示"
-			_refresh_tool_button_visual(hint_button)
+		_set_tool_status(hint_status_panel, hint_status_icon, hint_status_label, "tutorial")
+		_refresh_tool_button_visual(hint_button)
 		return
 	hint_button.disabled = is_completed or is_failed or _is_assembly_phase()
-	if hint_count > 0:
-		if hint_button_label:
-			hint_button_label.text = _t("提示 ×%d", [hint_count])
-	else:
-		if hint_button_label:
-			hint_button_label.text = _t("提示 -%d", [_current_tool_price(CoinEconomyScript.TOOL_HINT)])
+	if hint_button_label:
+		hint_button_label.text = _t("提示")
+	_set_tool_status(
+		hint_status_panel,
+		hint_status_icon,
+		hint_status_label,
+		"free" if hint_count > 0 else "paid",
+		hint_count if hint_count > 0 else _current_tool_price(CoinEconomyScript.TOOL_HINT)
+	)
 	_refresh_tool_button_visual(hint_button)
 
 
@@ -5834,12 +5873,20 @@ func _update_crown_find_button() -> void:
 	if in_tutorial:
 		if crown_find_button_label:
 			crown_find_button_label.text = "皇冠直找"
+		_set_tool_status(crown_find_status_panel, crown_find_status_icon, crown_find_status_label, "tutorial")
 		crown_find_button.disabled = tutorial_interaction_stage != TUTORIAL_PHASE_CROWN_FIND
 		_refresh_tool_button_visual(crown_find_button)
 		return
 	var has_target := not current_level.is_empty() and _next_findable_solution_cell().x >= 0
 	if crown_find_button_label:
-		crown_find_button_label.text = _t("直找 ×%d", [crown_find_count]) if crown_find_count > 0 else _t("直找 -%d", [_current_tool_price(CoinEconomyScript.TOOL_CROWN_FIND)])
+		crown_find_button_label.text = _t("直找")
+	_set_tool_status(
+		crown_find_status_panel,
+		crown_find_status_icon,
+		crown_find_status_label,
+		"free" if crown_find_count > 0 else "paid",
+		crown_find_count if crown_find_count > 0 else _current_tool_price(CoinEconomyScript.TOOL_CROWN_FIND)
+	)
 	crown_find_button.disabled = is_completed or is_failed or not has_target
 	_refresh_tool_button_visual(crown_find_button)
 
@@ -6260,7 +6307,7 @@ func _piece_texture_rect(minimum_size: Vector2, texture: Texture2D = LION_KING_I
 func _tool_button(kind: String, caption: String, color: Color, accent: Color) -> Dictionary:
 	var button := _action_button("", color)
 	button.name = "%sToolButton" % kind.capitalize()
-	button.custom_minimum_size.y = 94
+	button.custom_minimum_size.y = 98
 	button.size_flags_stretch_ratio = 1.0
 
 	var margin := MarginContainer.new()
@@ -6268,14 +6315,14 @@ func _tool_button(kind: String, caption: String, color: Color, accent: Color) ->
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	margin.add_theme_constant_override("margin_left", 5)
 	margin.add_theme_constant_override("margin_right", 5)
-	margin.add_theme_constant_override("margin_top", 5)
-	margin.add_theme_constant_override("margin_bottom", 5)
+	margin.add_theme_constant_override("margin_top", 0)
+	margin.add_theme_constant_override("margin_bottom", 0)
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	button.add_child(margin)
 
 	var column := VBoxContainer.new()
 	column.alignment = BoxContainer.ALIGNMENT_CENTER
-	column.add_theme_constant_override("separation", 1)
+	column.add_theme_constant_override("separation", 0)
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(column)
 
@@ -6287,6 +6334,7 @@ func _tool_button(kind: String, caption: String, color: Color, accent: Color) ->
 		custom_icon.configure(ToolIconScript.CLEAR if kind == "clear" else ToolIconScript.HINT, accent)
 		icon = custom_icon
 	icon.name = "ToolIcon"
+	icon.custom_minimum_size = Vector2(44, 44)
 	icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(icon)
@@ -6298,10 +6346,90 @@ func _tool_button(kind: String, caption: String, color: Color, accent: Color) ->
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_color_override("font_color", accent)
-	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_font_size_override("font_size", 13)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(label)
-	return {"button": button, "icon": icon, "label": label}
+
+	var status_panel := PanelContainer.new()
+	status_panel.name = "ToolStatusPill"
+	status_panel.custom_minimum_size = Vector2(72, 20)
+	status_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	status_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	status_panel.set_meta("free_color", color.darkened(0.045))
+	status_panel.set_meta("free_text_color", accent)
+	column.add_child(status_panel)
+
+	var status_row := HBoxContainer.new()
+	status_row.name = "ToolStatusContent"
+	status_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	status_row.add_theme_constant_override("separation", 3)
+	status_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	status_panel.add_child(status_row)
+
+	var status_icon := TextureRect.new()
+	status_icon.name = "ToolStatusCoinIcon"
+	status_icon.texture = COIN_ICON
+	status_icon.custom_minimum_size = Vector2(16, 16)
+	status_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	status_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	status_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	status_row.add_child(status_icon)
+
+	var status_label := Label.new()
+	status_label.name = "ToolStatusLabel"
+	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	status_label.add_theme_font_size_override("font_size", 11)
+	status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	status_row.add_child(status_label)
+	return {
+		"button": button,
+		"icon": icon,
+		"label": label,
+		"status_panel": status_panel,
+		"status_icon": status_icon,
+		"status_label": status_label
+	}
+
+
+func _set_tool_status(
+	status_panel: PanelContainer,
+	status_icon: TextureRect,
+	status_label: Label,
+	mode: String,
+	value: int = 0
+) -> void:
+	if not status_panel or not status_icon or not status_label:
+		return
+	status_icon.visible = mode == "paid"
+	var free_color: Color = status_panel.get_meta("free_color", Color("#EFF2F5"))
+	var free_text_color: Color = status_panel.get_meta("free_text_color", Color("#526070"))
+	match mode:
+		"paid":
+			status_label.text = str(maxi(0, value))
+			status_label.add_theme_color_override("font_color", Color("#9B6400"))
+			status_panel.add_theme_stylebox_override("panel", _tool_status_style(Color("#FFD978")))
+		"free":
+			status_label.text = _t("免费 ×%d", [maxi(0, value)])
+			status_label.add_theme_color_override("font_color", free_text_color)
+			status_panel.add_theme_stylebox_override("panel", _tool_status_style(free_color))
+		"tutorial":
+			status_label.text = _t("教程免费")
+			status_label.add_theme_color_override("font_color", free_text_color)
+			status_panel.add_theme_stylebox_override("panel", _tool_status_style(free_color))
+		_:
+			status_label.text = _t("免费")
+			status_label.add_theme_color_override("font_color", free_text_color)
+			status_panel.add_theme_stylebox_override("panel", _tool_status_style(free_color))
+
+
+func _tool_status_style(color: Color) -> StyleBoxFlat:
+	var style := _button_style(color, 11)
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	style.content_margin_top = 0
+	style.content_margin_bottom = 0
+	return style
 
 
 func _refresh_tool_button_visual(button: Button) -> void:

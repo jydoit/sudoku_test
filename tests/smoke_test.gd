@@ -145,6 +145,10 @@ func _run() -> void:
 	assert(game.level_heart_label.get_parent() == game.top_home_button.get_parent(), "Level hearts should share the top navigation row with coins")
 	assert(game.level_heart_label.get_parent() != game.clear_button.get_parent(), "Level hearts should no longer occupy a bottom tool slot")
 	assert(game.clear_button.get_parent() == game.crown_find_button.get_parent() and game.clear_button.get_parent() == game.hint_button.get_parent(), "Clear, crown find and hint should share the bottom tool bar")
+	game.crown_find_count = game.INITIAL_CROWN_FIND_COUNT
+	game.hint_count = game.INITIAL_HINT_COUNT
+	game._update_crown_find_button()
+	game._update_hint_button()
 	assert(game.level_heart_slots.size() == game.INITIAL_HEART_COUNT, "The top heart badge should keep independent heart slots")
 	assert(game.HEART_PULSE_STAGGER_SECONDS == 0.0, "Remaining hearts should pulse together without stagger")
 	assert(game.level_heart_tweens.size() == game.INITIAL_HEART_COUNT, "Every visible full heart should own a pulse state")
@@ -156,9 +160,16 @@ func _run() -> void:
 		var tool_icon: Control = tool_button.find_child("ToolIcon", true, false)
 		var tool_label: Label = tool_button.find_child("ToolLabel", true, false)
 		assert(tool_icon != null and tool_label != null, "Every tool should expose a large icon and caption")
-		assert(tool_icon.custom_minimum_size.x >= 48.0 and tool_icon.custom_minimum_size.y >= 48.0, "Tool icons should use the enlarged visual size")
+		assert(tool_icon.custom_minimum_size.x >= 44.0 and tool_icon.custom_minimum_size.y >= 44.0, "Tool icons should remain prominent inside the compact mobile toolbar")
 		assert(tool_icon.position.y < tool_label.position.y, "Tool icons should render above their captions")
-	assert(game.clear_button_label.text == "清除 · 免费", "Clear should visibly communicate that it is free")
+	assert(game.clear_button_label.text == "清除", "Clear should keep its primary label concise")
+	assert(game.clear_status_label.text == "免费", "Clear should communicate its free status in the shared footer pill")
+	assert(game.crown_find_button_label.text == "直找" and game.hint_button_label.text == "提示", "Tool names should not mix counts or prices into the primary label")
+	assert(str(game.crown_find_status_label.text).contains("免费") and str(game.hint_status_label.text).contains("免费"), "Available tool uses should be displayed in the fixed status pill")
+	assert(not game.crown_find_status_icon.visible and not game.hint_status_icon.visible, "Free tool uses should not imply an immediate coin charge")
+	for tool_button in [game.clear_button, game.crown_find_button, game.hint_button]:
+		var status_pill: PanelContainer = tool_button.find_child("ToolStatusPill", true, false)
+		assert(status_pill != null and status_pill.custom_minimum_size.y >= 20.0, "Every tool should keep an aligned fixed-height status pill")
 	var completed_start_level_id := int(game.current_level["levelId"])
 	game.completed_levels = [completed_start_level_id]
 	game.director_progress = {"completedLevelIds": [completed_start_level_id], "recentRuns": [], "statsByArm": {}}
@@ -459,7 +470,8 @@ func _run() -> void:
 		game._use_crown_find()
 	assert(game.crown_find_count == 0, "Crown find count should stop at zero")
 	assert(not game.crown_find_button.disabled, "Crown find should remain available for coins after free uses are exhausted")
-	assert(str(game.crown_find_button_label.text).contains("-"), "Crown find should display its current coin price")
+	assert(game.crown_find_button_label.text == "直找", "Crown find should not display an exhausted ×0 state")
+	assert(game.crown_find_status_icon.visible and int(game.crown_find_status_label.text) > 0, "Crown find should replace the free status with its coin price")
 	var pieces_before_shortage: int = game._piece_positions().size()
 	game.coin_count = 0
 	game._use_crown_find()
@@ -514,6 +526,13 @@ func _run() -> void:
 	assert(not game.coach_panel.visible, "Hints should use board visuals without showing explanatory text")
 	assert(game.hint_count == hints_before - 1, "Hint must consume one available use")
 	assert(game.coin_count == coins_before, "Free hint uses must not charge coins")
+	var remaining_hints_after_free_use: int = game.hint_count
+	game.hint_count = 0
+	game._update_hint_button()
+	assert(game.hint_button_label.text == "提示", "Hint should not display an exhausted ×0 state")
+	assert(game.hint_status_icon.visible and int(game.hint_status_label.text) > 0, "Hint should replace the free status with its coin price")
+	game.hint_count = remaining_hints_after_free_use
+	game._update_hint_button()
 	game._on_cell_pressed(guide_target.y, guide_target.x)
 	assert(game.cell_states[guide_target.y][guide_target.x] == "blocked", "Clicking a formal hint target should draw an X")
 
