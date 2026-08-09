@@ -103,6 +103,16 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - 关卡页：普通关卡直接进入找皇冠；复合拼块关卡先进入颜色块拼接阶段，完成转换后进入找皇冠阶段。
 - 通关结果页：通关反馈、皇冠奖励展位、下一关、主菜单。
 
+运行时分层：
+
+- `scripts/main.gd` 是应用协调器，负责启动、模块装配、页面路由和跨流程事件编排；皇冠规则、拼块可放置性、玩家资源交易、存档 schema 和结算统计不得在该文件中重复实现。
+- `scripts/pages/` 持有首页、常规关卡、拼块关卡和结算页的节点树、页面动画及视图更新 API；工具名称、免费/付费状态、禁用态、教程强调色和金币/红心动画均通过页面语义 API 更新，主流程不再复制保存页面内部节点引用或构造控件样式。
+- `scripts/controllers/` 持有正式关卡、教程和拼块玩法运行态；`formal_game_controller.gd` 管理棋盘命令、拖动和撤销，`tutorial_controller.gd` 管理教程阶段及教程规则查询，`composite_game_controller.gd` 管理放置、撤回、托盘、死局与恢复。
+- `scripts/rules/crown_rule_engine.gd` 是皇冠冲突、候选、行列区域和完成判断的唯一规则源；`scripts/rules/composite_placement_engine.gd` 是拼块兼容布局、合法 origin、Hint/直找目标及放置评估的唯一规则源。
+- `scripts/services/player_wallet.gd` 管理金币余额和工具消费事务，`composite_entry_service.gd` 管理每日免费额度、入场报价与扣费，`run_result_service.gd` 管理奖励和结果统计。
+- `scripts/dialogs/` 与 `scripts/overlays/` 分别持有弹窗内容和跨页面覆盖层，主流程通过语义化方法与信号交互。
+- `scripts/storage/save_repository.gd` 是本地文件 IO 的唯一入口；`scripts/storage/game_save_service.gd` 负责存档 schema 标准化、快照、拼块历史及状态尺寸校验。
+
 核心数据：
 
 - `data/levels.json`：关卡配置、答案、难度、提示路径和无猜解题路径。
@@ -129,8 +139,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 
 当前实现：
 
-- UI 由 `scripts/main.gd` 中 `_build_home_screen()` 及其子函数动态构建。
-- 首页主操作由 `_build_home_primary_buttons()` 构建。
+- 首页 UI 由独立的 `scripts/pages/home_page.gd` 构建并持有“开始关卡 / 拼块玩法 / 新人流程”三个入口；页面只接收展示数据并发出语义化信号，不读取关卡、存档或经济状态。
 - “开始关卡”调用当前关卡流程；“拼块玩法”调用 `_start_home_composite_flow()`，并通过 `CompositeLevelDirector` 进入隔离的自适应拼块挑战；“新人流程”调用 `_replay_tutorial_preserving_progress()` 保存正式关卡快照并进入教程。
 - 资源、活动、排行榜、宝箱和底部导航入口已从首页隐藏。
 
@@ -163,14 +172,15 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 
 当前实现：
 
-- UI 由 `scripts/main.gd` 中 `_build_game_screen()` 及其子函数构建。
+- 关卡 UI 按玩法拆为两个独立页面实例：`scripts/pages/formal_level_page.gd` 承载常规皇冠玩法，`scripts/pages/composite_level_page.gd` 承载拼块玩法及其完成拼接后的皇冠阶段；两者共享 `scripts/pages/level_page_base.gd` 中的顶部栏、关卡标题、进度、棋盘、工具栏、红心与金币动画。`scripts/main.gd` 只切换当前页面并通过页面 API 更新金币、进度和红心，不再在页面切换时复制绑定整套内部节点引用。
 - 冲突状态由 `_validate_and_update()` 更新。
 - 教练文字卡仅在新手教程中显示；进入正式关卡后隐藏并退出纵向布局，释放空间主要交给棋盘。
 - 关卡页左右安全留白为 `6px`，棋盘内部总缩进为 `10px`；在 540px 宽竖屏下，5x5 棋盘实际绘制范围不小于 `510 x 510px`。
 - 顶部编辑和底部广告入口已从关卡页移除；顶部资源栏显示加大的首页入口、金币、本关红心、帮助、设置与选关入口，底部操作区显示清除、皇冠直找和提示按钮。
-- 帮助内容由 `scripts/main.gd` 构建，三张规则示意图由 `scripts/rule_illustration.gd` 使用现有狮子皇冠贴图与棋盘色板绘制。
+- 帮助、设置和选关内容分别由 `scripts/dialogs/help_dialog_content.gd`、`settings_dialog_content.gd` 和 `level_select_dialog_content.gd` 构建；三张规则示意图由 `scripts/rule_illustration.gd` 使用现有狮子皇冠贴图与棋盘色板绘制。`scripts/main.gd` 只负责弹窗打开条件和确认后的流程动作。
 - 帮助、选关、教程确认和金币不足提示统一由 `scripts/dialog_controller.gd` 管理，使用游戏内遮罩、暖白卡片、统一边框、圆角、阴影、按钮和开关动效，不依赖系统窗口外观。
-- 新手教程复用正式关卡的顶部标题、皇冠进度、帮助入口、红心槽和底部三道具布局；教程期间仅将“选关”替换为“跳过”，避免绕过引导进入正式关卡。
+- 新手教程复用正式关卡的顶部标题、皇冠进度、帮助入口、红心槽和底部三道具布局；教程期间仅将“选关”替换为“跳过”，避免绕过引导进入正式关卡。`scripts/controllers/tutorial_controller.gd` 持有完成状态、当前步骤、交互阶段、教程历史和焦点令牌，并直接处理双击皇冠、滑动/点击排除、Hint、皇冠直找、撤销和阶段推进；`scripts/main.gd` 只消费其结构化结果并触发音效、文案和页面动画。历史遗留的 `place / color / row_col / adjacent / tools` 多页教程分支已删除，运行时只保留产品定义的单张 5x5 状态机。`scripts/overlays/tutorial_overlay.gd` 独立管理中央提示、手指定位以及单击/双击/滑动动画。
+- 开局提示皇冠卡片和飞入棋盘动画由 `scripts/overlays/opening_king_overlay.gd` 管理；全局 Toast 由 `scripts/overlays/feedback_layer.gd` 管理，所有 Tween 均随对应 UI 组件创建和清理。
 
 功能截图与交互流转：
 
@@ -212,7 +222,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 
 当前实现：
 
-- 交互状态由 `scripts/main.gd` 中 `cell_states` 管理，状态包括 `empty`、`blocked`、`piece`、`hint`、`king`、`wrong`。
+- 棋盘状态包括 `empty`、`blocked`、`piece`、`hint`、`king`、`wrong`；正式关卡的点击、双击、批量滑动、清除、撤销及移动历史由 `scripts/controllers/formal_game_controller.gd` 统一执行，页面和主流程只消费结构化变更结果。
 - 棋盘绘制由 `scripts/game_board.gd` 自绘完成。
 - 棋盘渲染使用整数像素对齐的格子尺寸和起点；每个格子保持独立圆角矩形，颜色块和提示灰色浮层使用同一套独立格子坐标，避免小数像素造成的视觉错位。
 - 棋盘格子之间的缝隙使用底层填充：每个格子的圆角留白也归入间隔层，同色相邻格之间使用该色的加深色；不同色块边界和棋盘最外缘统一使用预合成后的深色外框色，外框宽度与相邻格子的总间隙一致并随棋盘尺寸变化；深色外框外侧增加只向外扩散的双层浅暖灰光晕，不覆盖棋盘色块。
@@ -291,9 +301,9 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 
 - `_use_hint()` 执行提示消耗并设置棋盘视觉与可操作范围，不更新任何玩家可见提示文案。
 - `GameBoard` 先对整个棋盘（含格间接缝和区域边界）绘制统一蒙层，再在蒙层上重绘提示相关格、已有 X 和皇冠，从绘制结构上避免逐格蒙层造成的接缝错位。
-- `_build_best_next_hint()` 负责选择当前最佳提示。
-- 相关策略函数集中在 `scripts/main.gd` 的提示逻辑区。
-- 提示策略仍可在内部生成推理信息，但正式关卡不向玩家展示这段文字。
+- `_build_best_next_hint()` 只把当前关卡与棋盘状态交给 `HintEngine`，不再包含具体推理算法。
+- `scripts/controllers/hint_engine.gd` 独立持有提示会话、候选查询、候选锁定、成组锁定、反证排除、直接冲突排除及策略优先级，并统一把结果过滤成“仅允许非答案空格画普通 X”的提示；页面和主流程不直接选择提示目标。
+- 正式关卡 Hint 引擎只输出 `target + guides` 结构数据，不生成玩家文案；正式关卡不显示解释文字。
 - 关卡数据中的 `solveSteps` 记录无猜路径，但当前运行时提示主要按当前棋盘动态计算。
 
 功能截图与交互流转：
@@ -483,7 +493,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - 新关卡优先在多个确定性种子中选择至少包含 2 个合法最终布局的切分，找不到时回退到至少 1 个合法布局；保存恢复始终复用已经写入的种子与布局，不重新抽取。
 - `scripts/assembly_view.gd` 使用 `assets/ui/block_tile_neutral.png` 作为可运行时染色的单格纹理，拼装立体锁定区域、托盘方块、拖动预览和棋盘落块；同时绘制凹槽、深色横向待放置区、颜色发光 slot、提示浮窗和压平过场，并处理鼠标与单指触控的横向滚动/拖放仲裁。
 - `scripts/level_director.gd` 在 6x6 及以上里程碑挑战日程中写入 `assemblyEnabled`，拼块期间不安排开局提示皇冠。
-- `scripts/main.gd` 管理 `assembly / transition / crown` 阶段、放置历史、死局结果页、金币自动撤回复活、顶部待放置区、清除/直找/提示道具、Help 默认页、首次演示、最终运行时关卡替换及存档。
+- `scripts/controllers/composite_game_controller.gd` 持有 `assembly / transition / crown` 阶段、拼块数据、放置历史、托盘顺序、死局、最终布局和恢复现场，并直接执行放置、撤回、清除、直找提交和最后一步复活；纯布局判断统一委托给 `scripts/rules/composite_placement_engine.gd`。`scripts/main.gd` 只响应控制器结果、触发页面动画及完成阶段切换。
 - `tests/composite_smoke_test.gd` 覆盖随机切分、块数系数、边界线索评分、开放吸附、死局搜索、自动撤回复活、重新开始、拼块 UI、道具隔离、Hint、转换和两阶段重启恢复。
 
 回归测试重点：
@@ -522,8 +532,8 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - `_complete_level()` 处理完成状态、奖励、保存和弹窗。
 - 金币发放策略独立位于 `scripts/coin_reward_policy.gd`，直接读取 `LevelDirector.SIZE_UNLOCK_DISPLAY_LEVELS` 判断当前展示关卡所属的 `1-5` 金币档位，并负责 Excellent 判定与最终发放数量；`scripts/coin_economy.gd` 只负责道具价格、金币核销和流水。棋盘实际 size、开局提示皇冠和错误次数不再额外改变 Good 的基础金币。
 - `_next_level()` 和 `_replay_level()` 处理弹窗按钮。
-- `completion_overlay` 为全屏通关结果页；成功结算的角色展位显示一只开心站立的橘色皇冠狮子。每次进入结算页时随机选择自然挥手、逐步吐舌头或眨眼做鬼脸动画。角色身体保持固定位置、固定比例且不旋转，仅通过逐帧贴图表现动作；逐帧动画使用不等长帧时长与动作停顿，避免机械循环感。
-- 结算页只展示真实产生的金币奖励，不展示没有后续用途的“获得皇冠 +1”虚拟奖励；奖励数字从 `+0` 滚动累加到本局实际到账金币，金币已在结算状态写入时落盘，动画不得延迟或重复发放。
+- `scripts/pages/result_page.gd` 是独立的全屏结果页，同时承载成功、失败、拼块死局和教程完成四种视觉状态。页面通过 `present_success / present_failure / present_deadlock / present_tutorial_complete` 接收语义数据，自行生成本地化文案并管理金币飞入、余额滚动、小狮子逐帧庆祝和花瓣动画；奖励计算与完成/失败统计由 `scripts/services/run_result_service.gd` 负责，`scripts/main.gd` 只处理结算后的导航。成功结算的角色展位显示一只开心站立的橘色皇冠狮子，每次进入结算页时随机选择自然挥手、逐步吐舌头或眨眼做鬼脸动画。角色身体保持固定位置、固定比例且不旋转，仅通过逐帧贴图表现动作；逐帧动画使用不等长帧时长与动作停顿，避免机械循环感。
+- 结算页只展示真实产生的金币奖励，不展示没有后续用途的“获得皇冠 +1”虚拟奖励；奖励行只保留金币图标和右侧金色大号账户余额，不再显示 `coins / 金币奖励` 文字。页面淡入后停顿约 `0.45s`，数字先显示本次奖励到账前的账户余额；小狮子配合挥手/抛金币动作，将与奖励数量一致的金币沿交错弧线逐枚抛向奖励行的金币图标，每枚金币落入时目标图标轻微回弹，裁切窗口内的余额同步向上滚动 `1`，最终停在用户当前持有的金币总数。飞行金币固定使用移动端小尺寸，不能被素材原始尺寸撑大或飞出结果页。全部到账后小狮子恢复随机庆祝动作。总时长按奖励数量控制在约 `1.35-2.8s`，金币已在结算状态写入时落盘，动画不得延迟或重复发放。
 - 关卡完成会记录耗时、步数、提示数、直找次数、道具使用次数和难度收益；同时更新本组合的通关 Beta 后验，并在打开下一关、次日回访或失败时更新对应 Beta 与分层 Dirichlet 反馈。收益计算的耗时上限为 15 分钟。
 - 成功打开下一关会为上一局补记继续游玩收益；次日 24 小时内再次打开会为所有符合条件的完成局补记次留收益。
 
@@ -536,7 +546,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 - 正确解完成后显示通关结果页。
 - 验证第 `1 / 20 / 80 / 160 / 240` 关基础奖励依次为 `1 / 2 / 3 / 4 / 5`。
 - 多体力关卡无体力消耗时显示 Excellent、奖励按 1.3 倍向上取整并播放花瓣；损失体力或单体力关卡显示 Good、只发 base 且无花瓣。
-- 拼块付费新局进入后显示金币扣除浮层和余额递减动画；通关结算页的奖励数字从 0 累加到实际奖励，动画结束值必须与存档金币流水一致。
+- 拼块付费新局进入后显示金币扣除浮层，顶部余额在裁切窗口中逐格向下滚动；通关结算页由小狮子逐枚抛出金币，金币飞入奖励图标时数字逐格向上滚动。获得和扣除动画的结束值都必须与存档金币流水一致。
 - 已完成关卡重复通关按本次表现重新结算，不能重复写入已完成关卡 ID。
 - 下一关按钮尺寸足够明显且可点击。
 - 主菜单按钮返回首页。
@@ -585,6 +595,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 当前实现：
 
 - 存档路径：`user://color_queens_save.json`。
+- 存档文件读取和写入统一通过 `scripts/storage/save_repository.gd`；`scripts/storage/game_save_service.gd` 负责存档版本兼容、业务字段标准化、正式关卡快照和拼块历史构建及校验。页面和玩法控制器不直接访问 `FileAccess`，`main.gd` 只把当前会话字段应用到运行态。
 - `_load_save()` 加载并兼容旧版本。
 - `_save_game()` 在关键状态变化后写入。
 - 当前保存字段包括 `currentLevelIndex`、`currentLevelId`、`playerLevelNumber`、`activeSchedule`、`directorProgress`、`compositeDirectorProgress`、`compositeCoinProgress`、`economyProgress`、`runStartedUnix`、`runMoveCount`、`runHintCount`、`runDirectFindCount`、`runCoinExchangeCount`、`cellStates`、`isCompleted`、`isFailed`、`coinCount`、`heartCount`、`hintCount`、`completedLevels`、`immediateErrors`、`tutorialCompleted`、`tutorialStarted`、`tutorialStepIndex`、`formalProgressSnapshot`、`homeCompositeEntryActive`、`homeCompositeRound`、`homeCompositeProgressSnapshot`、`homeCompositeHistory`、`compositeState`、`compositeTutorialSeen`。
@@ -688,7 +699,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 当前实现：
 
 - `LocalizationController` 负责系统语言识别、五语言翻译资源注册、动态文案格式化和 RTL 判断。
-- `main.gd` 负责设置入口、语言选择弹窗、布局方向切换以及 `selectedLanguage` 的存取。
+- `scripts/dialogs/settings_dialog_content.gd` 负责语言选择控件；`main.gd` 负责设置入口、布局方向切换以及 `selectedLanguage` 的存取。
 
 回归测试重点：
 

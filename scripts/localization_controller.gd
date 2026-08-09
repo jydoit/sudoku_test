@@ -157,6 +157,8 @@ const MESSAGE_ROWS := [
 	["GOOD", "GOOD", "جيد", "BIEN", "BENE"],
 	["主线进度保持不变", "Main progress is unchanged", "تقدم المسار الرئيسي لم يتغير", "La progression principale reste inchangée", "Progressus principalis immutatus est"],
 	["金币 +%d", "Coins +%d", "عملات +%d", "Pièces +%d", "Nummi +%d"],
+	["金币奖励", "Coin reward", "مكافأة العملات", "Récompense", "Praemium nummorum"],
+	["奖励已加入金币余额", "Reward added to your coin balance", "تمت إضافة المكافأة إلى رصيد العملات", "Récompense ajoutée à votre solde", "Praemium ad nummos tuos additum est"],
 	["本局使用每日免费额度 · 未扣除金币\n通关奖励 %d 金币", "Daily free round · No entry coins deducted\nCompletion reward: %d coins", "جولة يومية مجانية · لم تُخصم عملات دخول\nمكافأة الإكمال: %d عملة", "Manche quotidienne gratuite · Aucune pièce d’entrée déduite\nRécompense : %d pièces", "Ludus cotidianus gratis · Nulli nummi ingressus deducti\nPraemium: %d nummi"],
 	["入场扣除 %d 金币 · 通关奖励 %d 金币\n本局净增加 %d 金币", "Entry: -%d coins · Reward: +%d coins\nNet change: +%d coins", "الدخول: -%d عملة · المكافأة: +%d عملة\nالصافي: +%d عملة", "Entrée : -%d pièces · Récompense : +%d pièces\nGain net : +%d pièces", "Ingressus: -%d nummi · Praemium: +%d nummi\nLucrum: +%d nummi"],
 	["本关已完成，继续挑战", "Level complete. Keep going!", "اكتملت المرحلة. واصل التحدي!", "Niveau terminé. Continuez le défi !", "Gradus perfectus. Perge certamen!"],

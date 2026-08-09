@@ -6,6 +6,8 @@ const LevelDirectorScript = preload("res://scripts/level_director.gd")
 const CompositeLevelDirectorScript = preload("res://scripts/composite_level_director.gd")
 const CompositeLevelStoreScript = preload("res://scripts/composite_level_store.gd")
 const CompositeCoinPolicyScript = preload("res://scripts/composite_coin_policy.gd")
+const CompositePlacementEngineScript = preload("res://scripts/rules/composite_placement_engine.gd")
+const CompositeEntryServiceScript = preload("res://scripts/services/composite_entry_service.gd")
 const SAVE_PATH := "user://color_queens_save.json"
 
 
@@ -49,6 +51,8 @@ func _run() -> void:
 		composite = fallback_composite
 	assert(not level.is_empty(), "Composite test requires a 6x6 or larger level")
 	assert(not composite.is_empty(), "A supported level should produce a composite assembly")
+	assert(not CompositePlacementEngineScript.allowed_origins(composite, {}).is_empty(), "Composite placement rules should be available without a page instance")
+	assert(CompositeEntryServiceScript.quote(1, CompositeCoinPolicyScript.default_progress(), "2026-08-07").get("entryCost", -1) == 0, "Composite entry service should preserve the daily free-round policy")
 	assert(int(composite["rows"]) >= 6, "Composite gameplay must start at 6x6")
 	var composite_difficulty := str(composite.get("difficulty", "medium"))
 	var selected_count: int = composite["selectedRegionIds"].size()
@@ -158,6 +162,8 @@ func _run() -> void:
 	game._start_home_composite_flow()
 	await process_frame
 	assert(game.home_composite_entry_active, "Home block entry should start an isolated experience")
+	assert(game.game_screen == game.composite_level_page and game.composite_level_page.visible, "Block gameplay should activate its independent composite level page")
+	assert(game.board == game.composite_level_page.board and game.assembly_view == game.composite_level_page.assembly_view, "Main flow should bind gameplay references to the active composite page")
 	assert(game._is_assembly_phase() and int(game.current_level.get("rows", 0)) == 6, "Home block entry should open a 6x6 assembly")
 	assert(not game.home_composite_progress_snapshot.is_empty(), "Home block entry should snapshot formal progress")
 	var first_pattern := str(game.composite_data.get("difficulty", ""))
@@ -188,12 +194,14 @@ func _run() -> void:
 	await process_frame
 	assert(game.coin_delta_panel != null and game.coin_delta_panel.visible, "A paid block entry should show a floating coin deduction indicator")
 	assert(game.coin_delta_label.text == "−2", "The entry animation should expose the exact deducted amount")
-	await create_timer(0.85).timeout
+	assert(game.coin_balance_roll_clip != null and game.coin_balance_roll_secondary.visible, "A paid entry should roll the clipped balance digits downward")
+	await create_timer(1.55).timeout
 	assert(game.coin_label.text == "8" and not game.coin_delta_panel.visible, "The level coin balance should roll down and finish at the deducted balance")
+	assert(game.game_screen.COIN_BALANCE_ROLL_DURATION >= 1.25, "The paid-entry balance animation should remain readable on a phone")
 	game._update_coin_label()
 	game.localization.set_locale("en")
-	assert(game._composite_result_coin_text(2, 0, false) == "Daily free round · No entry coins deducted\nCompletion reward: 2 coins", "A free block result should clearly state that no entry coins were deducted")
-	assert(game._composite_result_coin_text(4, 2, true) == "Entry: -2 coins · Reward: +4 coins\nNet change: +2 coins", "A paid block result should clearly separate entry cost, reward, and net change")
+	assert(game.result_page.composite_coin_text(2, 0, false) == "Daily free round · No entry coins deducted\nCompletion reward: 2 coins", "A free block result should clearly state that no entry coins were deducted")
+	assert(game.result_page.composite_coin_text(4, 2, true) == "Entry: -2 coins · Reward: +4 coins\nNet change: +2 coins", "A paid block result should clearly separate entry cost, reward, and net change")
 	assert(game.composite_data.get("validLayouts", []).size() == 1, "Recommended offline data should contain one approved layout")
 	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [3]) and game.assembly_stage_label.text == third_pattern.to_upper(), "The third round should display its sampled pattern")
 	if game.composite_data.get("pieces", []).size() < 2:
