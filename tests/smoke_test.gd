@@ -4,6 +4,7 @@ const LevelDirectorScript = preload("res://scripts/level_director.gd")
 const CoinEconomyScript = preload("res://scripts/coin_economy.gd")
 const CoinRewardPolicyScript = preload("res://scripts/coin_reward_policy.gd")
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
+const CoinRollDisplayScript = preload("res://scripts/components/coin_roll_display.gd")
 const SAVE_PATH := "user://color_queens_save.json"
 
 
@@ -68,6 +69,8 @@ func _run() -> void:
 	assert(load("res://scripts/storage/game_save_service.gd").states_match_size(game.cell_states, int(game.current_level["rows"]), int(game.current_level["cols"])), "Save service should validate board state dimensions")
 	assert(game.save_repository.get_script() == load("res://scripts/storage/save_repository.gd"), "Save file IO should be isolated behind the save repository")
 	assert(game.game_screen.has_method("present_tool"), "Level pages should own tool copy, price pill, disabled state and visual styling")
+	assert(game.game_screen.coin_roll_display.get_script() == CoinRollDisplayScript, "The level header should use the shared coin roller")
+	assert(game.result_page.result_coin_roll_display.get_script() == CoinRollDisplayScript, "The result page should use the shared coin roller")
 	assert(game.progress_bar != null and game.progress_label != null, "Level screen should show crown progress")
 	assert(game.COIN_ICON != null, "Coin balance should use the generated coin texture")
 	assert(game.LION_KING_ICON != null, "Core game pieces should use the lion king texture")
@@ -77,6 +80,48 @@ func _run() -> void:
 	assert(game.board.PIECE_TEXTURE == game.LION_KING_ICON, "Board pieces and UI should share the same lion king texture")
 	assert(game.board.WRONG_PIECE_TEXTURE == game.LION_KING_WRONG_ICON, "Wrong board pieces and UI should share the worried lion texture")
 	assert(game.coin_balance_roll_clip.get_parent().get_node_or_null("CoinIcon") != null, "Level coin balance should render the coin icon beside its rolling value")
+	var level_coin_display = game.game_screen.coin_roll_display
+	var result_coin_display = game.result_page.result_coin_roll_display
+	assert(level_coin_display.primary_label.get_theme_font_size("font_size") >= 23, "The level balance should use a readable mobile font size")
+	assert(result_coin_display.primary_label.get_theme_font_size("font_size") >= 30, "The result balance should use a large reward font size")
+	assert(level_coin_display.counter_height() >= 44.0 and result_coin_display.counter_height() >= 48.0, "Coin clips should include vertical font and shadow safety space")
+	assert(level_coin_display.counter_width() >= 62.0 and result_coin_display.counter_width() >= 104.0, "Coin clips should reserve the approved minimum widths")
+	for balance in [0, 8, 18, 99, 108, 999, 1000, 99999]:
+		level_coin_display.set_value(balance)
+		result_coin_display.set_value(balance)
+		assert(level_coin_display.primary_label.text == str(balance), "The level balance should display %d without truncation" % balance)
+		assert(result_coin_display.primary_label.text == str(balance), "The result balance should display %d without truncation" % balance)
+		assert(level_coin_display.labels_fit_clip() and result_coin_display.labels_fit_clip(), "Both balance labels should remain inside their metric-sized clips")
+		assert(not level_coin_display.secondary_label.visible and not result_coin_display.secondary_label.visible, "Static balance updates should hide the spare rolling label")
+		assert(is_zero_approx(level_coin_display.primary_label.position.y) and is_zero_approx(level_coin_display.secondary_label.position.y), "Static level balance updates should reset both rolling offsets")
+		assert(is_zero_approx(result_coin_display.primary_label.position.y) and is_zero_approx(result_coin_display.secondary_label.position.y), "Static result balance updates should reset both rolling offsets")
+	assert(level_coin_display.primary_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER and level_coin_display.primary_label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER, "The level balance should be centered in both axes")
+	assert(result_coin_display.primary_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER and result_coin_display.primary_label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER, "The result balance should be centered in both axes")
+	var level_top_row: HBoxContainer = level_coin_display.get_parent().get_parent().get_parent()
+	assert(level_top_row.get_combined_minimum_size().x <= 528.0, "The enlarged five-digit coin badge should still fit the 540px level header")
+	assert(result_coin_display.get_combined_minimum_size().x <= 480.0, "The five-digit result balance should remain inside the result card safe width")
+	game.layout_direction = Control.LAYOUT_DIRECTION_RTL
+	await process_frame
+	assert(level_coin_display.layout_direction == Control.LAYOUT_DIRECTION_LTR and result_coin_display.layout_direction == Control.LAYOUT_DIRECTION_LTR, "Coin icon and number order should stay LTR in RTL locales")
+	game.layout_direction = Control.LAYOUT_DIRECTION_INHERITED
+	level_coin_display.set_value(99)
+	level_coin_display.animate_to(108, 0.36)
+	await create_timer(0.06).timeout
+	level_coin_display.set_value(99999)
+	assert(level_coin_display.primary_label.text == "99999" and not level_coin_display.secondary_label.visible, "A static update should safely interrupt and reset an active coin roll")
+	assert(is_zero_approx(level_coin_display.primary_label.position.y), "An interrupted coin roll should restore the visible label to y=0")
+	result_coin_display.set_value(10)
+	result_coin_display.roll_step_to(11, 0.12)
+	result_coin_display.roll_step_to(12, 0.12)
+	assert(result_coin_display.queued_step_count() == 2, "Dense coin arrivals should queue instead of interrupting the active digit roll")
+	await create_timer(0.16).timeout
+	assert(result_coin_display.displayed_value() == 11 and result_coin_display.queued_step_count() == 1, "Queued coin rolls should finish in arrival order")
+	await create_timer(0.14).timeout
+	assert(result_coin_display.displayed_value() == 12 and result_coin_display.queued_step_count() == 0, "The coin roll queue should drain to the final balance")
+	assert(result_coin_display.primary_label.text == "12" and not result_coin_display.secondary_label.visible, "A drained roll queue should normalize the final visible label")
+	assert(int(ProjectSettings.get_setting("display/window/size/viewport_width")) == 540 and int(ProjectSettings.get_setting("display/window/size/viewport_height")) == 960, "Coin layouts should be tested against the Pixel-sized 540x960 viewport")
+	game._update_coin_label()
+	result_coin_display.set_value(0)
 	assert(game.opening_king_overlay != null, "Level screen should provide an opening king overlay")
 	assert(game.INK == UITokensScript.INK, "Main UI should use the shared ink token")
 	assert(game.REGION_COLORS == UITokensScript.REGION_COLORS, "Main UI should use the shared region palette")

@@ -4,6 +4,7 @@ signal primary_requested
 signal secondary_requested
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
+const CoinRollDisplayScript = preload("res://scripts/components/coin_roll_display.gd")
 const COIN_ICON = preload("res://assets/ui/coin.png")
 const LION_KING_VICTORY_ICON = preload("res://assets/ui/lion_king_victory.png")
 const LION_KING_VICTORY_OUT_ICON = preload("res://assets/ui/lion_king_victory_out.png")
@@ -31,6 +32,7 @@ var result_icon_label: Label
 var result_piece_icon: TextureRect
 var result_reward_label: Label
 var result_coin_roll_row: HBoxContainer
+var result_coin_roll_display: HBoxContainer
 var result_reward_coin_icon: TextureRect
 var result_coin_roll_clip: Control
 var result_coin_roll_primary: Label
@@ -44,7 +46,6 @@ var overlay_mode := "success"
 var result_lion_tween: Tween
 var result_lion_wave_tween: Tween
 var result_coin_tween: Tween
-var result_coin_roll_step_tween: Tween
 var result_coin_flight_tweens: Array[Tween] = []
 var result_petal_tweens: Array[Tween] = []
 var result_lion_animation_name := ""
@@ -165,35 +166,31 @@ func configure(localizer: Callable = Callable()) -> void:
 	result_reward_label.hide()
 	showcase_column.add_child(result_reward_label)
 
-	result_coin_roll_row = HBoxContainer.new()
-	result_coin_roll_row.name = "ResultCoinRoll"
-	result_coin_roll_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	result_coin_roll_row.add_theme_constant_override("separation", 7)
-	result_coin_roll_row.custom_minimum_size.y = 40
-	result_coin_roll_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	result_coin_roll_row.hide()
-	showcase_column.add_child(result_coin_roll_row)
-	result_reward_coin_icon = TextureRect.new()
+	result_coin_roll_display = CoinRollDisplayScript.new()
+	result_coin_roll_display.name = "ResultCoinRoll"
+	result_coin_roll_display.configure({
+		"initial_value": 0,
+		"font_size": 32,
+		"minimum_counter_width": 104.0,
+		"minimum_counter_height": 52.0,
+		"minimum_digits": 5,
+		"horizontal_padding": 8.0,
+		"vertical_padding": 4.0,
+		"icon_size": Vector2(34, 34),
+		"separation": 7,
+		"font_color": Color("#D88916"),
+		"shadow_offset_y": 2,
+	})
+	result_coin_roll_display.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	result_coin_roll_display.hide()
+	showcase_column.add_child(result_coin_roll_display)
+	# Keep the established page API while both locations share one display component.
+	result_coin_roll_row = result_coin_roll_display
+	result_reward_coin_icon = result_coin_roll_display.coin_icon
 	result_reward_coin_icon.name = "ResultRewardCoinIcon"
-	result_reward_coin_icon.texture = COIN_ICON
-	result_reward_coin_icon.custom_minimum_size = Vector2(32, 32)
-	result_reward_coin_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	result_reward_coin_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	result_reward_coin_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	result_coin_roll_row.add_child(result_reward_coin_icon)
-	result_coin_roll_clip = Control.new()
-	result_coin_roll_clip.name = "ResultCoinRollClip"
-	result_coin_roll_clip.custom_minimum_size = Vector2(68, 38)
-	result_coin_roll_clip.clip_contents = true
-	result_coin_roll_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	result_coin_roll_row.add_child(result_coin_roll_clip)
-	result_coin_roll_primary = _result_coin_roll_label()
-	result_coin_roll_primary.name = "ResultCoinRollPrimary"
-	result_coin_roll_clip.add_child(result_coin_roll_primary)
-	result_coin_roll_secondary = _result_coin_roll_label()
-	result_coin_roll_secondary.name = "ResultCoinRollSecondary"
-	result_coin_roll_secondary.hide()
-	result_coin_roll_clip.add_child(result_coin_roll_secondary)
+	result_coin_roll_clip = result_coin_roll_display.clip
+	result_coin_roll_primary = result_coin_roll_display.primary_label
+	result_coin_roll_secondary = result_coin_roll_display.secondary_label
 
 	result_tip_label = Label.new()
 	result_tip_label.text = "继续前进，收集更多皇冠"
@@ -345,16 +342,13 @@ func _t(source: String, values: Array = []) -> String:
 
 
 func play_coin_animation(reward: int, balance_after: int) -> void:
-	if not result_coin_roll_row or reward <= 0 or overlay_mode != "success":
+	if not result_coin_roll_display or reward <= 0 or overlay_mode != "success":
 		return
 	stop_coin_animation()
-	result_coin_roll_row.show()
-	var roll_height := maxf(38.0, result_coin_roll_clip.size.y)
+	result_coin_roll_display.show()
 	balance_after = maxi(0, balance_after)
 	var balance_before := maxi(0, balance_after - reward)
-	_result_coin_roll_prepare_label(result_coin_roll_primary, balance_before, 0.0)
-	result_coin_roll_primary.show()
-	result_coin_roll_secondary.hide()
+	result_coin_roll_display.set_value(balance_before)
 	result_reward_coin_icon.scale = Vector2.ONE
 	result_reward_coin_icon.pivot_offset = result_reward_coin_icon.size * 0.5
 	var overlay_origin := self.get_global_rect().position
@@ -370,25 +364,24 @@ func play_coin_animation(reward: int, balance_after: int) -> void:
 		)
 	var flight_sequence_duration := RESULT_COIN_FLIGHT_DURATION + stagger * float(maxi(0, reward - 1))
 	var completion_hold := maxf(0.0, RESULT_COIN_MIN_DURATION - flight_sequence_duration)
+	var roll_queue_drain := float(maxi(0, reward - 1)) * maxf(0.0, RESULT_COIN_ROLL_STEP_DURATION - stagger)
 	result_coin_tween = create_tween()
 	result_coin_tween.tween_interval(RESULT_COIN_START_DELAY)
 	for index in range(reward):
 		result_coin_tween.tween_callback(
-			_launch_result_coin_flyer.bind(index, reward, balance_before, source, target, roll_height)
+			_launch_result_coin_flyer.bind(index, reward, balance_before, source, target)
 		)
 		if index < reward - 1:
 			result_coin_tween.tween_interval(stagger)
-	result_coin_tween.tween_interval(RESULT_COIN_FLIGHT_DURATION + RESULT_COIN_ROLL_STEP_DURATION + completion_hold)
+	result_coin_tween.tween_interval(RESULT_COIN_FLIGHT_DURATION + RESULT_COIN_ROLL_STEP_DURATION + roll_queue_drain + completion_hold)
 	result_coin_tween.tween_callback(func() -> void:
-		_result_coin_roll_prepare_label(result_coin_roll_primary, balance_after, 0.0)
-		result_coin_roll_primary.show()
-		result_coin_roll_secondary.hide()
+		result_coin_roll_display.set_value(balance_after)
 		result_reward_coin_icon.scale = Vector2.ONE
 		_start_random_result_lion_animation()
 	)
 
 
-func _launch_result_coin_flyer(index: int, reward: int, balance_before: int, source: Vector2, target: Vector2, roll_height: float) -> void:
+func _launch_result_coin_flyer(index: int, reward: int, balance_before: int, source: Vector2, target: Vector2) -> void:
 	if not result_coin_flight_layer or not self.visible or overlay_mode != "success":
 		return
 	var flyer := TextureRect.new()
@@ -418,7 +411,7 @@ func _launch_result_coin_flyer(index: int, reward: int, balance_before: int, sou
 	)
 	flight_tween.parallel().tween_property(flyer, "modulate:a", 1.0, 0.12)
 	flight_tween.parallel().tween_property(flyer, "scale", Vector2.ONE, 0.20).set_ease(Tween.EASE_OUT)
-	flight_tween.tween_callback(_on_result_coin_flyer_arrived.bind(flyer, index + 1, reward, balance_before, roll_height))
+	flight_tween.tween_callback(_on_result_coin_flyer_arrived.bind(flyer, index + 1, reward, balance_before))
 
 
 func _set_result_coin_flyer_progress(progress: float, flyer: TextureRect, start: Vector2, curve: Vector2, target: Vector2) -> void:
@@ -432,12 +425,12 @@ func _set_result_coin_flyer_progress(progress: float, flyer: TextureRect, start:
 		flyer.scale = Vector2.ONE * lerpf(1.0, 0.72, (progress - 0.78) / 0.22)
 
 
-func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int, balance_before: int, roll_height: float) -> void:
+func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int, balance_before: int) -> void:
 	if is_instance_valid(flyer):
 		flyer.queue_free()
 	if not self.visible or overlay_mode != "success":
 		return
-	_roll_result_coin_value(balance_before + value, roll_height)
+	result_coin_roll_display.roll_step_to(balance_before + value, RESULT_COIN_ROLL_STEP_DURATION)
 	if result_reward_coin_icon:
 		result_reward_coin_icon.scale = Vector2.ONE
 		var pulse := result_reward_coin_icon.create_tween()
@@ -447,53 +440,12 @@ func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int, 
 		_set_result_lion_frame(LION_KING_VICTORY_ICON)
 
 
-func _roll_result_coin_value(value: int, roll_height: float) -> void:
-	if result_coin_roll_step_tween and result_coin_roll_step_tween.is_valid():
-		result_coin_roll_step_tween.kill()
-	var outgoing := result_coin_roll_primary if value % 2 == 1 else result_coin_roll_secondary
-	var incoming := result_coin_roll_secondary if value % 2 == 1 else result_coin_roll_primary
-	_prepare_result_coin_roll_step(outgoing, incoming, value, roll_height)
-	result_coin_roll_step_tween = create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
-	result_coin_roll_step_tween.tween_property(outgoing, "position:y", -roll_height, RESULT_COIN_ROLL_STEP_DURATION)
-	result_coin_roll_step_tween.parallel().tween_property(incoming, "position:y", 0.0, RESULT_COIN_ROLL_STEP_DURATION)
-
-
-func _prepare_result_coin_roll_step(outgoing: Label, incoming: Label, value: int, roll_height: float) -> void:
-	_result_coin_roll_prepare_label(outgoing, value - 1, 0.0)
-	_result_coin_roll_prepare_label(incoming, value, roll_height)
-	outgoing.show()
-	incoming.show()
-
-
-func _result_coin_roll_prepare_label(label: Label, value: int, y_position: float) -> void:
-	if not label:
-		return
-	label.text = str(value)
-	label.position = Vector2(0, y_position)
-	label.size = Vector2(68, 38)
-	label.scale = Vector2.ONE
-
-
-func _result_coin_roll_label() -> Label:
-	var label := Label.new()
-	label.size = Vector2(68, 38)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_color", Color("#D88916"))
-	label.add_theme_color_override("font_shadow_color", Color(0.44, 0.28, 0.05, 0.16))
-	label.add_theme_constant_override("shadow_offset_y", 2)
-	label.add_theme_font_size_override("font_size", 28)
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return label
-
-
 func stop_coin_animation() -> void:
 	if result_coin_tween and result_coin_tween.is_valid():
 		result_coin_tween.kill()
 	result_coin_tween = null
-	if result_coin_roll_step_tween and result_coin_roll_step_tween.is_valid():
-		result_coin_roll_step_tween.kill()
-	result_coin_roll_step_tween = null
+	if result_coin_roll_display:
+		result_coin_roll_display.stop_animation(true)
 	for flight_tween in result_coin_flight_tweens:
 		if flight_tween and flight_tween.is_valid():
 			flight_tween.kill()
@@ -501,11 +453,6 @@ func stop_coin_animation() -> void:
 	if result_coin_flight_layer:
 		for flyer in result_coin_flight_layer.get_children():
 			flyer.queue_free()
-	if result_coin_roll_primary:
-		result_coin_roll_primary.scale = Vector2.ONE
-	if result_coin_roll_secondary:
-		result_coin_roll_secondary.scale = Vector2.ONE
-		result_coin_roll_secondary.hide()
 	if result_reward_coin_icon:
 		result_reward_coin_icon.scale = Vector2.ONE
 	if result_coin_roll_row:

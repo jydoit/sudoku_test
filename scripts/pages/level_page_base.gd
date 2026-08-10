@@ -20,6 +20,7 @@ signal assembly_intro_finished
 const GameBoardScript = preload("res://scripts/game_board.gd")
 const AssemblyViewScript = preload("res://scripts/assembly_view.gd")
 const ToolIconScript = preload("res://scripts/tool_icon.gd")
+const CoinRollDisplayScript = preload("res://scripts/components/coin_roll_display.gd")
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const COIN_ICON = preload("res://assets/ui/coin.png")
 const LION_KING_ICON = preload("res://assets/ui/lion_king.png")
@@ -48,6 +49,7 @@ var settings_button: Button
 var level_select_button: Button
 var tutorial_skip_button: Button
 var coin_label: Label
+var coin_roll_display: HBoxContainer
 var coin_balance_roll_clip: Control
 var coin_balance_roll_secondary: Label
 var level_heart_label: Control
@@ -69,7 +71,6 @@ var hint_status_icon: TextureRect
 var hint_status_label: Label
 var coin_delta_panel: PanelContainer
 var coin_delta_label: Label
-var coin_balance_roll_tween: Tween
 var coin_delta_tween: Tween
 var heart_tweens: Array = []
 var _localizer: Callable
@@ -132,8 +133,8 @@ func setup(initial_coins: int, include_assembly: bool, localizer: Callable = Cal
 
 
 func set_coin_balance(value: int) -> void:
-	if coin_label:
-		coin_label.text = str(maxi(0, value))
+	if coin_roll_display:
+		coin_roll_display.set_value(maxi(0, value))
 
 
 func set_progress(current: int, target: int) -> void:
@@ -300,16 +301,14 @@ func _t(source: String, values: Array = []) -> String:
 
 
 func play_coin_deduction(balance_before: int, balance_after: int, amount: int) -> void:
-	if not coin_label or amount <= 0:
+	if not coin_roll_display or amount <= 0:
 		return
-	if coin_balance_roll_tween and coin_balance_roll_tween.is_valid():
-		coin_balance_roll_tween.kill()
 	if coin_delta_tween and coin_delta_tween.is_valid():
 		coin_delta_tween.kill()
-	_play_coin_balance_roll(balance_before, balance_after)
-	var badge := coin_label.get_parent() as Control
-	var badge_rect := badge.get_global_rect() if badge else coin_label.get_global_rect()
-	var page_origin := get_global_rect().position
+	coin_roll_display.set_value(balance_before)
+	coin_roll_display.animate_to(balance_after, COIN_BALANCE_ROLL_DURATION)
+	var badge_rect: Rect2 = coin_roll_display.get_global_rect()
+	var page_origin: Vector2 = get_global_rect().position
 	var start_position := Vector2(
 		badge_rect.get_center().x - page_origin.x - coin_delta_panel.size.x * 0.5,
 		badge_rect.end.y - page_origin.y + 4.0
@@ -325,54 +324,6 @@ func play_coin_deduction(balance_before: int, balance_after: int, amount: int) -
 	coin_delta_tween.tween_property(coin_delta_panel, "modulate:a", 0.0, COIN_FEEDBACK_FADE_OUT)
 	coin_delta_tween.parallel().tween_property(coin_delta_panel, "position", start_position - Vector2(0, 28), COIN_FEEDBACK_FADE_OUT)
 	coin_delta_tween.tween_callback(func() -> void: coin_delta_panel.hide())
-
-
-func _play_coin_balance_roll(balance_before: int, balance_after: int) -> void:
-	if not coin_label:
-		return
-	if not coin_balance_roll_clip or not coin_balance_roll_secondary:
-		coin_label.text = str(balance_after)
-		return
-	var step_count := absi(balance_after - balance_before)
-	if step_count <= 0:
-		_prepare_coin_roll_label(coin_label, balance_after, 0.0)
-		coin_balance_roll_secondary.hide()
-		return
-	_prepare_coin_roll_label(coin_label, balance_before, 0.0)
-	coin_label.show()
-	coin_balance_roll_secondary.hide()
-	var direction := 1.0 if balance_after < balance_before else -1.0
-	var step_duration := COIN_BALANCE_ROLL_DURATION / float(step_count)
-	coin_balance_roll_tween = create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
-	for step_index in range(1, step_count + 1):
-		var value := balance_before - step_index if balance_after < balance_before else balance_before + step_index
-		var outgoing := coin_label if step_index % 2 == 1 else coin_balance_roll_secondary
-		var incoming := coin_balance_roll_secondary if step_index % 2 == 1 else coin_label
-		coin_balance_roll_tween.tween_callback(_prepare_coin_roll_step.bind(outgoing, incoming, value, direction))
-		coin_balance_roll_tween.tween_property(outgoing, "position:y", direction * 40.0, step_duration)
-		coin_balance_roll_tween.parallel().tween_property(incoming, "position:y", 0.0, step_duration)
-	coin_balance_roll_tween.tween_callback(func() -> void:
-		_prepare_coin_roll_label(coin_label, balance_after, 0.0)
-		coin_label.show()
-		coin_balance_roll_secondary.hide()
-	)
-
-
-func _prepare_coin_roll_step(outgoing: Label, incoming: Label, value: int, direction: float) -> void:
-	var previous_value := value + 1 if direction > 0.0 else value - 1
-	_prepare_coin_roll_label(outgoing, previous_value, 0.0)
-	_prepare_coin_roll_label(incoming, value, -direction * 40.0)
-	outgoing.show()
-	incoming.show()
-
-
-func _prepare_coin_roll_label(label: Label, value: int, y_position: float) -> void:
-	label.text = str(value)
-	label.position = Vector2(0, y_position)
-	label.size = Vector2(42, 40)
-	label.scale = Vector2.ONE
-
-
 func _build_coin_delta_feedback() -> void:
 	coin_delta_panel = PanelContainer.new()
 	coin_delta_panel.name = "CoinDeductionFeedback"
@@ -421,8 +372,25 @@ func _build_top_bar(initial_coins: int) -> Control:
 	top_home_button.tooltip_text = "返回首页"
 	top_home_button.pressed.connect(func() -> void: home_requested.emit())
 	row.add_child(top_home_button)
-	coin_label = _coin_value_label(initial_coins)
-	row.add_child(_coin_resource_badge(coin_label))
+	coin_roll_display = CoinRollDisplayScript.new()
+	coin_roll_display.name = "LevelCoinRollDisplay"
+	coin_roll_display.configure({
+		"initial_value": initial_coins,
+		"font_size": 24,
+		"minimum_counter_width": 62.0,
+		"minimum_counter_height": 44.0,
+		"minimum_digits": 5,
+		"horizontal_padding": 6.0,
+		"vertical_padding": 4.0,
+		"icon_size": Vector2(30, 30),
+		"separation": 5,
+		"font_color": Color("#C98212"),
+		"shadow_offset_y": 2,
+	})
+	coin_label = coin_roll_display.primary_label
+	coin_balance_roll_clip = coin_roll_display.clip
+	coin_balance_roll_secondary = coin_roll_display.secondary_label
+	row.add_child(_coin_resource_badge(coin_roll_display))
 	level_heart_label = _build_heart_display()
 	row.add_child(level_heart_label)
 	tutorial_skip_button = _small_button("跳")
@@ -578,52 +546,20 @@ func _small_button(text: String, minimum_size: Vector2 = Vector2(40, 40), font_s
 	return button
 
 
-func _coin_value_label(value: int) -> Label:
-	var label := Label.new()
-	label.name = "CoinValue"
-	label.text = str(value)
-	label.custom_minimum_size = Vector2(42, 40)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_color", Color("#C98212"))
-	label.add_theme_font_size_override("font_size", 18)
-	return label
-
-
-func _coin_resource_badge(value_label: Label) -> PanelContainer:
+func _coin_resource_badge(display: Control) -> PanelContainer:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(94, 42)
+	panel.name = "LevelCoinBadge"
+	panel.custom_minimum_size = Vector2(122, 48)
 	panel.add_theme_stylebox_override("panel", _card_style(CARD, 18, true, 8))
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 7)
-	margin.add_theme_constant_override("margin_right", 7)
+	margin.add_theme_constant_override("margin_left", 6)
+	margin.add_theme_constant_override("margin_right", 6)
+	margin.add_theme_constant_override("margin_top", 2)
+	margin.add_theme_constant_override("margin_bottom", 2)
 	panel.add_child(margin)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 3)
-	margin.add_child(row)
-	var icon := TextureRect.new()
-	icon.name = "CoinIcon"
-	icon.texture = COIN_ICON
-	icon.custom_minimum_size = Vector2(28, 28)
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(icon)
-	coin_balance_roll_clip = Control.new()
-	coin_balance_roll_clip.name = "CoinBalanceRollClip"
-	coin_balance_roll_clip.custom_minimum_size = Vector2(42, 40)
-	coin_balance_roll_clip.clip_contents = true
-	coin_balance_roll_clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(coin_balance_roll_clip)
-	value_label.position = Vector2.ZERO
-	value_label.size = Vector2(42, 40)
-	coin_balance_roll_clip.add_child(value_label)
-	coin_balance_roll_secondary = _coin_value_label(value_label.text.to_int())
-	coin_balance_roll_secondary.name = "CoinBalanceRollSecondary"
-	coin_balance_roll_secondary.position = Vector2(0, -40)
-	coin_balance_roll_secondary.size = Vector2(42, 40)
-	coin_balance_roll_secondary.hide()
-	coin_balance_roll_clip.add_child(coin_balance_roll_secondary)
+	display.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	display.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	margin.add_child(display)
 	return panel
 
 
