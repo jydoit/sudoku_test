@@ -60,6 +60,7 @@ const LION_KING_VICTORY_FRAMES = [
 	LION_KING_VICTORY_FUNNY_ICON
 ]
 const SAVE_PATH := "user://color_queens_save.json"
+const SAVE_PATH_OVERRIDE_SETTING := "color_king/testing/save_path"
 const SAVE_VERSION := 15
 const INITIAL_COIN_COUNT := 10
 const INITIAL_HINT_COUNT := 5
@@ -170,7 +171,7 @@ var composite_data: Dictionary:
 	get: return composite_controller.data if composite_controller else {}
 	set(value):
 		if composite_controller: composite_controller.data = value
-var composite_levels: Dictionary = {}
+var composite_levels
 var composite_placements: Dictionary:
 	get: return composite_controller.placements if composite_controller else {}
 	set(value):
@@ -382,13 +383,14 @@ func _ready() -> void:
 	composite_controller = CompositeGameControllerScript.new()
 	hint_engine = HintEngineScript.new()
 	save_repository = SaveRepositoryScript.new()
-	save_repository.configure(SAVE_PATH)
+	save_repository.configure(str(ProjectSettings.get_setting(SAVE_PATH_OVERRIDE_SETTING, SAVE_PATH)))
 	levels = LevelStoreScript.load_levels()
 	if levels.is_empty():
 		_show_fatal_error("没有找到可用关卡")
 		return
 	composite_levels = CompositeLevelStoreScript.load_entries()
 	_load_save()
+	_prime_composite_level_data()
 	localization = LocalizationControllerScript.new()
 	localization.initialize(selected_language)
 	selected_language = localization.current_locale
@@ -410,6 +412,56 @@ func _ready() -> void:
 		_show_home()
 	else:
 		_start_tutorial_step(0)
+
+
+func _exit_tree() -> void:
+	if composite_levels is CompositeLevelStore:
+		composite_levels.finish_pending_loads()
+
+
+func _prime_composite_level_data() -> void:
+	if not composite_levels is CompositeLevelStore:
+		return
+	var unlocked: Array = []
+	for raw_size in LevelDirectorScript.unlocked_sizes(player_level_number):
+		var size := int(raw_size)
+		if size >= CompositeLevelDirectorScript.MIN_BOARD_SIZE:
+			unlocked.append(size)
+	if unlocked.is_empty():
+		return
+	var primary_size := int(unlocked.back())
+	if bool(active_schedule.get("assemblyEnabled", false)):
+		primary_size = int(active_schedule.get("selectedSize", primary_size))
+	# Restoring an assembly run needs its complete board data immediately. During a
+	# normal startup, start the preferred size first but do not hold back the home
+	# screen while the binary resource is decoded.
+	if bool(active_schedule.get("assemblyEnabled", false)):
+		composite_levels.load_size(primary_size)
+	else:
+		composite_levels.request_size_async(primary_size)
+	call_deferred("_request_background_composite_sizes", unlocked, primary_size)
+
+
+func _request_background_composite_sizes(unlocked: Array, primary_size: int) -> void:
+	if not composite_levels is CompositeLevelStore:
+		return
+	# Give the preferred size a head start before submitting lower-priority loads.
+	await get_tree().create_timer(0.45).timeout
+	var pending_sizes: Array[int] = []
+	for raw_size in unlocked:
+		var size := int(raw_size)
+		if size != primary_size:
+			pending_sizes.append(size)
+	for next_size in [6, 7, 8, 9]:
+		if next_size <= primary_size:
+			continue
+		if player_level_number >= LevelDirectorScript.minimum_display_for_size(next_size) - 2:
+			if not pending_sizes.has(next_size):
+				pending_sizes.append(next_size)
+		break
+	for size in pending_sizes:
+		composite_levels.request_size_async(size)
+		await get_tree().create_timer(0.45).timeout
 
 
 func _configure_font_fallbacks() -> void:
@@ -667,7 +719,9 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 func _prepare_composite_level(allow_resume: bool) -> void:
 	composite_mode = false
 	composite_phase = "crown"
-	composite_data.clear()
+	# Offline runtime data is shared by the loaded size catalog. Release this
+	# session reference without mutating the catalog entry itself.
+	composite_data = {}
 	composite_placements.clear()
 	composite_placement_history.clear()
 	composite_tray_slots.clear()
@@ -710,8 +764,7 @@ func _prepare_composite_level(allow_resume: bool) -> void:
 	if composite_data.is_empty():
 		active_schedule["assemblyEnabled"] = false
 		return
-	CompositeLevelScript._prepare_runtime_cache(composite_data)
-	active_schedule["assemblySeed"] = int(composite_data.get("seed", seed))
+		active_schedule["assemblySeed"] = int(composite_data.get("seed", seed))
 	active_schedule["assemblyDifficultyPattern"] = str(composite_data.get("difficulty", difficulty_pattern))
 	composite_mode = true
 	composite_phase = "assembly"

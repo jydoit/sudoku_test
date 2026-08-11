@@ -1,48 +1,138 @@
 class_name CompositeLevelStore
 extends RefCounted
 
-const COMPOSITE_LEVELS_PATH := "res://data/composite_levels.json"
+const RUNTIME_MANIFEST_PATH := "res://data/runtime/composite_manifest.res"
+
+var _bundle_paths_by_size: Dictionary = {}
+var _size_by_entry: Dictionary = {}
+var _available_patterns_by_level: Dictionary = {}
+var _loaded_size_entries: Dictionary = {}
+var _threaded_size_paths: Dictionary = {}
 
 
-static func load_entries() -> Dictionary:
-	if not FileAccess.file_exists(COMPOSITE_LEVELS_PATH):
-		push_warning("Offline composite level data is missing: %s" % COMPOSITE_LEVELS_PATH)
-		return {}
-	var file := FileAccess.open(COMPOSITE_LEVELS_PATH, FileAccess.READ)
-	if file == null:
-		push_warning("Offline composite level data could not be opened")
-		return {}
-	var parsed = JSON.parse_string(file.get_as_text())
-	if not parsed is Dictionary or not (parsed.get("entries", []) is Array):
-		push_warning("Offline composite level data has an invalid payload")
-		return {}
-	var result := {}
-	for raw_entry in parsed["entries"]:
-		if not raw_entry is Dictionary:
-			continue
-		var level_id := int(raw_entry.get("levelId", -1))
-		var difficulty := str(raw_entry.get("difficulty", ""))
-		var data = raw_entry.get("data", {})
-		if level_id < 0 or difficulty.is_empty() or not data is Dictionary:
-			continue
-		if data.get("pieces", []).is_empty() or data.get("validLayouts", []).is_empty():
-			continue
-		var normalized: Dictionary = data.duplicate(true)
-		_normalize_data(normalized)
-		result[_key(level_id, difficulty)] = normalized
-	return result
+static func load_entries():
+	var store := CompositeLevelStore.new()
+	if not store._load_runtime_manifest():
+		push_warning("Runtime composite catalog is missing. Rebuild it with scripts/tools/build_runtime_level_bundles.gd")
+	return store
 
 
-static func find(entries: Dictionary, level_id: int, difficulty: String) -> Dictionary:
-	var raw_data = entries.get(_key(level_id, difficulty), {})
-	return raw_data.duplicate(true) if raw_data is Dictionary else {}
+static func find(entries, level_id: int, difficulty: String) -> Dictionary:
+	if entries is CompositeLevelStore:
+		return entries.find_entry(level_id, difficulty)
+	if entries is Dictionary:
+		var raw_data = entries.get(entry_key(level_id, difficulty), {})
+		return raw_data if raw_data is Dictionary else {}
+	return {}
 
 
-static func _key(level_id: int, difficulty: String) -> String:
+static func entry_key(level_id: int, difficulty: String) -> String:
 	return "%d:%s" % [level_id, difficulty]
 
 
-static func _normalize_data(data: Dictionary) -> void:
+func is_empty() -> bool:
+	return _size_by_entry.is_empty()
+
+
+func entry_count() -> int:
+	return _size_by_entry.size()
+
+
+func loaded_sizes() -> Array:
+	var result: Array = []
+	for raw_size in _loaded_size_entries.keys():
+		result.append(int(raw_size))
+	result.sort()
+	return result
+
+
+func available_patterns(level_id: int) -> Array:
+	var patterns = _available_patterns_by_level.get(str(level_id), [])
+	return patterns if patterns is Array else []
+
+
+func has_entry(level_id: int, difficulty: String) -> bool:
+	return _size_by_entry.has(entry_key(level_id, difficulty))
+
+
+func load_size(size: int) -> bool:
+	var size_key := str(size)
+	if _loaded_size_entries.has(size_key):
+		return true
+	var path := str(_bundle_paths_by_size.get(size_key, ""))
+	if path.is_empty():
+		return false
+	var bundle = null
+	if _threaded_size_paths.has(size_key):
+		bundle = ResourceLoader.load_threaded_get(path)
+		_threaded_size_paths.erase(size_key)
+	else:
+		bundle = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	return _store_loaded_bundle(size_key, bundle)
+
+
+func request_size_async(size: int) -> bool:
+	var size_key := str(size)
+	if _loaded_size_entries.has(size_key) or _threaded_size_paths.has(size_key):
+		return true
+	var path := str(_bundle_paths_by_size.get(size_key, ""))
+	if path.is_empty():
+		return false
+	var error := ResourceLoader.load_threaded_request(path, "", true, ResourceLoader.CACHE_MODE_IGNORE)
+	if error != OK:
+		return false
+	_threaded_size_paths[size_key] = path
+	return true
+
+
+func finish_pending_loads() -> void:
+	# Godot keeps a threaded resource request alive until its result is collected.
+	# Drain outstanding requests when the owning game tree exits so tests, editor
+	# restarts and fast app shutdowns do not leave loader RefCounted instances.
+	for raw_size_key in _threaded_size_paths.keys():
+		var size_key := str(raw_size_key)
+		var path := str(_threaded_size_paths.get(size_key, ""))
+		if path.is_empty():
+			continue
+		_store_loaded_bundle(size_key, ResourceLoader.load_threaded_get(path))
+	_threaded_size_paths.clear()
+
+
+func find_entry(level_id: int, difficulty: String) -> Dictionary:
+	var key := entry_key(level_id, difficulty)
+	var size := int(_size_by_entry.get(key, 0))
+	if size <= 0 or not load_size(size):
+		return {}
+	var data = (_loaded_size_entries[str(size)] as Dictionary).get(key, {})
+	return data if data is Dictionary else {}
+
+
+func _load_runtime_manifest() -> bool:
+	if not ResourceLoader.exists(RUNTIME_MANIFEST_PATH):
+		return false
+	var manifest = ResourceLoader.load(RUNTIME_MANIFEST_PATH, "", ResourceLoader.CACHE_MODE_IGNORE)
+	if not manifest:
+		return false
+	var paths = manifest.get("bundle_paths_by_size")
+	var sizes = manifest.get("size_by_entry")
+	var patterns = manifest.get("available_patterns_by_level")
+	if not paths is Dictionary or not sizes is Dictionary or not patterns is Dictionary:
+		return false
+	_bundle_paths_by_size = paths
+	_size_by_entry = sizes
+	_available_patterns_by_level = patterns
+	return not _size_by_entry.is_empty()
+
+
+func _store_loaded_bundle(size_key: String, bundle) -> bool:
+	if not bundle or not bundle.get("entries") is Dictionary:
+		push_warning("Unable to load composite runtime data for size %s" % size_key)
+		return false
+	_loaded_size_entries[size_key] = bundle.get("entries")
+	return true
+
+
+static func normalize_for_runtime(data: Dictionary) -> void:
 	data["version"] = int(data.get("version", 0))
 	data["seed"] = int(data.get("seed", 0))
 	data["rows"] = int(data.get("rows", 0))

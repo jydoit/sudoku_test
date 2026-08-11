@@ -6,10 +6,13 @@ const CoinRewardPolicyScript = preload("res://scripts/coin_reward_policy.gd")
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const CoinRollDisplayScript = preload("res://scripts/components/coin_roll_display.gd")
 const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resource.gd")
-const SAVE_PATH := "user://color_queens_save.json"
+const SAVE_PATH := "user://smoke_test_save.json"
 
 
 func _initialize() -> void:
+	ProjectSettings.set_setting("color_king/testing/save_path", SAVE_PATH)
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	call_deferred("_run")
 
 

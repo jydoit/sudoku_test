@@ -1,9 +1,12 @@
 extends SceneTree
 
-const SAVE_PATH := "user://color_queens_save.json"
+const SAVE_PATH := "user://save_compat_test_save.json"
 
 
 func _initialize() -> void:
+	ProjectSettings.set_setting("color_king/testing/save_path", SAVE_PATH)
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	call_deferred("_run")
 
 

@@ -2,7 +2,13 @@
 
 ## 当前阶段
 
-本流程目前用于生成器逻辑 review 和小规模抽样，不替换 Godot 正式运行时，也不提交全量 `data/composite_levels.json`。算法确认并完成批量性能优化后，再接入运行时读取。
+本流程生成的 `data/composite_levels.json` 是拼块关卡事实源和 review 产物。Godot 正式运行时不直接解析该 JSON；发布前必须继续运行 `scripts/tools/build_runtime_level_bundles.gd`，生成轻量 manifest 和按 size 拆分的二进制运行目录。
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . --script res://scripts/tools/build_runtime_level_bundles.gd
+```
+
+运行时先用 manifest 完成完整候选推荐，再优先异步载入当前适合分发的完整 size；其它已解锁 size 在首页首帧后错峰后台加载，下一 size 在解锁前两关预加载。只有恢复未完成的拼块局时才同步等待对应 size。运行目录按完整 size 划分，不再拆为多个缓存分片。JSON 解析、数值标准化、施工索引和方块候选落点计算只允许出现在离线构建流程。
 
 入口：
 

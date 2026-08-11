@@ -1,28 +1,21 @@
 class_name LevelStore
 extends RefCounted
 
-const LEVELS_PATH := "res://data/levels.json"
+const RUNTIME_LEVELS_PATH := "res://data/runtime/level_catalog.res"
 
 
 static func load_levels() -> Array:
-	if not FileAccess.file_exists(LEVELS_PATH):
-		push_error("Level data not found: %s" % LEVELS_PATH)
+	if ResourceLoader.exists(RUNTIME_LEVELS_PATH):
+		var catalog = ResourceLoader.load(RUNTIME_LEVELS_PATH)
+		if catalog and catalog.get("levels") is Array:
+			return catalog.get("levels")
+		push_error("Invalid runtime level catalog")
 		return []
-
-	var file := FileAccess.open(LEVELS_PATH, FileAccess.READ)
-	var parsed = JSON.parse_string(file.get_as_text())
-	if not parsed is Dictionary or not parsed.has("levels"):
-		push_error("Invalid level JSON")
-		return []
-
-	var result: Array = parsed["levels"]
-	for level in result:
-		_normalize_level(level)
-		_validate_level(level)
-	return result
+	push_error("Runtime level catalog is missing. Rebuild it with scripts/tools/build_runtime_level_bundles.gd")
+	return []
 
 
-static func _normalize_level(level: Dictionary) -> void:
+static func normalize_for_runtime(level: Dictionary) -> void:
 	var rows := int(level.get("rows", 0))
 	var cols := int(level.get("cols", rows))
 	if not level.has("cols") and rows > 0:
@@ -39,7 +32,7 @@ static func _normalize_level(level: Dictionary) -> void:
 		level["difficulty"] = "normal"
 
 
-static func _validate_level(level: Dictionary) -> void:
+static func validate_for_runtime(level: Dictionary) -> void:
 	var rows := int(level.get("rows", 0))
 	var cols := int(level.get("cols", 0))
 	var regions: Array = level.get("regions", [])

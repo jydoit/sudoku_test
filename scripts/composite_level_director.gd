@@ -27,7 +27,7 @@ static func normalize_progress(progress: Dictionary) -> Dictionary:
 
 static func recommend(
 	levels: Array,
-	composite_entries: Dictionary,
+	composite_entries,
 	round_number: int,
 	formal_display_level: int,
 	progress: Dictionary
@@ -94,7 +94,7 @@ static func recommend(
 	else:
 		selection_mode = "posterior_multinomial"
 		pattern = _sample_pattern_from_posterior(progress, size, patterns, rng)
-	var offline_data = composite_entries.get(_entry_key(level_id, pattern), {})
+	var offline_data = _find_entry(composite_entries, level_id, pattern)
 	if not offline_data is Dictionary or offline_data.is_empty():
 		return {}
 
@@ -237,13 +237,22 @@ static func _sample_pattern_from_posterior(
 	return str(patterns.back())
 
 
-static func _available_patterns(entries: Dictionary, level_id: int) -> Array:
+static func _available_patterns(entries, level_id: int) -> Array:
+	if entries is CompositeLevelStore:
+		return entries.available_patterns(level_id)
 	var result: Array = []
 	for pattern in PATTERNS:
 		var data = entries.get(_entry_key(level_id, pattern), {})
 		if data is Dictionary and not data.is_empty():
 			result.append(pattern)
 	return result
+
+
+static func _find_entry(entries, level_id: int, pattern: String) -> Dictionary:
+	if entries is CompositeLevelStore:
+		return entries.find_entry(level_id, pattern)
+	var data = entries.get(_entry_key(level_id, pattern), {}) if entries is Dictionary else {}
+	return data if data is Dictionary else {}
 
 
 static func _entry_key(level_id: int, pattern: String) -> String:

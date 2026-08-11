@@ -8,10 +8,13 @@ const CompositeLevelStoreScript = preload("res://scripts/composite_level_store.g
 const CompositeCoinPolicyScript = preload("res://scripts/composite_coin_policy.gd")
 const CompositePlacementEngineScript = preload("res://scripts/rules/composite_placement_engine.gd")
 const CompositeEntryServiceScript = preload("res://scripts/services/composite_entry_service.gd")
-const SAVE_PATH := "user://color_queens_save.json"
+const SAVE_PATH := "user://composite_smoke_test_save.json"
 
 
 func _initialize() -> void:
+	ProjectSettings.set_setting("color_king/testing/save_path", SAVE_PATH)
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	call_deferred("_run")
 
 
@@ -421,7 +424,7 @@ func _run() -> void:
 	quit(0)
 
 
-func _test_composite_director_model(levels: Array, entries: Dictionary) -> void:
+func _test_composite_director_model(levels: Array, entries) -> void:
 	var progress := {}
 	assert(is_equal_approx(CompositeLevelDirectorScript.exploration_probability(progress, 6), 0.50), "A new size should begin at 50% exploration")
 	var candidate := CompositeLevelDirectorScript.recommend(levels, entries, 1, 1, progress)

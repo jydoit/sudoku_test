@@ -1,6 +1,6 @@
 # color king UI 设计规范草案
 
-本文档用于指导 `color king` 的 UI 视觉优化、交互状态统一和 Godot 实现落地。产品功能事实源仍为 [`docs/PRODUCT_REQUIREMENTS.md`](PRODUCT_REQUIREMENTS.md)；当本文档与产品需求冲突时，以产品需求和玩法硬约束为准。
+本文档用于指导 `color king` 的 UI 视觉优化、交互状态统一和 Godot 实现落地。产品功能事实源仍为 [`docs/PRODUCT_REQUIREMENTS.md`](PRODUCT_REQUIREMENTS.md)；当本文档与产品需求冲突时，以产品需求和玩法硬约束为准。游戏 UI、Godot Control、动画与性能方法的协作边界和落地流程见 [`GAME_UI_SKILL_INTEGRATION.md`](GAME_UI_SKILL_INTEGRATION.md)。
 
 ## 1. 设计目标
 
