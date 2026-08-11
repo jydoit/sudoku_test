@@ -1,6 +1,6 @@
 extends HBoxContainer
 
-const COIN_ICON = preload("res://assets/ui/coin.png")
+const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resource.gd")
 const MAX_CONTINUOUS_ROLL_STEPS := 10
 
 var coin_icon: TextureRect
@@ -39,7 +39,7 @@ func configure(options: Dictionary = {}) -> void:
 
 	coin_icon = TextureRect.new()
 	coin_icon.name = "CoinIcon"
-	coin_icon.texture = options.get("icon", COIN_ICON)
+	coin_icon.texture = options.get("icon", CoinIconResourceScript.texture())
 	coin_icon.custom_minimum_size = options.get("icon_size", Vector2(30, 30))
 	coin_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	coin_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

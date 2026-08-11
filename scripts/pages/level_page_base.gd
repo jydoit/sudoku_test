@@ -21,8 +21,8 @@ const GameBoardScript = preload("res://scripts/game_board.gd")
 const AssemblyViewScript = preload("res://scripts/assembly_view.gd")
 const ToolIconScript = preload("res://scripts/tool_icon.gd")
 const CoinRollDisplayScript = preload("res://scripts/components/coin_roll_display.gd")
+const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resource.gd")
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
-const COIN_ICON = preload("res://assets/ui/coin.png")
 const LION_KING_ICON = preload("res://assets/ui/lion_king.png")
 const INITIAL_HEART_COUNT := 3
 const COIN_BALANCE_ROLL_DURATION := 1.35
@@ -249,11 +249,14 @@ func _set_tool_status(panel: PanelContainer, icon: TextureRect, label: Label, mo
 	icon.visible = mode == "paid"
 	var free_color: Color = panel.get_meta("free_color", Color("#EFF2F5"))
 	var free_text_color: Color = panel.get_meta("free_text_color", Color("#526070"))
+	var paid_color: Color = panel.get_meta("paid_color", Color("#FFD978"))
+	var paid_text_color: Color = panel.get_meta("paid_text_color", Color("#9B6400"))
+	var paid_border_color: Color = panel.get_meta("paid_border_color", paid_color.darkened(0.14))
 	match mode:
 		"paid":
 			label.text = str(maxi(0, value))
-			label.add_theme_color_override("font_color", Color("#9B6400"))
-			panel.add_theme_stylebox_override("panel", _tool_status_style(Color("#FFD978")))
+			label.add_theme_color_override("font_color", paid_text_color)
+			panel.add_theme_stylebox_override("panel", _tool_status_style(paid_color, paid_border_color))
 		"free":
 			label.text = _t("免费 ×%d", [maxi(0, value)])
 			label.add_theme_color_override("font_color", free_text_color)
@@ -268,12 +271,18 @@ func _set_tool_status(panel: PanelContainer, icon: TextureRect, label: Label, mo
 			panel.add_theme_stylebox_override("panel", _tool_status_style(free_color))
 
 
-func _tool_status_style(color: Color) -> StyleBoxFlat:
+func _tool_status_style(color: Color, border_color: Color = Color.TRANSPARENT) -> StyleBoxFlat:
 	var style := _button_style(color, 11)
 	style.content_margin_left = 8
 	style.content_margin_right = 8
 	style.content_margin_top = 0
 	style.content_margin_bottom = 0
+	if border_color.a > 0.0:
+		style.border_width_left = 1
+		style.border_width_right = 1
+		style.border_width_top = 1
+		style.border_width_bottom = 1
+		style.border_color = border_color
 	return style
 
 
@@ -339,7 +348,7 @@ func _build_coin_delta_feedback() -> void:
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	coin_delta_panel.add_child(row)
 	var icon := TextureRect.new()
-	icon.texture = COIN_ICON
+	icon.texture = CoinIconResourceScript.texture()
 	icon.custom_minimum_size = Vector2(22, 22)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -487,7 +496,6 @@ func _build_action_bar() -> Control:
 	clear_status_panel = clear_tool["status_panel"]
 	clear_status_icon = clear_tool["status_icon"]
 	clear_status_label = clear_tool["status_label"]
-	_set_initial_free_status(clear_status_panel, clear_status_icon, clear_status_label)
 	clear_button.pressed.connect(func() -> void: clear_requested.emit())
 	row.add_child(clear_button)
 	var crown_tool := _tool_button("crown", "直找", Color("#FFF4CE"), Color("#B97A09"))
@@ -618,6 +626,9 @@ func _tool_button(kind: String, caption: String, color: Color, accent: Color) ->
 	status_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	status_panel.set_meta("free_color", color.darkened(0.045))
 	status_panel.set_meta("free_text_color", accent)
+	status_panel.set_meta("paid_color", Color("#CFF4E0") if kind == "hint" else Color("#FFD978"))
+	status_panel.set_meta("paid_text_color", Color("#1F7A55") if kind == "hint" else Color("#9B6400"))
+	status_panel.set_meta("paid_border_color", Color("#91D8B5") if kind == "hint" else Color("#E6B045"))
 	column.add_child(status_panel)
 	var status_row := HBoxContainer.new()
 	status_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -626,7 +637,7 @@ func _tool_button(kind: String, caption: String, color: Color, accent: Color) ->
 	status_panel.add_child(status_row)
 	var status_icon := TextureRect.new()
 	status_icon.name = "ToolStatusCoinIcon"
-	status_icon.texture = COIN_ICON
+	status_icon.texture = CoinIconResourceScript.texture()
 	status_icon.custom_minimum_size = Vector2(16, 16)
 	status_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	status_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -639,6 +650,7 @@ func _tool_button(kind: String, caption: String, color: Color, accent: Color) ->
 	status_label.add_theme_font_size_override("font_size", 11)
 	status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	status_row.add_child(status_label)
+	_set_initial_free_status(status_panel, status_icon, status_label)
 	return {"button": button, "label": label, "status_panel": status_panel, "status_icon": status_icon, "status_label": status_label}
 
 

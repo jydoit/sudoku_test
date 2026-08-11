@@ -31,6 +31,12 @@ var active := false
 var input_locked := false
 var tray_scroll := 0.0
 var flatten_amount := 0.0
+var _placement_feedback_cells: Dictionary = {}
+var _placement_feedback_strength := 0.0
+var _placement_feedback_tween: Tween
+var _tray_feedback_slot_index := -1
+var _tray_feedback_strength := 0.0
+var _tray_feedback_tween: Tween
 var _localizer: Callable
 
 var _piece_hit_rects: Dictionary = {}
@@ -106,6 +112,7 @@ func configure(
 	tray_slot_piece_ids = CompositeLevel.sanitize_tray_slots(assembly_data, placements, tray_slots)
 	tray_scroll = 0.0
 	flatten_amount = 0.0
+	_reset_feedback()
 	active = not assembly_data.is_empty()
 	input_locked = false
 	visible = active
@@ -128,6 +135,7 @@ func deactivate() -> void:
 		_intro_tween.kill()
 	if _tray_focus_tween and _tray_focus_tween.is_valid():
 		_tray_focus_tween.kill()
+	_reset_feedback()
 	active = false
 	input_locked = false
 	hide_piece_hint()
@@ -222,8 +230,66 @@ func play_flatten_transition() -> void:
 	await tween.finished
 
 
+func play_placement_feedback(piece_id: int, origin: Array) -> void:
+	if origin.size() < 2:
+		return
+	var piece := _piece_by_id(piece_id)
+	if piece.is_empty():
+		return
+	_clear_tray_feedback()
+	if _placement_feedback_tween and _placement_feedback_tween.is_valid():
+		_placement_feedback_tween.kill()
+	_placement_feedback_cells.clear()
+	_placement_feedback_strength = 0.0
+	var origin_cell := Vector2i(int(origin[1]), int(origin[0]))
+	for cell in _piece_absolute_cells(piece, origin_cell):
+		_placement_feedback_cells[cell] = true
+	_placement_feedback_tween = create_tween()
+	_placement_feedback_tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_placement_feedback_tween.tween_method(_set_placement_feedback_strength, 0.0, 1.0, 0.12)
+	_placement_feedback_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_placement_feedback_tween.tween_method(_set_placement_feedback_strength, 1.0, 0.0, 0.30)
+	_placement_feedback_tween.finished.connect(func() -> void:
+		_placement_feedback_cells.clear()
+		_placement_feedback_strength = 0.0
+		_placement_feedback_tween = null
+		queue_redraw()
+	)
+
+
+func play_return_feedback(slot_index: int) -> void:
+	if slot_index < 0:
+		return
+	_clear_placement_feedback()
+	if _tray_feedback_tween and _tray_feedback_tween.is_valid():
+		_tray_feedback_tween.kill()
+	_tray_feedback_slot_index = slot_index
+	_tray_feedback_strength = 0.0
+	_tray_feedback_tween = create_tween()
+	_tray_feedback_tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_tray_feedback_tween.tween_method(_set_tray_feedback_strength, 0.0, 1.0, 0.10)
+	_tray_feedback_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_tray_feedback_tween.tween_method(_set_tray_feedback_strength, 1.0, 0.0, 0.26)
+	_tray_feedback_tween.finished.connect(func() -> void:
+		_tray_feedback_slot_index = -1
+		_tray_feedback_strength = 0.0
+		_tray_feedback_tween = null
+		queue_redraw()
+	)
+
+
 func _set_flatten_amount(value: float) -> void:
 	flatten_amount = clampf(value, 0.0, 1.0)
+	queue_redraw()
+
+
+func _set_placement_feedback_strength(value: float) -> void:
+	_placement_feedback_strength = clampf(value, 0.0, 1.0)
+	queue_redraw()
+
+
+func _set_tray_feedback_strength(value: float) -> void:
+	_tray_feedback_strength = clampf(value, 0.0, 1.0)
 	queue_redraw()
 
 
@@ -262,6 +328,7 @@ func _draw_board() -> void:
 				var placed: Dictionary = placed_cells[key]
 				if int(placed["pieceId"]) != _drag_piece_id:
 					_draw_block(rect, _region_color(int(placed["regionId"])), cell_size, true)
+	_draw_placement_feedback(board_rect.position, cell_size)
 	if _demo_piece_id >= 0 and _demo_origin.x > -90:
 		var demo_piece := _piece_by_id(_demo_piece_id)
 		for cell in _piece_absolute_cells(demo_piece, _demo_origin):
@@ -290,6 +357,24 @@ func _draw_board() -> void:
 			preview_color.a = 0.86
 			_draw_block(preview_rect, preview_color, cell_size, true)
 			draw_rect(preview_rect.grow(1.0), Color.WHITE if allowed else UITokensScript.DANGER_RED, false, maxf(2.0, cell_size * 0.045))
+
+
+func _draw_placement_feedback(origin: Vector2, cell_size: float) -> void:
+	if _placement_feedback_strength <= 0.0 or _placement_feedback_cells.is_empty():
+		return
+	var halo_color := UITokensScript.ATTENTION_HALO_COLOR
+	halo_color.a = 0.55 * _placement_feedback_strength
+	var inner_color := Color.WHITE
+	inner_color.a = 0.10 * _placement_feedback_strength
+	var line_width := maxf(2.0, cell_size * (0.040 + 0.025 * _placement_feedback_strength))
+	var grow_amount := cell_size * (0.018 + 0.030 * _placement_feedback_strength)
+	for raw_cell in _placement_feedback_cells.keys():
+		if not raw_cell is Vector2i:
+			continue
+		var cell: Vector2i = raw_cell
+		var rect := _cell_rect(cell, origin, cell_size)
+		draw_rect(rect.grow(grow_amount), halo_color, false, line_width)
+		draw_rect(rect.grow(-cell_size * 0.09), inner_color, true)
 
 
 func _draw_board_base(board_rect: Rect2, cell_size: float) -> void:
@@ -379,16 +464,24 @@ func _draw_tray() -> void:
 		if piece.is_empty():
 			continue
 		var is_placed := placements.has(str(piece_id))
-		_draw_slot_frame(slot_rect, _region_color(int(piece.get("regionId", 1))), (0.42 if is_placed else 0.96) * tray_alpha, not is_placed)
+		var region_color := _region_color(int(piece.get("regionId", 1)))
+		var slot_feedback := _tray_feedback_strength if slot_index == _tray_feedback_slot_index else 0.0
+		var frame_alpha := (0.42 if is_placed else 0.96) * tray_alpha
+		frame_alpha = minf(1.0, frame_alpha + slot_feedback * 0.18 * tray_alpha)
+		_draw_slot_frame(slot_rect, region_color, frame_alpha, not is_placed or slot_feedback > 0.0)
 		if is_placed:
 			_draw_piece_preview(piece, slot_rect, 0.28 * tray_alpha)
 			draw_string(ThemeDB.fallback_font, slot_rect.end - Vector2(24, 12), "✓", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color(0.72, 0.92, 0.80, 0.75 * tray_alpha))
+			if slot_feedback > 0.0:
+				_draw_return_slot_feedback(slot_rect, region_color, slot_feedback, tray_alpha)
 			continue
 		_piece_hit_rects[piece_id] = slot_rect
 		if piece_id == _drag_piece_id:
 			draw_rect(slot_rect.grow(-8.0), Color(1.0, 1.0, 1.0, 0.16 * tray_alpha), false, 2.0)
 		else:
 			_draw_piece_preview(piece, slot_rect, tray_alpha)
+		if slot_feedback > 0.0:
+			_draw_return_slot_feedback(slot_rect, region_color, slot_feedback, tray_alpha)
 
 	if max_scroll > 0.0:
 		var hint_color := Color(1.0, 1.0, 1.0, 0.58 * tray_alpha)
@@ -406,6 +499,15 @@ func _draw_slot_frame(slot_rect: Rect2, region_color: Color, alpha: float, empha
 	var slot_surface := UITokensScript.ASSEMBLY_TRAY
 	slot_surface.a = 0.72 * alpha
 	draw_rect(slot_rect.grow(-5.0), slot_surface, true)
+
+
+func _draw_return_slot_feedback(slot_rect: Rect2, region_color: Color, strength: float, tray_alpha: float) -> void:
+	var glow := region_color
+	glow.a = 0.28 * strength * tray_alpha
+	draw_rect(slot_rect.grow(6.0 + 5.0 * strength), glow, false, 7.0)
+	var tick := Color.WHITE
+	tick.a = 0.32 * strength * tray_alpha
+	draw_rect(slot_rect.grow(-9.0), tick, false, 2.0)
 
 
 func _draw_piece_preview(piece: Dictionary, slot_rect: Rect2, alpha: float) -> void:
@@ -595,6 +697,27 @@ func _reset_pointer() -> void:
 	_intro_dragging_piece = false
 	_demo_piece_id = -1
 	_demo_origin = Vector2i(-99, -99)
+
+
+func _reset_feedback() -> void:
+	_clear_placement_feedback()
+	_clear_tray_feedback()
+
+
+func _clear_placement_feedback() -> void:
+	if _placement_feedback_tween and _placement_feedback_tween.is_valid():
+		_placement_feedback_tween.kill()
+	_placement_feedback_tween = null
+	_placement_feedback_cells.clear()
+	_placement_feedback_strength = 0.0
+
+
+func _clear_tray_feedback() -> void:
+	if _tray_feedback_tween and _tray_feedback_tween.is_valid():
+		_tray_feedback_tween.kill()
+	_tray_feedback_tween = null
+	_tray_feedback_slot_index = -1
+	_tray_feedback_strength = 0.0
 
 
 func _origin_for_pointer(position: Vector2) -> Vector2i:

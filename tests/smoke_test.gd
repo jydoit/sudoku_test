@@ -5,6 +5,7 @@ const CoinEconomyScript = preload("res://scripts/coin_economy.gd")
 const CoinRewardPolicyScript = preload("res://scripts/coin_reward_policy.gd")
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const CoinRollDisplayScript = preload("res://scripts/components/coin_roll_display.gd")
+const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resource.gd")
 const SAVE_PATH := "user://color_queens_save.json"
 
 
@@ -72,14 +73,15 @@ func _run() -> void:
 	assert(game.game_screen.coin_roll_display.get_script() == CoinRollDisplayScript, "The level header should use the shared coin roller")
 	assert(game.result_page.result_coin_roll_display.get_script() == CoinRollDisplayScript, "The result page should use the shared coin roller")
 	assert(game.progress_bar != null and game.progress_label != null, "Level screen should show crown progress")
-	assert(game.COIN_ICON != null, "Coin balance should use the generated coin texture")
+	assert(CoinIconResourceScript.texture() != null, "Coin balance should generate its texture from the SVG coin source")
 	assert(game.LION_KING_ICON != null, "Core game pieces should use the lion king texture")
 	assert(game.LION_KING_WRONG_ICON != null, "Wrong placements should use the worried lion texture")
 	assert(game.LION_KING_VICTORY_ICON != null, "Completion should use the standing lion texture")
 	assert(game.LION_KING_VICTORY_FRAMES.size() == 9, "Completion lion should provide wave and expression animation frames")
 	assert(game.board.PIECE_TEXTURE == game.LION_KING_ICON, "Board pieces and UI should share the same lion king texture")
 	assert(game.board.WRONG_PIECE_TEXTURE == game.LION_KING_WRONG_ICON, "Wrong board pieces and UI should share the worried lion texture")
-	assert(game.coin_balance_roll_clip.get_parent().get_node_or_null("CoinIcon") != null, "Level coin balance should render the coin icon beside its rolling value")
+	var level_coin_icon := game.coin_balance_roll_clip.get_parent().get_node_or_null("CoinIcon") as TextureRect
+	assert(level_coin_icon != null and level_coin_icon.texture != null, "Level coin balance should render the SVG coin icon beside its rolling value")
 	var level_coin_display = game.game_screen.coin_roll_display
 	var result_coin_display = game.result_page.result_coin_roll_display
 	assert(level_coin_display.primary_label.get_theme_font_size("font_size") >= 23, "The level balance should use a readable mobile font size")
@@ -498,6 +500,7 @@ func _run() -> void:
 	var crown_find_count_before_wrong: int = game.crown_find_count
 	game._on_cell_double_pressed(wrong_cell.y, wrong_cell.x)
 	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Double tap on a non-answer cell should mark a red X")
+	assert(game.board.shake_cell == wrong_cell, "Wrong crown attempts should trigger the board wrong-feedback shake")
 	assert(game.heart_count == hearts_before_wrong - 1, "Wrong crown attempts should consume one heart")
 	assert(game.crown_find_count == crown_find_count_before_wrong, "Wrong crown attempts must not consume crown-find uses")
 	assert(game.level_heart_slots[game.heart_count].get_theme_color("font_color") == game.HEART_EMPTY_COLOR, "A lost heart should turn gray")

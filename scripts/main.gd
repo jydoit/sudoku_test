@@ -37,7 +37,6 @@ const GameSaveServiceScript = preload("res://scripts/storage/game_save_service.g
 const RunResultServiceScript = preload("res://scripts/services/run_result_service.gd")
 const UI_FONT: Font = preload("res://assets/fonts/NotoSansSC-Regular.ttf")
 const ARABIC_FONT: Font = preload("res://assets/fonts/NotoSansArabic-Regular.ttf")
-const COIN_ICON = preload("res://assets/ui/coin.png")
 const LION_KING_ICON = preload("res://assets/ui/lion_king.png")
 const LION_KING_WRONG_ICON = preload("res://assets/ui/lion_king_wrong.png")
 const LION_KING_VICTORY_ICON = preload("res://assets/ui/lion_king_victory.png")
@@ -898,6 +897,7 @@ func _on_assembly_placement_requested(piece_id: int, origin: Array) -> void:
 		_complete_composite_assembly(layout)
 	elif composite_deadlocked:
 		assembly_view.update_state(composite_placements, {}, composite_tray_slots)
+		assembly_view.play_placement_feedback(piece_id, origin)
 		_save_game()
 		_show_composite_deadlock()
 	else:
@@ -906,6 +906,7 @@ func _on_assembly_placement_requested(piece_id: int, origin: Array) -> void:
 			evaluation.get("allowedByPiece", {}),
 			composite_tray_slots
 		)
+		assembly_view.play_placement_feedback(piece_id, origin)
 		_save_game()
 
 
@@ -916,6 +917,7 @@ func _on_assembly_return_requested(piece_id: int, preferred_slot_index: int = -1
 	assembly_view.update_state(composite_placements, _assembly_allowed_origins(), composite_tray_slots)
 	if returned_slot >= 0:
 		assembly_view.focus_tray_slot(returned_slot, false)
+		assembly_view.play_return_feedback(returned_slot)
 	# Do not block the release event on JSON serialization and file I/O. The
 	# updated tray is already visible; persist the same state after this frame.
 	_queue_save_game_after_frame()
@@ -1131,13 +1133,14 @@ func _on_cell_double_pressed(row: int, col: int) -> void:
 	board.set_guides({})
 	cell_states = result["states"]
 	board.set_states(cell_states)
-	board.play_cell_feedback(row, col)
 	if bool(result["correct"]):
+		board.play_cell_feedback(row, col)
 		audio_controller.play_correct()
 		_validate_and_update(true)
 		coach_label.text = _t("已放置皇冠。继续用行、列、颜色区域和相邻规则检查其它位置。")
 		coach_label.add_theme_color_override("font_color", Color("#72552B"))
 	else:
+		board.play_wrong_feedback(row, col)
 		audio_controller.play_wrong()
 		var crown_find_count_before_wrong := crown_find_count
 		_validate_and_update(false)

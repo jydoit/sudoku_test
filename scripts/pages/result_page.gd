@@ -5,7 +5,7 @@ signal secondary_requested
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const CoinRollDisplayScript = preload("res://scripts/components/coin_roll_display.gd")
-const COIN_ICON = preload("res://assets/ui/coin.png")
+const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resource.gd")
 const LION_KING_VICTORY_ICON = preload("res://assets/ui/lion_king_victory.png")
 const LION_KING_VICTORY_OUT_ICON = preload("res://assets/ui/lion_king_victory_out.png")
 const LION_KING_VICTORY_IN_ICON = preload("res://assets/ui/lion_king_victory_in.png")
@@ -387,7 +387,7 @@ func _launch_result_coin_flyer(index: int, reward: int, balance_before: int, sou
 	var flyer := TextureRect.new()
 	flyer.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	flyer.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	flyer.texture = COIN_ICON
+	flyer.texture = CoinIconResourceScript.texture()
 	flyer.custom_minimum_size = RESULT_COIN_FLYER_SIZE
 	flyer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	result_coin_flight_layer.add_child(flyer)
