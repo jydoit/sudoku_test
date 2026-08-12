@@ -18,11 +18,13 @@ const LION_KING_VICTORY_FUNNY_ICON = preload("res://assets/ui/lion_king_victory_
 const CARD := UITokensScript.SURFACE_CARD
 const INK := UITokensScript.INK
 const RESULT_COIN_START_DELAY := 0.45
-const RESULT_COIN_MIN_DURATION := 1.35
-const RESULT_COIN_MAX_DURATION := 2.80
+const RESULT_COIN_MIN_DURATION := 2.15
+const RESULT_COIN_MAX_DURATION := 3.30
 const RESULT_COIN_FLIGHT_DURATION := 0.72
-const RESULT_COIN_FLIGHT_MAX_STAGGER := 0.22
-const RESULT_COIN_ROLL_STEP_DURATION := 0.18
+const RESULT_COIN_FLIGHT_MIN_STAGGER := 0.08
+const RESULT_COIN_FLIGHT_MAX_STAGGER := 0.16
+const RESULT_COIN_REEL_DURATION := 1.00
+const RESULT_COIN_REEL_SETTLE_HOLD := 0.08
 const RESULT_COIN_FLYER_SIZE := Vector2(29, 29)
 
 var completion_overlay: ColorRect
@@ -43,6 +45,7 @@ var result_petals_layer: Control
 var completion_next_button: Button
 var completion_replay_button: Button
 var overlay_mode := "success"
+var result_coin_pulse_tween: Tween
 var result_lion_tween: Tween
 var result_lion_wave_tween: Tween
 var result_coin_tween: Tween
@@ -174,11 +177,14 @@ func configure(localizer: Callable = Callable()) -> void:
 		"minimum_counter_width": 104.0,
 		"minimum_counter_height": 52.0,
 		"minimum_digits": 5,
-		"horizontal_padding": 8.0,
+		"horizontal_padding": 4.0,
 		"vertical_padding": 4.0,
-		"icon_size": Vector2(34, 34),
-		"separation": 7,
+		"icon_size": Vector2(44, 44),
+		"separation": 3,
 		"font_color": Color("#D88916"),
+		"number_alignment": HORIZONTAL_ALIGNMENT_LEFT,
+		"outline_size": 1,
+		"outline_color": Color("#D88916"),
 		"shadow_offset_y": 2,
 	})
 	result_coin_roll_display.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -351,29 +357,42 @@ func play_coin_animation(reward: int, balance_after: int) -> void:
 	result_coin_roll_display.set_value(balance_before)
 	result_reward_coin_icon.scale = Vector2.ONE
 	result_reward_coin_icon.pivot_offset = result_reward_coin_icon.size * 0.5
-	var overlay_origin := self.get_global_rect().position
-	var lion_rect := result_piece_icon.get_global_rect()
-	var target_rect := result_reward_coin_icon.get_global_rect()
-	var source := lion_rect.get_center() - overlay_origin + Vector2(lion_rect.size.x * 0.20, 4.0)
-	var target := target_rect.get_center() - overlay_origin
+	var source := _control_point_in_flight_layer(
+		result_piece_icon,
+		Vector2(result_piece_icon.size.x * 0.70, result_piece_icon.size.y * 0.50 + 4.0)
+	)
+	var target := _control_point_in_flight_layer(
+		result_reward_coin_icon,
+		result_reward_coin_icon.size * 0.5
+	)
 	var stagger := RESULT_COIN_FLIGHT_MAX_STAGGER
 	if reward > 1:
 		stagger = minf(
 			RESULT_COIN_FLIGHT_MAX_STAGGER,
-			maxf(0.12, (RESULT_COIN_MAX_DURATION - RESULT_COIN_START_DELAY - RESULT_COIN_FLIGHT_DURATION) / float(reward - 1))
+			maxf(
+				RESULT_COIN_FLIGHT_MIN_STAGGER,
+				(
+					RESULT_COIN_MAX_DURATION
+					- RESULT_COIN_START_DELAY
+					- RESULT_COIN_FLIGHT_DURATION
+					- RESULT_COIN_REEL_DURATION
+					- RESULT_COIN_REEL_SETTLE_HOLD
+				) / float(reward - 1)
+			)
 		)
 	var flight_sequence_duration := RESULT_COIN_FLIGHT_DURATION + stagger * float(maxi(0, reward - 1))
-	var completion_hold := maxf(0.0, RESULT_COIN_MIN_DURATION - flight_sequence_duration)
-	var roll_queue_drain := float(maxi(0, reward - 1)) * maxf(0.0, RESULT_COIN_ROLL_STEP_DURATION - stagger)
+	var sequence_duration := RESULT_COIN_START_DELAY + flight_sequence_duration + RESULT_COIN_REEL_DURATION
+	var completion_hold := maxf(RESULT_COIN_REEL_SETTLE_HOLD, RESULT_COIN_MIN_DURATION - sequence_duration)
 	result_coin_tween = create_tween()
 	result_coin_tween.tween_interval(RESULT_COIN_START_DELAY)
 	for index in range(reward):
 		result_coin_tween.tween_callback(
-			_launch_result_coin_flyer.bind(index, reward, balance_before, source, target)
+			_launch_result_coin_flyer.bind(index, reward, balance_after, source, target)
 		)
 		if index < reward - 1:
 			result_coin_tween.tween_interval(stagger)
-	result_coin_tween.tween_interval(RESULT_COIN_FLIGHT_DURATION + RESULT_COIN_ROLL_STEP_DURATION + roll_queue_drain + completion_hold)
+	result_coin_tween.tween_interval(RESULT_COIN_FLIGHT_DURATION)
+	result_coin_tween.tween_interval(RESULT_COIN_REEL_DURATION + completion_hold)
 	result_coin_tween.tween_callback(func() -> void:
 		result_coin_roll_display.set_value(balance_after)
 		result_reward_coin_icon.scale = Vector2.ONE
@@ -381,7 +400,14 @@ func play_coin_animation(reward: int, balance_after: int) -> void:
 	)
 
 
-func _launch_result_coin_flyer(index: int, reward: int, balance_before: int, source: Vector2, target: Vector2) -> void:
+func _control_point_in_flight_layer(control: Control, local_point: Vector2) -> Vector2:
+	if not control or not result_coin_flight_layer:
+		return Vector2.ZERO
+	var canvas_point := control.get_global_transform_with_canvas() * local_point
+	return result_coin_flight_layer.get_global_transform_with_canvas().affine_inverse() * canvas_point
+
+
+func _launch_result_coin_flyer(index: int, reward: int, balance_after: int, source: Vector2, target: Vector2) -> void:
 	if not result_coin_flight_layer or not self.visible or overlay_mode != "success":
 		return
 	var flyer := TextureRect.new()
@@ -411,7 +437,7 @@ func _launch_result_coin_flyer(index: int, reward: int, balance_before: int, sou
 	)
 	flight_tween.parallel().tween_property(flyer, "modulate:a", 1.0, 0.12)
 	flight_tween.parallel().tween_property(flyer, "scale", Vector2.ONE, 0.20).set_ease(Tween.EASE_OUT)
-	flight_tween.tween_callback(_on_result_coin_flyer_arrived.bind(flyer, index + 1, reward, balance_before))
+	flight_tween.tween_callback(_on_result_coin_flyer_arrived.bind(flyer, index + 1, reward, balance_after))
 
 
 func _set_result_coin_flyer_progress(progress: float, flyer: TextureRect, start: Vector2, curve: Vector2, target: Vector2) -> void:
@@ -425,25 +451,36 @@ func _set_result_coin_flyer_progress(progress: float, flyer: TextureRect, start:
 		flyer.scale = Vector2.ONE * lerpf(1.0, 0.72, (progress - 0.78) / 0.22)
 
 
-func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int, balance_before: int) -> void:
+func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int, balance_after: int) -> void:
 	if is_instance_valid(flyer):
 		flyer.queue_free()
 	if not self.visible or overlay_mode != "success":
 		return
-	result_coin_roll_display.roll_step_to(balance_before + value, RESULT_COIN_ROLL_STEP_DURATION)
 	if result_reward_coin_icon:
+		if result_coin_pulse_tween and result_coin_pulse_tween.is_valid():
+			result_coin_pulse_tween.kill()
 		result_reward_coin_icon.scale = Vector2.ONE
-		var pulse := result_reward_coin_icon.create_tween()
-		pulse.tween_property(result_reward_coin_icon, "scale", Vector2(1.16, 1.16), 0.08).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		pulse.tween_property(result_reward_coin_icon, "scale", Vector2.ONE, 0.10).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+		result_coin_pulse_tween = result_reward_coin_icon.create_tween()
+		result_coin_pulse_tween.tween_property(result_reward_coin_icon, "scale", Vector2(1.16, 1.16), 0.08).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		result_coin_pulse_tween.tween_property(result_reward_coin_icon, "scale", Vector2.ONE, 0.10).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	if value >= reward:
 		_set_result_lion_frame(LION_KING_VICTORY_ICON)
+		_start_result_balance_reel(balance_after)
+
+
+func _start_result_balance_reel(balance_after: int) -> void:
+	if not result_coin_roll_display or not self.visible or overlay_mode != "success":
+		return
+	result_coin_roll_display.animate_reel_to(balance_after, RESULT_COIN_REEL_DURATION)
 
 
 func stop_coin_animation() -> void:
 	if result_coin_tween and result_coin_tween.is_valid():
 		result_coin_tween.kill()
 	result_coin_tween = null
+	if result_coin_pulse_tween and result_coin_pulse_tween.is_valid():
+		result_coin_pulse_tween.kill()
+	result_coin_pulse_tween = null
 	if result_coin_roll_display:
 		result_coin_roll_display.stop_animation(true)
 	for flight_tween in result_coin_flight_tweens:

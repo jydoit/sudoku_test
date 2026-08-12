@@ -74,10 +74,12 @@ var coin_delta_label: Label
 var coin_delta_tween: Tween
 var heart_tweens: Array = []
 var _localizer: Callable
+var _level_select_enabled := true
 
 
-func setup(initial_coins: int, include_assembly: bool, localizer: Callable = Callable()) -> void:
+func setup(initial_coins: int, include_assembly: bool, localizer: Callable = Callable(), enable_level_select: bool = true) -> void:
 	_localizer = localizer
+	_level_select_enabled = enable_level_select
 	name = "CompositeLevelPage" if include_assembly else "FormalLevelPage"
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var safe_margin := MarginContainer.new()
@@ -154,7 +156,7 @@ func set_level_copy(title_text: String, coach_text: String, coach_color: Color, 
 		coach_label.add_theme_font_size_override("font_size", coach_size)
 
 
-func set_hearts(current: int, limit: int, animate: bool) -> void:
+func set_hearts(current: int, limit: int) -> void:
 	stop_heart_animation()
 	for index in range(level_heart_slots.size()):
 		var heart := level_heart_slots[index]
@@ -165,16 +167,6 @@ func set_hearts(current: int, limit: int, animate: bool) -> void:
 		heart.add_theme_font_size_override("font_size", 30)
 		heart.scale = Vector2.ONE
 		heart.pivot_offset = heart.custom_minimum_size * 0.5
-		var pulse: Tween = null
-		if heart.visible and is_full and animate:
-			pulse = heart.create_tween().set_loops()
-			pulse.set_trans(Tween.TRANS_SINE)
-			pulse.tween_property(heart, "scale", Vector2(1.13, 1.13), 0.12).set_ease(Tween.EASE_OUT)
-			pulse.tween_property(heart, "scale", Vector2.ONE, 0.13).set_ease(Tween.EASE_IN)
-			pulse.tween_property(heart, "scale", Vector2(1.08, 1.08), 0.10).set_ease(Tween.EASE_OUT)
-			pulse.tween_property(heart, "scale", Vector2.ONE, 0.13).set_ease(Tween.EASE_IN)
-			pulse.tween_interval(0.86)
-		heart_tweens.append(pulse)
 
 
 func stop_heart_animation() -> void:
@@ -418,10 +410,11 @@ func _build_top_bar(initial_coins: int) -> Control:
 	settings_button.tooltip_text = "设置"
 	settings_button.pressed.connect(func() -> void: settings_requested.emit())
 	row.add_child(settings_button)
-	level_select_button = _small_button("选关")
-	level_select_button.tooltip_text = "选择关卡"
-	level_select_button.pressed.connect(func() -> void: level_select_requested.emit())
-	row.add_child(level_select_button)
+	if _level_select_enabled:
+		level_select_button = _small_button("选关")
+		level_select_button.tooltip_text = "选择关卡"
+		level_select_button.pressed.connect(func() -> void: level_select_requested.emit())
+		row.add_child(level_select_button)
 	return panel
 
 

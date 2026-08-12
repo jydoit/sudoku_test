@@ -24,6 +24,20 @@ const DOUBLE_TAP_MAX_MS := 320
 const DOUBLE_TAP_MAX_DISTANCE := 18.0
 const TAP_MAX_DRIFT := 14.0
 const TOUCH_MOUSE_SUPPRESS_MS := 700
+const VICTORY_TIMELINE_DURATION := 2.30
+const VICTORY_RESULT_DELAY := 2.52
+const VICTORY_STAR_POINTS := [
+	Vector2(0.08, 0.10),
+	Vector2(0.28, 0.04),
+	Vector2(0.55, 0.07),
+	Vector2(0.86, 0.13),
+	Vector2(0.94, 0.36),
+	Vector2(0.90, 0.72),
+	Vector2(0.73, 0.92),
+	Vector2(0.42, 0.95),
+	Vector2(0.14, 0.88),
+	Vector2(0.05, 0.58),
+]
 
 var rows := 6
 var cols := 6
@@ -45,6 +59,10 @@ var king_reveal_cells: Dictionary = {}
 var hidden_king_cells: Dictionary = {}
 var king_reveal_strength := 0.0
 var victory_strength := 0.0
+var victory_progress := 0.0
+var victory_origin := Vector2i(-1, -1)
+var victory_tween: Tween
+var victory_finish_haptic_played := false
 var waiting_wiggle_strength := 0.0
 var tutorial_mask_enabled := false
 var tutorial_focus_cell := Vector2i(-1, -1)
@@ -81,6 +99,7 @@ func set_level(level: Dictionary, states: Array, colors: Array) -> void:
 	king_reveal_strength = 0.0
 	tutorial_mask_enabled = false
 	tutorial_focus_cell = Vector2i(-1, -1)
+	_reset_victory_animation()
 	victory_strength = 0.0
 	queue_redraw()
 
@@ -234,10 +253,44 @@ func _reset_guide_feedback() -> void:
 
 
 func play_victory() -> void:
-	var tween := create_tween()
-	tween.set_trans(Tween.TRANS_SINE)
-	tween.tween_method(_set_victory, 0.0, 1.0, 0.24)
-	tween.tween_method(_set_victory, 1.0, 0.0, 0.34)
+	_reset_victory_animation()
+	victory_origin = _resolve_victory_origin()
+	Input.vibrate_handheld(24)
+	victory_tween = create_tween()
+	victory_tween.set_trans(Tween.TRANS_LINEAR).set_ease(Tween.EASE_IN_OUT)
+	victory_tween.tween_method(_set_victory_progress, 0.0, 1.0, VICTORY_TIMELINE_DURATION)
+	victory_tween.finished.connect(func() -> void:
+		victory_tween = null
+		victory_progress = 0.0
+		victory_strength = 0.0
+		victory_origin = Vector2i(-1, -1)
+		queue_redraw()
+	)
+
+
+func victory_result_delay() -> float:
+	return VICTORY_RESULT_DELAY
+
+
+func _reset_victory_animation() -> void:
+	if victory_tween and victory_tween.is_valid():
+		victory_tween.kill()
+	victory_tween = null
+	victory_progress = 0.0
+	victory_strength = 0.0
+	victory_origin = Vector2i(-1, -1)
+	victory_finish_haptic_played = false
+
+
+func _resolve_victory_origin() -> Vector2i:
+	if _cell_has_lion(pulse_cell):
+		return pulse_cell
+	for row in range(rows):
+		for col in range(cols):
+			var cell := Vector2i(col, row)
+			if _cell_has_lion(cell):
+				return cell
+	return Vector2i(-1, -1)
 
 
 func _set_pulse(value: float) -> void:
@@ -265,8 +318,12 @@ func _set_waiting_wiggle(value: float) -> void:
 	queue_redraw()
 
 
-func _set_victory(value: float) -> void:
-	victory_strength = value
+func _set_victory_progress(value: float) -> void:
+	victory_progress = clampf(value, 0.0, 1.0)
+	victory_strength = sin(victory_progress * PI)
+	if not victory_finish_haptic_played and victory_progress >= 0.64:
+		victory_finish_haptic_played = true
+		Input.vibrate_handheld(16)
 	queue_redraw()
 
 
@@ -428,6 +485,7 @@ func _draw() -> void:
 		for col in range(cols):
 			_draw_cell(row, col, board_rect.position, cell_size)
 	_draw_board_outer_border(board_rect, cell_size)
+	_draw_victory_overlay(board_rect, cell_size)
 	_draw_attention_mask(board_rect.position, cell_size)
 
 
@@ -442,12 +500,15 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 		rect.position.x += round(shake_strength * cell_size * 0.055)
 	var is_lion_state := state == PIECE_MARK or state == HINT_MARK or state == KING_MARK
 	var king_reveal_scale := king_reveal_strength if is_lion_state and king_reveal_cells.has(cell_key) else 0.0
+	var victory_lion_strength := _victory_lion_pop(cell_key) if is_lion_state else 0.0
+	var victory_sweep_strength := _victory_sweep_for_cell(cell_key)
 
 	var color := _cell_base_color(row, col)
 	if error_cells.has(cell_key):
 		color = color.lerp(Color("#FF5E67"), 0.58)
-	elif victory_strength > 0.0:
-		color = color.lerp(Color.WHITE, victory_strength * 0.32)
+	elif victory_progress > 0.0:
+		var warm_hold := _victory_warm_hold()
+		color = color.lerp(Color("#FFF0A8"), maxf(victory_sweep_strength * 0.52, warm_hold * 0.22))
 
 	var box := StyleBoxFlat.new()
 	box.bg_color = color
@@ -468,7 +529,15 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 	if state == KING_MARK and hidden_king_cells.has(cell_key):
 		pass
 	elif state == PIECE_MARK or state == HINT_MARK or state == KING_MARK:
-		_draw_piece(rect, cell_size, state == HINT_MARK, state == KING_MARK, king_reveal_scale, cell_pulse_strength)
+		_draw_piece(
+			rect,
+			cell_size,
+			state == HINT_MARK,
+			state == KING_MARK,
+			king_reveal_scale,
+			cell_pulse_strength,
+			victory_lion_strength
+		)
 	elif state == BLOCKED_MARK:
 		_draw_blocked(rect, cell_size)
 	elif state == WRONG_MARK:
@@ -539,6 +608,111 @@ func _draw_board_outer_border(board_rect: Rect2, cell_size: float) -> void:
 	edge_line.corner_radius_bottom_left = edge_radius
 	edge_line.corner_radius_bottom_right = edge_radius
 	draw_style_box(edge_line, outer_rect.grow(edge_expansion))
+
+
+func _draw_victory_overlay(board_rect: Rect2, cell_size: float) -> void:
+	if victory_progress <= 0.0 or victory_origin.x < 0:
+		return
+	var timeline_time := victory_progress * VICTORY_TIMELINE_DURATION
+	var border_strength := _timeline_envelope(timeline_time, 0.34, 1.16, 2.24)
+	if border_strength > 0.0:
+		var gold_border := StyleBoxFlat.new()
+		gold_border.bg_color = Color.TRANSPARENT
+		gold_border.border_color = Color(
+			UITokensScript.CROWN_GOLD.r,
+			UITokensScript.CROWN_GOLD.g,
+			UITokensScript.CROWN_GOLD.b,
+			0.90 * border_strength
+		)
+		gold_border.set_border_width_all(maxi(2, int(round(cell_size * 0.040))))
+		var gold_radius := _outer_border_corner_radius(cell_size, _region_border_width(cell_size))
+		gold_border.corner_radius_top_left = gold_radius
+		gold_border.corner_radius_top_right = gold_radius
+		gold_border.corner_radius_bottom_left = gold_radius
+		gold_border.corner_radius_bottom_right = gold_radius
+		draw_style_box(gold_border, _outer_border_rect(board_rect, cell_size).grow(cell_size * 0.018))
+
+	for index in range(VICTORY_STAR_POINTS.size()):
+		var star_start := 1.10 + float(index % 4) * 0.085
+		var star_strength := _timeline_envelope(timeline_time, star_start, star_start + 0.24, star_start + 0.88)
+		if star_strength <= 0.0:
+			continue
+		var point: Vector2 = board_rect.position + VICTORY_STAR_POINTS[index] * board_rect.size
+		var radius := cell_size * (0.045 + 0.040 * star_strength)
+		var star_color := Color(1.0, 0.86, 0.32, 0.92 * star_strength)
+		draw_line(point - Vector2(radius, 0.0), point + Vector2(radius, 0.0), star_color, maxf(1.5, cell_size * 0.018), true)
+		draw_line(point - Vector2(0.0, radius), point + Vector2(0.0, radius), star_color, maxf(1.5, cell_size * 0.018), true)
+		draw_circle(point, maxf(1.0, cell_size * 0.012), Color(1.0, 0.96, 0.72, star_strength), true, -1.0, true)
+
+
+func _victory_sweep_for_cell(cell: Vector2i) -> float:
+	if victory_progress <= 0.0 or victory_origin.x < 0:
+		return 0.0
+	var timeline_time := victory_progress * VICTORY_TIMELINE_DURATION
+	var sweep_progress := clampf((timeline_time - 0.30) / 1.40, 0.0, 1.0)
+	var distance := _victory_distance_ratio(cell)
+	var band_distance := absf(distance - sweep_progress)
+	if band_distance >= 0.36:
+		return 0.0
+	var band_strength := 1.0 - band_distance / 0.36
+	return band_strength * band_strength * _timeline_envelope(timeline_time, 0.22, 0.92, 2.18)
+
+
+func _victory_lion_pop(cell: Vector2i) -> float:
+	if victory_progress <= 0.0 or victory_origin.x < 0:
+		return 0.0
+	var timeline_time := victory_progress * VICTORY_TIMELINE_DURATION
+	var is_origin := cell == victory_origin
+	var delay := 0.0 if is_origin else 0.30 + _victory_distance_ratio(cell) * 0.62
+	var duration := 0.96 if is_origin else 0.82
+	var local_progress := (timeline_time - delay) / duration
+	if local_progress <= 0.0 or local_progress >= 1.0:
+		return 0.0
+	var rise_end := 0.30 if is_origin else 0.34
+	var hold_end := 0.64 if is_origin else 0.62
+	var response := 0.0
+	if local_progress < rise_end:
+		response = smoothstep(0.0, rise_end, local_progress)
+	elif local_progress <= hold_end:
+		response = 1.0
+	else:
+		response = 1.0 - smoothstep(hold_end, 1.0, local_progress)
+	return response if is_origin else response * 0.88
+
+
+func _victory_warm_hold() -> float:
+	if victory_progress <= 0.0:
+		return 0.0
+	var timeline_time := victory_progress * VICTORY_TIMELINE_DURATION
+	return _timeline_envelope(timeline_time, 0.82, 1.34, 2.28)
+
+
+func _victory_distance_ratio(cell: Vector2i) -> float:
+	if victory_origin.x < 0:
+		return 0.0
+	var distance := absf(float(cell.x - victory_origin.x)) + absf(float(cell.y - victory_origin.y))
+	var max_distance := maxf(
+		1.0,
+		maxf(
+			maxf(
+				float(victory_origin.x + victory_origin.y),
+				float((cols - 1 - victory_origin.x) + victory_origin.y)
+			),
+			maxf(
+				float(victory_origin.x + (rows - 1 - victory_origin.y)),
+				float((cols - 1 - victory_origin.x) + (rows - 1 - victory_origin.y))
+			)
+		)
+	)
+	return clampf(distance / max_distance, 0.0, 1.0)
+
+
+func _timeline_envelope(value: float, start: float, peak: float, finish: float) -> float:
+	if value <= start or value >= finish:
+		return 0.0
+	if value <= peak:
+		return smoothstep(start, peak, value)
+	return 1.0 - smoothstep(peak, finish, value)
 
 
 func _draw_attention_mask(origin: Vector2, cell_size: float) -> void:
@@ -629,7 +803,15 @@ func _guide_kind_is_primary(kind: String) -> bool:
 	return kind == "place" or kind == "exclude" or kind == "exclude_empty"
 
 
-func _draw_piece(rect: Rect2, cell_size: float, is_hint: bool, _is_king: bool = false, king_reveal_scale: float = 0.0, cell_pulse_strength: float = 0.0) -> void:
+func _draw_piece(
+	rect: Rect2,
+	cell_size: float,
+	is_hint: bool,
+	_is_king: bool = false,
+	king_reveal_scale: float = 0.0,
+	cell_pulse_strength: float = 0.0,
+	victory_lion_strength: float = 0.0
+) -> void:
 	var texture_ratio := minf(
 		UITokensScript.CROWN_MAX_FONT_RATIO,
 		UITokensScript.CROWN_BASE_FONT_RATIO
@@ -638,13 +820,26 @@ func _draw_piece(rect: Rect2, cell_size: float, is_hint: bool, _is_king: bool = 
 	)
 	var texture_size := cell_size * texture_ratio
 	var texture_rect := Rect2(rect.get_center() - Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size)
-	if waiting_wiggle_strength > 0.0:
+	if victory_lion_strength > 0.0:
+		var victory_scale := 1.0 + victory_lion_strength * 0.24
+		var victory_lift := -cell_size * 0.11 * victory_lion_strength
+		draw_set_transform(rect.get_center() + Vector2(0.0, victory_lift), 0.0, Vector2.ONE * victory_scale)
+		draw_texture_rect(PIECE_TEXTURE, Rect2(-Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size), false)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	elif waiting_wiggle_strength > 0.0:
 		var angle := sin(waiting_wiggle_strength * TAU * 2.0) * 0.08 * sin(waiting_wiggle_strength * PI)
 		draw_set_transform(rect.get_center(), angle, Vector2.ONE)
 		draw_texture_rect(PIECE_TEXTURE, Rect2(-Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size), false)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	else:
 		draw_texture_rect(PIECE_TEXTURE, texture_rect, false)
+
+
+func _cell_has_lion(cell: Vector2i) -> bool:
+	if cell.y < 0 or cell.y >= cell_states.size() or cell.x < 0 or cell.x >= cell_states[cell.y].size():
+		return false
+	var state: String = cell_states[cell.y][cell.x]
+	return state == PIECE_MARK or state == HINT_MARK or state == KING_MARK
 
 
 func _draw_blocked(rect: Rect2, cell_size: float) -> void:

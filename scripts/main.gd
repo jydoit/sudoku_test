@@ -19,7 +19,7 @@ const FormalLevelPageScript = preload("res://scripts/pages/formal_level_page.gd"
 const CompositeLevelPageScript = preload("res://scripts/pages/composite_level_page.gd")
 const ResultPageScript = preload("res://scripts/pages/result_page.gd")
 const HelpDialogContentScript = preload("res://scripts/dialogs/help_dialog_content.gd")
-const LevelSelectDialogContentScript = preload("res://scripts/dialogs/level_select_dialog_content.gd")
+const LEVEL_SELECT_DIALOG_PATH := "res://scripts/dialogs/level_select_dialog_content.gd"
 const SettingsDialogContentScript = preload("res://scripts/dialogs/settings_dialog_content.gd")
 const OpeningKingOverlayScript = preload("res://scripts/overlays/opening_king_overlay.gd")
 const TutorialOverlayScript = preload("res://scripts/overlays/tutorial_overlay.gd")
@@ -73,7 +73,6 @@ const CARD := UITokensScript.SURFACE_CARD
 const GREEN := UITokensScript.SUCCESS_GREEN
 const HEART_ACTIVE_COLOR := Color("#F25D72")
 const HEART_EMPTY_COLOR := Color("#C8CDD5")
-const HEART_PULSE_STAGGER_SECONDS := 0.0
 const COACH_TUTORIAL_SIZE := 19
 const COACH_NORMAL_SIZE := 16
 const TUTORIAL_PHASE_PLACE := TutorialControllerScript.PHASE_PLACE
@@ -363,6 +362,7 @@ var language_picker: OptionButton
 var localization
 var audio_controller
 var selected_language := ""
+var debug_level_selection_enabled := OS.is_debug_build()
 var pending_coin_tool := ""
 var pending_coin_price := 0
 var pending_rewarded_coin_grant := 0
@@ -486,18 +486,17 @@ func _build_ui() -> void:
 	home_composite_button = home_screen.composite_button
 
 	formal_level_page = FormalLevelPageScript.new()
-	formal_level_page.configure(coin_count, Callable(localization, "text"))
+	formal_level_page.configure(coin_count, Callable(localization, "text"), debug_level_selection_enabled)
 	_connect_level_page_signals(formal_level_page)
 	add_child(formal_level_page)
 	formal_level_page.hide()
 
 	composite_level_page = CompositeLevelPageScript.new()
-	composite_level_page.configure(coin_count, Callable(localization, "text"))
+	composite_level_page.configure(coin_count, Callable(localization, "text"), debug_level_selection_enabled)
 	_connect_level_page_signals(composite_level_page)
 	add_child(composite_level_page)
 	composite_level_page.hide()
 	_activate_level_page(home_composite_entry_active)
-
 	_build_opening_king_overlay()
 	result_page = ResultPageScript.new()
 	result_page.configure(Callable(localization, "text"))
@@ -516,7 +515,8 @@ func _build_ui() -> void:
 	tutorial_hand_label = tutorial_overlay.hand_label
 	_build_dialog_controller()
 	_build_help_dialog()
-	_build_level_select_dialog()
+	if debug_level_selection_enabled:
+		_build_level_select_dialog()
 	_build_settings_dialog()
 	localization.localize_tree(self, true)
 
@@ -531,7 +531,8 @@ func _connect_level_page_signals(page) -> void:
 	page.home_requested.connect(_show_home)
 	page.help_requested.connect(_on_help)
 	page.settings_requested.connect(_on_settings)
-	page.level_select_requested.connect(_open_level_select)
+	if debug_level_selection_enabled:
+		page.level_select_requested.connect(_open_level_select)
 	page.tutorial_requested.connect(_on_tutorial_button_pressed)
 	page.clear_requested.connect(_clear_board)
 	page.crown_find_requested.connect(_use_crown_find)
@@ -591,7 +592,13 @@ func _build_help_dialog() -> void:
 
 
 func _build_level_select_dialog() -> void:
-	level_select_content = LevelSelectDialogContentScript.new()
+	if not debug_level_selection_enabled:
+		return
+	var level_select_script = load(LEVEL_SELECT_DIALOG_PATH)
+	if not level_select_script:
+		push_error("Debug level-select content is unavailable")
+		return
+	level_select_content = level_select_script.new()
 	level_select_content.configure(Callable(localization, "text"))
 	level_select_picker = level_select_content.picker
 	dialog_controller.register_content("level_select", level_select_content)
@@ -886,6 +893,7 @@ func _update_assembly_tool_buttons() -> void:
 		return
 	var direct_target := _assembly_direct_find_target()
 	var hint_target := _assembly_hint_target()
+	var hint_price := _current_tool_price(CoinEconomyScript.TOOL_HINT)
 	game_screen.present_tool("clear", {"label": "清除", "status": "free_forever", "disabled": composite_placements.is_empty()})
 	game_screen.present_tool("crown", {
 		"label": "直找",
@@ -895,8 +903,8 @@ func _update_assembly_tool_buttons() -> void:
 	})
 	game_screen.present_tool("hint", {
 		"label": "提示",
-		"status": "free" if hint_count > 0 else "paid",
-		"value": hint_count if hint_count > 0 else _current_tool_price(CoinEconomyScript.TOOL_HINT),
+		"status": _hint_tool_status(),
+		"value": hint_count if hint_count > 0 else hint_price,
 		"disabled": composite_deadlocked or hint_target.is_empty()
 	})
 
@@ -1437,6 +1445,7 @@ func _validate_and_update(allow_completion: bool) -> void:
 	if game_screen:
 		game_screen.present_tool("clear", {"label": "清除", "status": "free_forever", "disabled": _clearable_marks_empty()})
 	_update_crown_find_button()
+	_update_hint_button()
 
 	if not conflicts.is_empty() and immediate_errors:
 		coach_label.text = "有冲突：红色格子违反了行、列、区域或相邻规则。"
@@ -2001,7 +2010,7 @@ func _complete_level() -> void:
 		board.play_victory()
 		audio_controller.play_victory()
 		_save_game()
-		await get_tree().create_timer(0.55).timeout
+		await get_tree().create_timer(board.victory_result_delay()).timeout
 		_prepare_success_result_page(composite_reward)
 		result_page.show_animated()
 		return
@@ -2027,7 +2036,7 @@ func _complete_level() -> void:
 	board.play_victory()
 	audio_controller.play_victory()
 	_save_game()
-	await get_tree().create_timer(0.55).timeout
+	await get_tree().create_timer(board.victory_result_delay()).timeout
 	_prepare_success_result_page(reward)
 	result_page.show_animated()
 
@@ -2352,6 +2361,8 @@ func _refresh_localized_ui() -> void:
 
 
 func _open_level_select() -> void:
+	if not debug_level_selection_enabled or not level_select_content or not level_select_picker:
+		return
 	if in_tutorial:
 		_show_toast("完成新手教程后即可选择关卡")
 		return
@@ -2378,6 +2389,8 @@ func _refresh_level_select_picker() -> void:
 
 
 func _confirm_level_select() -> void:
+	if not debug_level_selection_enabled or not level_select_content:
+		return
 	var selected_index: int = level_select_content.selected_index()
 	selected_index = clampi(selected_index, 0, levels.size() - 1)
 	tutorial_completed = true
@@ -2648,7 +2661,7 @@ func _play_coin_deduction_animation(balance_before: int, balance_after: int, amo
 
 func _update_heart_label() -> void:
 	if game_screen:
-		game_screen.set_hearts(heart_count, current_heart_limit, not in_tutorial)
+		game_screen.set_hearts(heart_count, current_heart_limit)
 
 
 func _stop_heart_tweens() -> void:
@@ -2715,12 +2728,17 @@ func _update_hint_button() -> void:
 			"disabled": tutorial_interaction_stage != TUTORIAL_PHASE_HINT
 		})
 		return
+	var hint_price := _current_tool_price(CoinEconomyScript.TOOL_HINT)
 	game_screen.present_tool("hint", {
 		"label": "提示",
-		"status": "free" if hint_count > 0 else "paid",
-		"value": hint_count if hint_count > 0 else _current_tool_price(CoinEconomyScript.TOOL_HINT),
+		"status": _hint_tool_status(),
+		"value": hint_count if hint_count > 0 else hint_price,
 		"disabled": is_completed or is_failed or _is_assembly_phase()
 	})
+
+
+func _hint_tool_status() -> String:
+	return "free" if hint_count > 0 else "paid"
 
 
 func _update_crown_find_button() -> void:
@@ -3000,7 +3018,7 @@ func _update_tutorial_button() -> void:
 	if top_home_button:
 		top_home_button.show()
 	if level_select_button:
-		level_select_button.visible = not in_tutorial and not home_composite_entry_active
+		level_select_button.visible = debug_level_selection_enabled and not in_tutorial and not home_composite_entry_active
 	if help_button:
 		help_button.show()
 	if level_heart_label:

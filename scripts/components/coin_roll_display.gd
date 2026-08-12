@@ -99,6 +99,68 @@ func animate_to(value: int, total_duration: float) -> void:
 	roll_tween.tween_callback(_finish_animation.bind(target))
 
 
+func animate_reel_to(value: int, total_duration: float, max_visual_steps: int = 5) -> void:
+	var target := maxi(0, value)
+	stop_animation(true)
+	_refresh_geometry(_displayed_value, target)
+	if target == _displayed_value:
+		set_value(target)
+		return
+	var start_value := _displayed_value
+	var direction := 1 if target > start_value else -1
+	var value_distance := absi(target - start_value)
+	var visual_step_limit := maxi(1, max_visual_steps)
+	var visual_step_count := mini(value_distance, visual_step_limit)
+	if value_distance >= 4:
+		visual_step_count = mini(visual_step_count, maxi(3, ceili(sqrt(float(value_distance)))))
+	var values: Array[int] = []
+	var previous_value := start_value
+	for step_index in range(visual_step_count):
+		var remaining_steps := visual_step_count - step_index - 1
+		var progress := float(step_index + 1) / float(visual_step_count)
+		var eased_progress := 1.0 - pow(1.0 - progress, 2.0)
+		var next_value := roundi(lerpf(float(start_value), float(target), eased_progress))
+		if direction > 0:
+			next_value = clampi(next_value, previous_value + 1, target - remaining_steps)
+		else:
+			next_value = clampi(next_value, target + remaining_steps, previous_value - 1)
+		values.append(next_value)
+		previous_value = next_value
+	values[values.size() - 1] = target
+
+	var duration_weights: Array[float] = []
+	var total_weight := 0.0
+	for step_index in range(visual_step_count):
+		var progress := float(step_index + 1) / float(visual_step_count)
+		var weight := lerpf(0.55, 1.85, pow(progress, 1.35))
+		duration_weights.append(weight)
+		total_weight += weight
+
+	var starts_with_primary := _primary_active
+	roll_tween = create_tween()
+	for step_index in range(visual_step_count):
+		var outgoing := primary_label if (step_index % 2 == 0) == starts_with_primary else secondary_label
+		var incoming := secondary_label if outgoing == primary_label else primary_label
+		var next_value: int = values[step_index]
+		var step_duration := maxf(0.01, total_duration * duration_weights[step_index] / total_weight)
+		roll_tween.tween_callback(_prepare_roll_step.bind(outgoing, incoming, next_value, direction))
+		var outgoing_roll := roll_tween.tween_property(
+			outgoing,
+			"position:y",
+			-float(direction) * _counter_size.y,
+			step_duration
+		)
+		var incoming_roll := roll_tween.parallel().tween_property(incoming, "position:y", 0.0, step_duration)
+		if step_index == visual_step_count - 1:
+			outgoing_roll.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			incoming_roll.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		else:
+			outgoing_roll.set_trans(Tween.TRANS_LINEAR)
+			incoming_roll.set_trans(Tween.TRANS_LINEAR)
+		roll_tween.tween_callback(_finish_roll_step.bind(incoming, next_value))
+	roll_tween.tween_callback(_finish_animation.bind(target))
+
+
 func roll_step_to(value: int, duration: float) -> void:
 	var target := maxi(0, value)
 	_refresh_geometry(_displayed_value, target)
@@ -175,9 +237,14 @@ func labels_fit_clip() -> bool:
 
 func _build_label(options: Dictionary) -> Label:
 	var label := Label.new()
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.horizontal_alignment = int(options.get("number_alignment", HORIZONTAL_ALIGNMENT_CENTER)) as HorizontalAlignment
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_color_override("font_color", options.get("font_color", Color("#C98212")))
+	var font_color: Color = options.get("font_color", Color("#C98212"))
+	label.add_theme_color_override("font_color", font_color)
+	var outline_size := maxi(0, int(options.get("outline_size", 0)))
+	if outline_size > 0:
+		label.add_theme_color_override("font_outline_color", options.get("outline_color", font_color))
+		label.add_theme_constant_override("outline_size", outline_size)
 	label.add_theme_color_override("font_shadow_color", options.get("shadow_color", Color(0.44, 0.28, 0.05, 0.16)))
 	label.add_theme_constant_override("shadow_offset_x", 0)
 	label.add_theme_constant_override("shadow_offset_y", _shadow_offset_y)

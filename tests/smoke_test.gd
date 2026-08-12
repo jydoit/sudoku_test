@@ -101,7 +101,10 @@ func _run() -> void:
 		assert(is_zero_approx(level_coin_display.primary_label.position.y) and is_zero_approx(level_coin_display.secondary_label.position.y), "Static level balance updates should reset both rolling offsets")
 		assert(is_zero_approx(result_coin_display.primary_label.position.y) and is_zero_approx(result_coin_display.secondary_label.position.y), "Static result balance updates should reset both rolling offsets")
 	assert(level_coin_display.primary_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER and level_coin_display.primary_label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER, "The level balance should be centered in both axes")
-	assert(result_coin_display.primary_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER and result_coin_display.primary_label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER, "The result balance should be centered in both axes")
+	assert(result_coin_display.primary_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_LEFT and result_coin_display.primary_label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER, "The result balance should align toward the coin while remaining vertically centered")
+	assert(result_coin_display.coin_icon.custom_minimum_size.x >= 44.0, "The result reward coin should remain visually prominent")
+	assert(result_coin_display.primary_label.get_theme_constant("outline_size") >= 1, "The result balance should use a stable bold treatment")
+	assert(result_coin_display.get_theme_constant("separation") <= 3, "The result coin and balance should read as one compact reward group")
 	var level_top_row: HBoxContainer = level_coin_display.get_parent().get_parent().get_parent()
 	assert(level_top_row.get_combined_minimum_size().x <= 528.0, "The enlarged five-digit coin badge should still fit the 540px level header")
 	assert(result_coin_display.get_combined_minimum_size().x <= 480.0, "The five-digit result balance should remain inside the result card safe width")
@@ -124,6 +127,12 @@ func _run() -> void:
 	await create_timer(0.14).timeout
 	assert(result_coin_display.displayed_value() == 12 and result_coin_display.queued_step_count() == 0, "The coin roll queue should drain to the final balance")
 	assert(result_coin_display.primary_label.text == "12" and not result_coin_display.secondary_label.visible, "A drained roll queue should normalize the final visible label")
+	result_coin_display.set_value(20)
+	result_coin_display.animate_reel_to(31, 0.48)
+	await create_timer(0.18).timeout
+	assert(result_coin_display.displayed_value() not in [20, 31], "A result reel should skip through a bounded set of intermediate balances")
+	await create_timer(0.36).timeout
+	assert(result_coin_display.displayed_value() == 31 and not result_coin_display.secondary_label.visible, "A result reel should decelerate and normalize at the exact target balance")
 	assert(int(ProjectSettings.get_setting("display/window/size/viewport_width")) == 540 and int(ProjectSettings.get_setting("display/window/size/viewport_height")) == 960, "Coin layouts should be tested against the Pixel-sized 540x960 viewport")
 	game._update_coin_label()
 	result_coin_display.set_value(0)
@@ -222,12 +231,11 @@ func _run() -> void:
 	game._update_crown_find_button()
 	game._update_hint_button()
 	assert(game.level_heart_slots.size() == game.INITIAL_HEART_COUNT, "The top heart badge should keep independent heart slots")
-	assert(game.HEART_PULSE_STAGGER_SECONDS == 0.0, "Remaining hearts should pulse together without stagger")
-	assert(game.level_heart_tweens.size() == game.INITIAL_HEART_COUNT, "Every visible full heart should own a pulse state")
+	assert(game.level_heart_tweens.is_empty(), "In-level hearts should remain static without background pulse tweens")
 	for heart_index in range(game.level_heart_slots.size()):
 		var heart_slot: Label = game.level_heart_slots[heart_index]
 		assert(heart_slot.custom_minimum_size.x >= 32.0 and heart_slot.custom_minimum_size.y >= 38.0, "Heart slots should not be compressed")
-		assert(game.level_heart_tweens[heart_index] != null, "Every remaining heart should pulse")
+		assert(heart_slot.scale.is_equal_approx(Vector2.ONE), "Every in-level heart should stay at its normal scale")
 	for tool_button in [game.clear_button, game.crown_find_button, game.hint_button]:
 		var tool_icon: Control = tool_button.find_child("ToolIcon", true, false)
 		var tool_label: Label = tool_button.find_child("ToolLabel", true, false)
@@ -507,9 +515,8 @@ func _run() -> void:
 	assert(game.heart_count == hearts_before_wrong - 1, "Wrong crown attempts should consume one heart")
 	assert(game.crown_find_count == crown_find_count_before_wrong, "Wrong crown attempts must not consume crown-find uses")
 	assert(game.level_heart_slots[game.heart_count].get_theme_color("font_color") == game.HEART_EMPTY_COLOR, "A lost heart should turn gray")
-	assert(game.level_heart_slots[game.heart_count].scale.is_equal_approx(Vector2.ONE), "A lost heart should stop at its normal scale")
-	assert(game.level_heart_tweens[game.heart_count] == null, "A lost heart should stop pulsing")
-	assert(game.level_heart_tweens[0] != null, "Remaining hearts should keep pulsing")
+	assert(game.level_heart_slots[game.heart_count].scale.is_equal_approx(Vector2.ONE), "A lost heart should remain at its normal scale")
+	assert(game.level_heart_tweens.is_empty(), "Heart loss should not start or retain any in-level pulse tween")
 	assert(not game.board.error_cells.has(wrong_cell), "Wrong crown attempts should not be treated as rule-conflict crowns")
 	assert(not game.is_failed, "A single wrong crown attempt should not fail the level while hearts remain")
 	game._on_cell_pressed(wrong_cell.y, wrong_cell.x)
@@ -653,7 +660,16 @@ func _run() -> void:
 	game.hint_count = 0
 	game._update_hint_button()
 	assert(game.hint_button_label.text == "提示", "Hint should not display an exhausted ×0 state")
-	assert(game.hint_status_icon.visible and int(game.hint_status_label.text) > 0, "Hint should replace the free status with its coin price")
+	var hint_price: int = game._current_tool_price(CoinEconomyScript.TOOL_HINT)
+	assert(game.hint_status_icon.visible and int(game.hint_status_label.text) == hint_price, "An exhausted hint should show its coin price even when the current balance cannot cover it")
+	game.coin_count = hint_price
+	game._update_hint_button()
+	assert(game.hint_status_icon.visible and int(game.hint_status_label.text) == hint_price, "An exhausted hint should show its coin price when the balance can cover it")
+	game.coin_count = 0
+	game.game_screen.present_tool("hint", {"label": "提示", "status": "free_forever", "disabled": false})
+	assert(game.hint_status_label.text == "免费", "The level page placeholder fixture should reproduce the stale Free state")
+	game._validate_and_update(false)
+	assert(game.hint_status_icon.visible and int(game.hint_status_label.text) == hint_price, "Level validation must replace the page placeholder with the real hint price")
 	game.hint_count = remaining_hints_after_free_use
 	game._update_hint_button()
 	game._on_cell_pressed(guide_target.y, guide_target.x)
@@ -688,16 +704,21 @@ func _run() -> void:
 	assert(game.is_completed, "A valid solution must complete the level")
 	assert(game.coin_count == completion_coins_before + expected_completion_reward, "Completion should grant the dynamic coin reward")
 	assert(int(game.economy_progress["totalCoinEarned"]) >= expected_completion_reward, "Economy progress should retain earned-coin totals")
+	assert(game.board.victory_tween != null, "Completion should start the board victory timeline")
+	assert(game.board.victory_origin.x >= 0, "The board victory wave should originate from the final lion")
+	assert(game.board.victory_result_delay() >= game.board.VICTORY_TIMELINE_DURATION, "The result page should wait for the in-board celebration")
 
-	await create_timer(2.6).timeout
+	await create_timer(game.board.victory_result_delay() + 0.18).timeout
+	assert(game.result_page.completion_title.text == game._t("EXCELLENT"), "A no-heart-loss multi-heart completion should display Excellent")
+	assert(game.result_page.result_petals_layer.visible and game.result_page.result_petals_layer.get_child_count() > 0, "Excellent should play the falling-petal celebration")
+
+	await create_timer(game.result_page.RESULT_COIN_MAX_DURATION + 0.12).timeout
 	assert(game.result_page.result_coin_roll_row.visible and not game.result_page.result_reward_label.visible, "Success result should show the dedicated rolling coin reward")
 	assert(game.result_page.result_reward_coin_icon != null and game.result_page.result_reward_coin_icon.visible, "The result reward should use a coin icon without a text prefix")
 	assert(game.result_page.result_coin_roll_row.get_child_count() == 2, "The reward row should contain only the coin icon and rolling number")
 	assert(game.result_page.result_coin_roll_primary.text == str(game.coin_count), "The result coin roller should finish at the player's current balance")
 	assert(game.result_page.result_coin_tween != null, "Granted coins should use a lion-to-balance flight animation on the result page")
 	assert(game.result_page.RESULT_COIN_START_DELAY >= 0.4 and game.result_page.RESULT_COIN_MIN_DURATION >= 1.3, "The reward count-up should remain readable after the result page appears")
-	assert(game.result_page.completion_title.text == game._t("EXCELLENT"), "A no-heart-loss multi-heart completion should display Excellent")
-	assert(game.result_page.result_petals_layer.visible and game.result_page.result_petals_layer.get_child_count() > 0, "Excellent should play the falling-petal celebration")
 	assert(game.result_page.result_piece_icon.texture in game.LION_KING_VICTORY_FRAMES, "Success result should animate with the lion wave frames")
 	assert(game.result_page.result_lion_wave_tween != null, "Success result should run the lion wave animation")
 	assert(game.result_page.result_lion_animation_name in ["wave", "tongue", "funny"], "Success result should randomly choose a supported lion animation")
@@ -708,15 +729,50 @@ func _run() -> void:
 	var manual_balance_after: int = game.coin_count
 	var manual_balance_before: int = maxi(0, manual_balance_after - 5)
 	game._prepare_success_result_page(5)
-	await create_timer(game.result_page.RESULT_COIN_START_DELAY + game.result_page.RESULT_COIN_FLIGHT_DURATION + 0.28).timeout
+	await process_frame
+	var expected_flight_source: Vector2 = game.result_page._control_point_in_flight_layer(
+		game.result_page.result_piece_icon,
+		Vector2(
+			game.result_page.result_piece_icon.size.x * 0.70,
+			game.result_page.result_piece_icon.size.y * 0.50 + 4.0
+		)
+	)
+	var expected_flight_target: Vector2 = game.result_page._control_point_in_flight_layer(
+		game.result_page.result_reward_coin_icon,
+		game.result_page.result_reward_coin_icon.size * 0.5
+	)
+	var flight_layer_bounds := Rect2(Vector2.ZERO, game.result_page.result_coin_flight_layer.size)
+	assert(flight_layer_bounds.has_point(expected_flight_source), "Reward coins should start from the lion inside the flight layer coordinate space")
+	assert(flight_layer_bounds.has_point(expected_flight_target), "Reward coins should end at the balance coin icon inside the flight layer coordinate space")
+	var manual_reward_stagger: float = minf(
+		game.result_page.RESULT_COIN_FLIGHT_MAX_STAGGER,
+		maxf(
+			game.result_page.RESULT_COIN_FLIGHT_MIN_STAGGER,
+			(
+				game.result_page.RESULT_COIN_MAX_DURATION
+				- game.result_page.RESULT_COIN_START_DELAY
+				- game.result_page.RESULT_COIN_FLIGHT_DURATION
+				- game.result_page.RESULT_COIN_REEL_DURATION
+				- game.result_page.RESULT_COIN_REEL_SETTLE_HOLD
+			) / 4.0
+		)
+	)
+	var manual_flight_duration: float = (
+		game.result_page.RESULT_COIN_START_DELAY
+		+ game.result_page.RESULT_COIN_FLIGHT_DURATION
+		+ manual_reward_stagger * 4.0
+	)
+	await create_timer(manual_flight_duration - 0.08).timeout
+	assert(game.result_page.result_coin_roll_primary.text == str(manual_balance_before), "The result balance should stay at its initial value until every reward coin has arrived")
+	await create_timer(0.38).timeout
 	var rolling_values := [game.result_page.result_coin_roll_primary.text, game.result_page.result_coin_roll_secondary.text]
-	assert(rolling_values.any(func(value: String) -> bool: return value not in [str(manual_balance_before), str(manual_balance_after)]), "A five-coin reward should visibly roll through intermediate account balances")
-	assert(game.result_page.result_coin_flight_layer.get_child_count() > 0, "Reward coins should visibly fly from the lion toward the result balance")
+	assert(rolling_values.any(func(value: String) -> bool: return value not in [str(manual_balance_before), str(manual_balance_after)]), "The result reel should visibly pass a bounded intermediate balance after every reward coin arrives")
+	assert(game.result_page.result_coin_flight_layer.get_child_count() == 0, "The balance reel should begin only after all reward coin flyers have completed")
 	for flyer in game.result_page.result_coin_flight_layer.get_children():
 		assert(flyer.size.is_equal_approx(game.result_page.RESULT_COIN_FLYER_SIZE), "Flying coin sprites must keep their mobile-sized bounds")
 		assert(flyer.get_global_rect().intersects(game.completion_overlay.get_global_rect()), "Flying coin sprites must remain visible inside the result screen")
 	assert(game.result_page.result_coin_roll_primary.scale == Vector2.ONE and game.result_page.result_coin_roll_secondary.scale == Vector2.ONE, "The coin roller must not use the old scale-recovery effect")
-	await create_timer(2.6).timeout
+	await create_timer(game.result_page.RESULT_COIN_REEL_DURATION + 0.24).timeout
 	assert(game.result_page.result_coin_roll_primary.text == str(manual_balance_after) and not game.result_page.result_coin_roll_secondary.visible, "The visible roller should finish at the player's current balance")
 	assert(game.result_page.completion_title.text == game._t("GOOD"), "A single-heart completion should display Good")
 	assert(not game.result_page.result_petals_layer.visible, "Good should stop and hide the falling-petal celebration")
