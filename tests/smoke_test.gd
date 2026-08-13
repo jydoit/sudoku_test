@@ -90,8 +90,19 @@ func _run() -> void:
 	assert(level_coin_display.primary_label.get_theme_font_size("font_size") >= 23, "The level balance should use a readable mobile font size")
 	assert(result_coin_display.primary_label.get_theme_font_size("font_size") >= 30, "The result balance should use a large reward font size")
 	assert(level_coin_display.counter_height() >= 44.0 and result_coin_display.counter_height() >= 48.0, "Coin clips should include vertical font and shadow safety space")
-	assert(level_coin_display.counter_width() >= 62.0 and result_coin_display.counter_width() >= 104.0, "Coin clips should reserve the approved minimum widths")
-	for balance in [0, 8, 18, 99, 108, 999, 1000, 99999]:
+	assert(level_coin_display.counter_width() >= 62.0, "The level coin clip should retain its compact five-digit width")
+	var result_balance_profiles := {
+		0: [38, 42.0],
+		8: [38, 42.0],
+		18: [36, 58.0],
+		108: [34, 76.0],
+		999: [34, 76.0],
+		1000: [32, 94.0],
+		99999: [29, 108.0],
+		999999: [26, 122.0],
+		9999999: [23, 122.0],
+	}
+	for balance in result_balance_profiles.keys():
 		level_coin_display.set_value(balance)
 		result_coin_display.set_value(balance)
 		assert(level_coin_display.primary_label.text == str(balance), "The level balance should display %d without truncation" % balance)
@@ -100,14 +111,29 @@ func _run() -> void:
 		assert(not level_coin_display.secondary_label.visible and not result_coin_display.secondary_label.visible, "Static balance updates should hide the spare rolling label")
 		assert(is_zero_approx(level_coin_display.primary_label.position.y) and is_zero_approx(level_coin_display.secondary_label.position.y), "Static level balance updates should reset both rolling offsets")
 		assert(is_zero_approx(result_coin_display.primary_label.position.y) and is_zero_approx(result_coin_display.secondary_label.position.y), "Static result balance updates should reset both rolling offsets")
+		var expected_profile: Array = result_balance_profiles[balance]
+		assert(result_coin_display.active_font_size() == int(expected_profile[0]), "Result balance %d should use its digit-count font profile" % balance)
+		assert(result_coin_display.counter_width() >= float(expected_profile[1]), "Result balance %d should reserve its digit-count width" % balance)
 	assert(level_coin_display.primary_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER and level_coin_display.primary_label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER, "The level balance should be centered in both axes")
 	assert(result_coin_display.primary_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_LEFT and result_coin_display.primary_label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER, "The result balance should align toward the coin while remaining vertically centered")
 	assert(result_coin_display.coin_icon.custom_minimum_size.x >= 44.0, "The result reward coin should remain visually prominent")
 	assert(result_coin_display.primary_label.get_theme_constant("outline_size") >= 1, "The result balance should use a stable bold treatment")
-	assert(result_coin_display.get_theme_constant("separation") <= 3, "The result coin and balance should read as one compact reward group")
+	assert(result_coin_display.get_theme_constant("separation") == 0, "An explicit spacer should own the result coin gap instead of a theme separation")
+	assert(result_coin_display.content_gap_spacer != null, "The result coin display should include an explicit icon-to-number spacer")
+	assert(result_coin_display.configured_content_gap() == game.result_page.RESULT_COIN_BALANCE_GAP, "The result coin spacer should keep the approved fixed width")
+	assert(result_coin_display.primary_label.position.x >= 8.0, "The result number should keep inner padding in addition to the container separation")
 	var level_top_row: HBoxContainer = level_coin_display.get_parent().get_parent().get_parent()
 	assert(level_top_row.get_combined_minimum_size().x <= 528.0, "The enlarged five-digit coin badge should still fit the 540px level header")
 	assert(result_coin_display.get_combined_minimum_size().x <= 480.0, "The five-digit result balance should remain inside the result card safe width")
+	result_coin_display.set_value(99)
+	result_coin_display.animate_reel_to(100, 0.12)
+	assert(result_coin_display.active_digit_count() == 3 and result_coin_display.active_font_size() == 34, "A 99-to-100 reel should lock the three-digit layout before moving")
+	await create_timer(0.16).timeout
+	result_coin_display.set_value(100)
+	result_coin_display.animate_reel_to(99, 0.12)
+	assert(result_coin_display.active_digit_count() == 3 and result_coin_display.active_font_size() == 34, "A 100-to-99 reel should keep the three-digit layout while moving")
+	await create_timer(0.16).timeout
+	assert(result_coin_display.active_digit_count() == 2 and result_coin_display.active_font_size() == 36, "A decreasing reel should shrink only after stopping at the final balance")
 	game.layout_direction = Control.LAYOUT_DIRECTION_RTL
 	await process_frame
 	assert(level_coin_display.layout_direction == Control.LAYOUT_DIRECTION_LTR and result_coin_display.layout_direction == Control.LAYOUT_DIRECTION_LTR, "Coin icon and number order should stay LTR in RTL locales")
@@ -714,8 +740,9 @@ func _run() -> void:
 
 	await create_timer(game.result_page.RESULT_COIN_MAX_DURATION + 0.12).timeout
 	assert(game.result_page.result_coin_roll_row.visible and not game.result_page.result_reward_label.visible, "Success result should show the dedicated rolling coin reward")
+	assert(game.result_page.result_coin_roll_display.visual_gap_from_icon_to_number() >= 35.5, "The visible result layout should preserve about 36px from the coin edge to the number start")
 	assert(game.result_page.result_reward_coin_icon != null and game.result_page.result_reward_coin_icon.visible, "The result reward should use a coin icon without a text prefix")
-	assert(game.result_page.result_coin_roll_row.get_child_count() == 2, "The reward row should contain only the coin icon and rolling number")
+	assert(game.result_page.result_coin_roll_row.get_child_count() == 3, "The reward row should contain the coin icon, explicit spacing, and rolling number")
 	assert(game.result_page.result_coin_roll_primary.text == str(game.coin_count), "The result coin roller should finish at the player's current balance")
 	assert(game.result_page.result_coin_tween != null, "Granted coins should use a lion-to-balance flight animation on the result page")
 	assert(game.result_page.RESULT_COIN_START_DELAY >= 0.4 and game.result_page.RESULT_COIN_MIN_DURATION >= 1.3, "The reward count-up should remain readable after the result page appears")
@@ -737,9 +764,8 @@ func _run() -> void:
 			game.result_page.result_piece_icon.size.y * 0.50 + 4.0
 		)
 	)
-	var expected_flight_target: Vector2 = game.result_page._control_point_in_flight_layer(
-		game.result_page.result_reward_coin_icon,
-		game.result_page.result_reward_coin_icon.size * 0.5
+	var expected_flight_target: Vector2 = game.result_page._control_center_in_flight_layer(
+		game.result_page.result_reward_coin_icon
 	)
 	var flight_layer_bounds := Rect2(Vector2.ZERO, game.result_page.result_coin_flight_layer.size)
 	assert(flight_layer_bounds.has_point(expected_flight_source), "Reward coins should start from the lion inside the flight layer coordinate space")

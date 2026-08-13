@@ -4,6 +4,7 @@ const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resou
 const MAX_CONTINUOUS_ROLL_STEPS := 10
 
 var coin_icon: TextureRect
+var content_gap_spacer: Control
 var clip: Control
 var primary_label: Label
 var secondary_label: Label
@@ -18,6 +19,10 @@ var _vertical_padding := 4.0
 var _shadow_offset_y := 2
 var _counter_size := Vector2(62, 44)
 var _geometry_digit_count := 0
+var _dynamic_digit_sizing := false
+var _digit_profiles: Dictionary = {}
+var _overflow_font_size := 23
+var _content_gap := 0.0
 var _displayed_value := 0
 var _primary_active := true
 var _queued_steps: Array[Dictionary] = []
@@ -28,7 +33,8 @@ var _active_step_target := 0
 func configure(options: Dictionary = {}) -> void:
 	layout_direction = Control.LAYOUT_DIRECTION_LTR
 	alignment = BoxContainer.ALIGNMENT_CENTER
-	add_theme_constant_override("separation", int(options.get("separation", 5)))
+	_content_gap = maxf(0.0, float(options.get("content_gap", 0.0)))
+	add_theme_constant_override("separation", 0 if _content_gap > 0.0 else int(options.get("separation", 5)))
 	_font_size = int(options.get("font_size", 24))
 	_minimum_counter_width = float(options.get("minimum_counter_width", 62.0))
 	_minimum_counter_height = float(options.get("minimum_counter_height", 44.0))
@@ -36,6 +42,9 @@ func configure(options: Dictionary = {}) -> void:
 	_horizontal_padding = float(options.get("horizontal_padding", 6.0))
 	_vertical_padding = float(options.get("vertical_padding", 4.0))
 	_shadow_offset_y = int(options.get("shadow_offset_y", 2))
+	_dynamic_digit_sizing = bool(options.get("dynamic_digit_sizing", false))
+	_digit_profiles = options.get("digit_profiles", {}).duplicate()
+	_overflow_font_size = int(options.get("overflow_font_size", _font_size))
 
 	coin_icon = TextureRect.new()
 	coin_icon.name = "CoinIcon"
@@ -46,6 +55,14 @@ func configure(options: Dictionary = {}) -> void:
 	coin_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	coin_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(coin_icon)
+
+	if _content_gap > 0.0:
+		content_gap_spacer = Control.new()
+		content_gap_spacer.name = "CoinNumberGap"
+		content_gap_spacer.custom_minimum_size.x = _content_gap
+		content_gap_spacer.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		content_gap_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(content_gap_spacer)
 
 	clip = Control.new()
 	clip.name = "CoinRollClip"
@@ -216,6 +233,24 @@ func counter_width() -> float:
 	return _counter_size.x
 
 
+func active_font_size() -> int:
+	return _font_size
+
+
+func active_digit_count() -> int:
+	return _geometry_digit_count
+
+
+func configured_content_gap() -> float:
+	return _content_gap
+
+
+func visual_gap_from_icon_to_number() -> float:
+	if not coin_icon or not clip:
+		return 0.0
+	return clip.position.x + _horizontal_padding - coin_icon.position.x - coin_icon.size.x
+
+
 func displayed_value() -> int:
 	return _displayed_value
 
@@ -257,8 +292,14 @@ func _refresh_geometry(first_value: int, second_value: int) -> void:
 	var first_text := str(maxi(0, first_value))
 	var second_text := str(maxi(0, second_value))
 	var digit_count := maxi(_minimum_digits, maxi(first_text.length(), second_text.length()))
-	if digit_count == _geometry_digit_count:
+	var profile := _profile_for_digit_count(digit_count)
+	var profile_font_size := int(profile.get("font_size", _font_size))
+	var profile_minimum_width := float(profile.get("minimum_width", _minimum_counter_width))
+	if digit_count == _geometry_digit_count and profile_font_size == _font_size:
 		return
+	_font_size = profile_font_size
+	for label in [primary_label, secondary_label]:
+		label.add_theme_font_size_override("font_size", _font_size)
 	var sample := ""
 	for _index in range(digit_count):
 		sample += "8"
@@ -266,7 +307,7 @@ func _refresh_geometry(first_value: int, second_value: int) -> void:
 	var measured_width := font.get_string_size(sample, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size).x
 	var measured_height := font.get_height(_font_size)
 	_counter_size = Vector2(
-		ceilf(maxf(_minimum_counter_width, measured_width + _horizontal_padding * 2.0)),
+		ceilf(maxf(profile_minimum_width, measured_width + _horizontal_padding * 2.0)),
 		ceilf(maxf(_minimum_counter_height, measured_height + _vertical_padding * 2.0 + absf(float(_shadow_offset_y))))
 	)
 	_geometry_digit_count = digit_count
@@ -278,10 +319,28 @@ func _refresh_geometry(first_value: int, second_value: int) -> void:
 		label.custom_minimum_size = _counter_size
 
 
+func _profile_for_digit_count(digit_count: int) -> Dictionary:
+	if not _dynamic_digit_sizing:
+		return {"font_size": _font_size, "minimum_width": _minimum_counter_width}
+	if _digit_profiles.has(digit_count):
+		var configured_profile = _digit_profiles[digit_count]
+		if configured_profile is Dictionary:
+			return configured_profile
+	var fallback_width := _minimum_counter_width
+	if not _digit_profiles.is_empty():
+		var largest_profile_digits := 0
+		for raw_digits in _digit_profiles.keys():
+			largest_profile_digits = maxi(largest_profile_digits, int(raw_digits))
+		var largest_profile = _digit_profiles.get(largest_profile_digits, {})
+		if largest_profile is Dictionary:
+			fallback_width = float(largest_profile.get("minimum_width", fallback_width))
+	return {"font_size": _overflow_font_size, "minimum_width": fallback_width}
+
+
 func _prepare_label(label: Label, value: int, y_position: float) -> void:
 	label.text = str(maxi(0, value))
-	label.position = Vector2(0, y_position)
-	label.size = _counter_size
+	label.position = Vector2(_horizontal_padding, y_position)
+	label.size = Vector2(maxf(1.0, _counter_size.x - _horizontal_padding * 2.0), _counter_size.y)
 	label.scale = Vector2.ONE
 
 
@@ -307,6 +366,9 @@ func _finish_queued_step(incoming: Label, value: int) -> void:
 
 func _finish_animation(value: int) -> void:
 	_displayed_value = maxi(0, value)
+	# The reel keeps the larger of the start/end layouts while moving. Only
+	# after it stops do we shrink to the final balance profile.
+	_refresh_geometry(_displayed_value, _displayed_value)
 	_normalize_to_primary()
 	roll_tween = null
 

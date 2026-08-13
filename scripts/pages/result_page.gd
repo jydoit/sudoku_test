@@ -26,6 +26,7 @@ const RESULT_COIN_FLIGHT_MAX_STAGGER := 0.16
 const RESULT_COIN_REEL_DURATION := 1.00
 const RESULT_COIN_REEL_SETTLE_HOLD := 0.08
 const RESULT_COIN_FLYER_SIZE := Vector2(29, 29)
+const RESULT_COIN_BALANCE_GAP := 28.0
 
 var completion_overlay: ColorRect
 var completion_title: Label
@@ -174,13 +175,23 @@ func configure(localizer: Callable = Callable()) -> void:
 	result_coin_roll_display.configure({
 		"initial_value": 0,
 		"font_size": 32,
-		"minimum_counter_width": 104.0,
+		"minimum_counter_width": 42.0,
 		"minimum_counter_height": 52.0,
-		"minimum_digits": 5,
-		"horizontal_padding": 4.0,
+		"minimum_digits": 1,
+		"horizontal_padding": 8.0,
 		"vertical_padding": 4.0,
 		"icon_size": Vector2(44, 44),
-		"separation": 3,
+		"content_gap": RESULT_COIN_BALANCE_GAP,
+		"dynamic_digit_sizing": true,
+		"digit_profiles": {
+			1: {"font_size": 38, "minimum_width": 42.0},
+			2: {"font_size": 36, "minimum_width": 58.0},
+			3: {"font_size": 34, "minimum_width": 76.0},
+			4: {"font_size": 32, "minimum_width": 94.0},
+			5: {"font_size": 29, "minimum_width": 108.0},
+			6: {"font_size": 26, "minimum_width": 122.0},
+		},
+		"overflow_font_size": 23,
 		"font_color": Color("#D88916"),
 		"number_alignment": HORIZONTAL_ALIGNMENT_LEFT,
 		"outline_size": 1,
@@ -357,14 +368,22 @@ func play_coin_animation(reward: int, balance_after: int) -> void:
 	result_coin_roll_display.set_value(balance_before)
 	result_reward_coin_icon.scale = Vector2.ONE
 	result_reward_coin_icon.pivot_offset = result_reward_coin_icon.size * 0.5
+	# `set_value()` may expand the rolling-number clip for a larger balance. Wait
+	# until both containers have applied the new minimum size before resolving the
+	# receiving target; otherwise the icon can move after the flight path is built.
+	result_coin_roll_display.queue_sort()
+	await get_tree().process_frame
+	if not result_coin_roll_display or not result_coin_roll_display.visible or overlay_mode != "success":
+		return
+	await get_tree().process_frame
+	if not result_reward_coin_icon or not result_reward_coin_icon.visible or overlay_mode != "success":
+		return
+	result_reward_coin_icon.pivot_offset = result_reward_coin_icon.size * 0.5
 	var source := _control_point_in_flight_layer(
 		result_piece_icon,
 		Vector2(result_piece_icon.size.x * 0.70, result_piece_icon.size.y * 0.50 + 4.0)
 	)
-	var target := _control_point_in_flight_layer(
-		result_reward_coin_icon,
-		result_reward_coin_icon.size * 0.5
-	)
+	var target := _control_center_in_flight_layer(result_reward_coin_icon)
 	var stagger := RESULT_COIN_FLIGHT_MAX_STAGGER
 	if reward > 1:
 		stagger = minf(
@@ -405,6 +424,12 @@ func _control_point_in_flight_layer(control: Control, local_point: Vector2) -> V
 		return Vector2.ZERO
 	var canvas_point := control.get_global_transform_with_canvas() * local_point
 	return result_coin_flight_layer.get_global_transform_with_canvas().affine_inverse() * canvas_point
+
+
+func _control_center_in_flight_layer(control: Control) -> Vector2:
+	if not control:
+		return Vector2.ZERO
+	return _control_point_in_flight_layer(control, control.size * 0.5)
 
 
 func _launch_result_coin_flyer(index: int, reward: int, balance_after: int, source: Vector2, target: Vector2) -> void:
