@@ -61,7 +61,7 @@ const LION_KING_VICTORY_FRAMES = [
 ]
 const SAVE_PATH := "user://color_queens_save.json"
 const SAVE_PATH_OVERRIDE_SETTING := "color_king/testing/save_path"
-const SAVE_VERSION := 15
+const SAVE_VERSION := 16
 const INITIAL_COIN_COUNT := 10
 const INITIAL_HINT_COUNT := 5
 const INITIAL_HEART_COUNT := 3
@@ -362,6 +362,9 @@ var language_picker: OptionButton
 var localization
 var audio_controller
 var selected_language := ""
+var music_enabled := true
+var sfx_enabled := true
+var haptics_enabled := true
 var debug_level_selection_enabled := OS.is_debug_build()
 var pending_coin_tool := ""
 var pending_coin_price := 0
@@ -397,6 +400,7 @@ func _ready() -> void:
 	localization.locale_changed.connect(_on_locale_changed)
 	audio_controller = AudioControllerScript.new()
 	add_child(audio_controller)
+	audio_controller.set_audio_preferences(music_enabled, sfx_enabled, haptics_enabled)
 	_configure_font_fallbacks()
 	LevelDirectorScript.record_retention_if_needed(director_progress, _today_string(), int(Time.get_unix_time_from_system()))
 	_build_ui()
@@ -478,9 +482,18 @@ func _build_ui() -> void:
 
 	home_screen = HomePageScript.new()
 	home_screen.configure(Callable(localization, "text"))
-	home_screen.start_requested.connect(_start_current_flow)
-	home_screen.composite_requested.connect(_start_home_composite_flow)
-	home_screen.tutorial_requested.connect(_replay_tutorial_preserving_progress)
+	home_screen.start_requested.connect(func() -> void:
+		audio_controller.play_ui_tap()
+		_start_current_flow()
+	)
+	home_screen.composite_requested.connect(func() -> void:
+		audio_controller.play_ui_tap()
+		_start_home_composite_flow()
+	)
+	home_screen.tutorial_requested.connect(func() -> void:
+		audio_controller.play_ui_tap()
+		_replay_tutorial_preserving_progress()
+	)
 	add_child(home_screen)
 	home_start_button = home_screen.start_button
 	home_composite_button = home_screen.composite_button
@@ -500,8 +513,17 @@ func _build_ui() -> void:
 	_build_opening_king_overlay()
 	result_page = ResultPageScript.new()
 	result_page.configure(Callable(localization, "text"))
-	result_page.primary_requested.connect(_completion_primary_pressed)
-	result_page.secondary_requested.connect(_completion_secondary_pressed)
+	result_page.primary_requested.connect(func() -> void:
+		audio_controller.play_ui_tap()
+		_completion_primary_pressed()
+	)
+	result_page.secondary_requested.connect(func() -> void:
+		audio_controller.play_ui_tap()
+		_completion_secondary_pressed()
+	)
+	result_page.music_requested.connect(audio_controller.play_result_music)
+	result_page.music_stop_requested.connect(audio_controller.stop_result_music)
+	result_page.sound_requested.connect(audio_controller.play_result_sound)
 	add_child(result_page)
 	feedback_layer = FeedbackLayerScript.new()
 	feedback_layer.configure()
@@ -528,9 +550,18 @@ func _set_result_overlay_mode(mode: String) -> void:
 
 
 func _connect_level_page_signals(page) -> void:
-	page.home_requested.connect(_show_home)
-	page.help_requested.connect(_on_help)
-	page.settings_requested.connect(_on_settings)
+	page.home_requested.connect(func() -> void:
+		audio_controller.play_ui_tap()
+		_show_home()
+	)
+	page.help_requested.connect(func() -> void:
+		audio_controller.play_ui_tap()
+		_on_help()
+	)
+	page.settings_requested.connect(func() -> void:
+		audio_controller.play_ui_tap()
+		_on_settings()
+	)
 	if debug_level_selection_enabled:
 		page.level_select_requested.connect(_open_level_select)
 	page.tutorial_requested.connect(_on_tutorial_button_pressed)
@@ -544,6 +575,9 @@ func _connect_level_page_signals(page) -> void:
 	page.cell_drag_ended.connect(_on_cell_drag_ended)
 	page.assembly_placement_requested.connect(_on_assembly_placement_requested)
 	page.assembly_return_requested.connect(_on_assembly_return_requested)
+	page.assembly_pickup_started.connect(_on_assembly_pickup_started)
+	page.assembly_snap_target_changed.connect(_on_assembly_snap_target_changed)
+	page.assembly_placement_rejected.connect(_on_assembly_placement_rejected)
 	page.assembly_intro_finished.connect(_on_composite_intro_finished)
 
 
@@ -558,6 +592,7 @@ func _activate_level_page(use_composite_page: bool) -> void:
 		composite_level_page.hide()
 	game_screen = target
 	target.set_coin_balance(coin_count)
+	target.board.set_haptics_enabled(haptics_enabled)
 	if tutorial_overlay:
 		tutorial_overlay.set_board(board)
 	if was_visible:
@@ -836,6 +871,7 @@ func _assembly_origin_in_list(origin: Array, origins: Array) -> bool:
 func _clear_assembly_placements() -> void:
 	if not composite_controller.clear_placements():
 		return
+	audio_controller.play_block_clear()
 	assembly_view.update_state(composite_placements, _assembly_allowed_origins(), composite_tray_slots)
 	_update_assembly_tool_buttons()
 	_save_game()
@@ -868,7 +904,7 @@ func _use_assembly_direct_find() -> void:
 	_update_assembly_tool_buttons()
 	_save_game()
 	_show_toast("直找：已填满%s区域" % _region_name(int(target["regionId"])))
-	audio_controller.play_correct()
+	audio_controller.play_block_region_complete()
 
 
 func _use_assembly_hint() -> void:
@@ -949,19 +985,27 @@ func _apply_composite_phase_ui() -> void:
 func _on_assembly_placement_requested(piece_id: int, origin: Array) -> void:
 	if not _is_assembly_phase() or origin.size() < 2:
 		return
+	var completed_regions_before := _assembly_completed_region_count()
 	var evaluation: Dictionary = composite_controller.place(piece_id, origin)
 	if not bool(evaluation.get("valid", false)):
+		audio_controller.play_block_reject()
 		return
 	var layout: Dictionary = evaluation.get("layout", {})
 	if not layout.is_empty():
 		assembly_view.update_state(composite_placements, {}, composite_tray_slots)
 		_complete_composite_assembly(layout)
 	elif composite_deadlocked:
+		audio_controller.play_block_place(_assembly_piece_size(piece_id))
 		assembly_view.update_state(composite_placements, {}, composite_tray_slots)
 		assembly_view.play_placement_feedback(piece_id, origin)
 		_save_game()
 		_show_composite_deadlock()
 	else:
+		var completed_regions_after := _assembly_completed_region_count()
+		if completed_regions_after > completed_regions_before:
+			audio_controller.play_block_region_complete(_assembly_piece_size(piece_id))
+		else:
+			audio_controller.play_block_place(_assembly_piece_size(piece_id))
 		assembly_view.update_state(
 			composite_placements,
 			evaluation.get("allowedByPiece", {}),
@@ -977,6 +1021,7 @@ func _on_assembly_return_requested(piece_id: int, preferred_slot_index: int = -1
 	var returned_slot: int = composite_controller.return_piece(piece_id, preferred_slot_index)
 	assembly_view.update_state(composite_placements, _assembly_allowed_origins(), composite_tray_slots)
 	if returned_slot >= 0:
+		audio_controller.play_block_return()
 		assembly_view.focus_tray_slot(returned_slot, false)
 		assembly_view.play_return_feedback(returned_slot)
 	# Do not block the release event on JSON serialization and file I/O. The
@@ -984,11 +1029,49 @@ func _on_assembly_return_requested(piece_id: int, preferred_slot_index: int = -1
 	_queue_save_game_after_frame()
 
 
+func _on_assembly_pickup_started(piece_size: int) -> void:
+	if _is_assembly_phase():
+		audio_controller.play_block_pickup(piece_size)
+
+
+func _on_assembly_snap_target_changed() -> void:
+	if _is_assembly_phase():
+		audio_controller.play_block_snap()
+
+
+func _on_assembly_placement_rejected() -> void:
+	if _is_assembly_phase():
+		audio_controller.play_block_reject()
+
+
+func _assembly_piece_size(piece_id: int) -> int:
+	for piece in composite_data.get("pieces", []):
+		if int(piece.get("pieceId", -1)) == piece_id:
+			return maxi(1, (piece.get("cells", []) as Array).size())
+	return 1
+
+
+func _assembly_completed_region_count() -> int:
+	var region_piece_counts := {}
+	var placed_region_piece_counts := {}
+	for piece in composite_data.get("pieces", []):
+		var region_id := int(piece.get("regionId", -1))
+		region_piece_counts[region_id] = int(region_piece_counts.get(region_id, 0)) + 1
+		if composite_placements.has(str(int(piece.get("pieceId", -1)))):
+			placed_region_piece_counts[region_id] = int(placed_region_piece_counts.get(region_id, 0)) + 1
+	var completed := 0
+	for region_id in region_piece_counts:
+		if int(placed_region_piece_counts.get(region_id, 0)) == int(region_piece_counts[region_id]):
+			completed += 1
+	return completed
+
+
 func _complete_composite_assembly(layout: Dictionary) -> void:
 	if not _is_assembly_phase() or layout.is_empty():
 		return
 	composite_final_layout = layout.duplicate(true)
 	composite_phase = "transition"
+	audio_controller.play_assembly_complete()
 	_save_game()
 	await assembly_view.play_flatten_transition()
 	if composite_final_layout.is_empty():
@@ -1196,13 +1279,15 @@ func _on_cell_double_pressed(row: int, col: int) -> void:
 	board.set_states(cell_states)
 	if bool(result["correct"]):
 		board.play_cell_feedback(row, col)
-		audio_controller.play_correct()
+		var found_count := _piece_positions().size()
+		var total_count := int(current_level.get("targetCount", 1))
+		audio_controller.play_crown_place(found_count, total_count, found_count >= total_count)
 		_validate_and_update(true)
 		coach_label.text = _t("已放置皇冠。继续用行、列、颜色区域和相邻规则检查其它位置。")
 		coach_label.add_theme_color_override("font_color", Color("#72552B"))
 	else:
 		board.play_wrong_feedback(row, col)
-		audio_controller.play_wrong()
+		audio_controller.play_wrong_crown(heart_count > 0)
 		var crown_find_count_before_wrong := crown_find_count
 		_validate_and_update(false)
 		coach_label.text = _t("这个位置不是皇冠，已标记为 X。")
@@ -1262,7 +1347,7 @@ func _apply_formal_drag_result(result: Dictionary) -> void:
 	if str(result["state"]) == "blocked":
 		audio_controller.play_mark()
 	else:
-		audio_controller.play_erase()
+		audio_controller.play_erase(true)
 	board.set_states(cell_states)
 	board.play_cell_feedback(cell.y, cell.x)
 
@@ -1416,7 +1501,7 @@ func _use_crown_find() -> void:
 		crown_find_count -= 1
 	run_direct_find_count += 1
 	cell_states[target.y][target.x] = "hint"
-	audio_controller.play_correct()
+	audio_controller.play_crown_reveal()
 	board.set_states(cell_states)
 	board.play_cell_feedback(target.y, target.x)
 	_validate_and_update(true)
@@ -1451,7 +1536,8 @@ func _validate_and_update(allow_completion: bool) -> void:
 		coach_label.text = "有冲突：红色格子违反了行、列、区域或相邻规则。"
 		coach_label.add_theme_color_override("font_color", Color("#B93D4D"))
 		if allow_completion:
-			Input.vibrate_handheld(35)
+			if haptics_enabled:
+				Input.vibrate_handheld(35)
 	else:
 		coach_label.text = _level_coach_text()
 		coach_label.add_theme_color_override("font_color", Color("#72552B"))
@@ -2078,6 +2164,7 @@ func _show_composite_deadlock() -> void:
 	if not _is_assembly_phase() or not composite_deadlocked:
 		return
 	_set_result_overlay_mode("assembly_deadlock")
+	audio_controller.play_block_deadlock()
 	assembly_view.input_locked = true
 	result_page.present_deadlock(_current_tool_price(CoinEconomyScript.TOOL_REVIVE))
 	result_page.show_animated()
@@ -2195,6 +2282,7 @@ func _revive_composite_deadlock() -> void:
 	assembly_view.input_locked = false
 	assembly_view.update_state(composite_placements, _assembly_allowed_origins(), composite_tray_slots)
 	if returned_slot >= 0:
+		audio_controller.play_block_revive()
 		assembly_view.focus_tray_slot(returned_slot)
 	_save_game()
 	_show_toast("复活成功：最后一个方块已放回托盘")
@@ -2222,7 +2310,7 @@ func _on_settings() -> void:
 	_refresh_language_picker()
 	dialog_controller.show_dialog(
 		"settings",
-		"语言设置",
+		"游戏设置",
 		"",
 		"settings",
 		[
@@ -2297,7 +2385,7 @@ func _on_dialog_action_selected(dialog_id: String, action_id: String) -> void:
 				_show_toast("金币购买入口占位：接入支付后开放")
 		"settings":
 			if action_id == "apply":
-				_apply_selected_language()
+				_apply_selected_settings()
 
 
 func _on_dialog_cancelled(dialog_id: String) -> void:
@@ -2310,18 +2398,35 @@ func _refresh_language_picker() -> void:
 		return
 	settings_content.present(
 		localization.language_options(),
-		localization.locale_index(selected_language)
+		localization.locale_index(selected_language),
+		{
+			"musicEnabled": music_enabled,
+			"sfxEnabled": sfx_enabled,
+			"hapticsEnabled": haptics_enabled,
+		}
 	)
 
 
 func _apply_selected_language() -> void:
+	_apply_selected_settings()
+
+
+func _apply_selected_settings() -> void:
 	if not settings_content:
 		return
 	var locale: String = settings_content.selected_locale()
-	if locale.is_empty():
-		return
-	localization.set_locale(locale)
-	selected_language = localization.current_locale
+	if not locale.is_empty():
+		localization.set_locale(locale)
+		selected_language = localization.current_locale
+	var preferences: Dictionary = settings_content.selected_audio_preferences()
+	music_enabled = bool(preferences.get("musicEnabled", true))
+	sfx_enabled = bool(preferences.get("sfxEnabled", true))
+	haptics_enabled = bool(preferences.get("hapticsEnabled", true))
+	if audio_controller:
+		audio_controller.set_audio_preferences(music_enabled, sfx_enabled, haptics_enabled)
+	for page in [formal_level_page, composite_level_page]:
+		if page and page.board:
+			page.board.set_haptics_enabled(haptics_enabled)
 	_save_game()
 
 
@@ -2459,6 +2564,9 @@ func _load_save() -> void:
 	run_coin_exchange_count = maxi(0, int(data.get("runCoinExchangeCount", 0)))
 	immediate_errors = bool(data.get("immediateErrors", true))
 	selected_language = str(data.get("selectedLanguage", ""))
+	music_enabled = bool(data.get("musicEnabled", true))
+	sfx_enabled = bool(data.get("sfxEnabled", true))
+	haptics_enabled = bool(data.get("hapticsEnabled", true))
 	tutorial_controller.restore(data, TUTORIAL_LEVELS.size())
 	formal_progress_snapshot = data["formalProgressSnapshot"]
 	home_composite_entry_active = bool(data.get("homeCompositeEntryActive", false))
@@ -2622,6 +2730,9 @@ func _save_game() -> void:
 		"hintCount": hint_count,
 		"immediateErrors": immediate_errors,
 		"selectedLanguage": selected_language,
+		"musicEnabled": music_enabled,
+		"sfxEnabled": sfx_enabled,
+		"hapticsEnabled": haptics_enabled,
 		"isCompleted": is_completed,
 		"isFailed": is_failed,
 		"cellStates": cell_states,
@@ -2682,7 +2793,6 @@ func _heart_limit_for_display_level(display_level: int) -> int:
 func _consume_heart_for_wrong_crown() -> void:
 	if heart_count > 0:
 		heart_count -= 1
-		audio_controller.play_heart_lost()
 	_update_heart_label()
 	_update_home()
 	if heart_count <= 0:

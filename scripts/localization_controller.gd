@@ -24,8 +24,13 @@ const TOOLTIP_SOURCE_META := &"localization_tooltip_source"
 const MESSAGE_ROWS := [
 	["设置", "Settings", "الإعدادات", "Paramètres", "Configurationes"],
 	["语言设置", "Language settings", "إعدادات اللغة", "Paramètres de langue", "Lingua"],
+	["游戏设置", "Game settings", "إعدادات اللعبة", "Paramètres du jeu", "Configurationes ludi"],
 	["游戏语言", "Game language", "لغة اللعبة", "Langue du jeu", "Lingua ludi"],
 	["选择界面和游戏提示使用的语言。", "Choose the language used by the interface and game guidance.", "اختر لغة الواجهة وإرشادات اللعبة.", "Choisissez la langue de l’interface et des conseils.", "Linguam interfacei et consiliorum elige."],
+	["设置语言、音乐、音效和震动反馈。", "Set language, music, sound effects, and haptic feedback.", "اضبط اللغة والموسيقى والمؤثرات الصوتية والاهتزاز.", "Réglez la langue, la musique, les effets sonores et les vibrations.", "Linguam, musicam, sonos et vibrationem constitue."],
+	["音乐", "Music", "الموسيقى", "Musique", "Musica"],
+	["音效", "Sound effects", "المؤثرات الصوتية", "Effets sonores", "Soni"],
+	["震动反馈", "Haptic feedback", "الاهتزاز", "Retour haptique", "Vibratio"],
 	["取消", "Cancel", "إلغاء", "Annuler", "Renuntia"],
 	["应用", "Apply", "تطبيق", "Appliquer", "Adhibe"],
 	["返回首页", "Back to home", "العودة للرئيسية", "Retour à l’accueil", "Ad domum"],

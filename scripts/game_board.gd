@@ -76,6 +76,7 @@ var recent_tap_cell := Vector2i(-1, -1)
 var recent_tap_position := Vector2.ZERO
 var recent_tap_released_at_msec := 0
 var last_screen_touch_msec := -1000000
+var haptics_enabled := true
 
 
 
@@ -107,6 +108,10 @@ func set_level(level: Dictionary, states: Array, colors: Array) -> void:
 func set_states(states: Array) -> void:
 	cell_states = states
 	queue_redraw()
+
+
+func set_haptics_enabled(enabled: bool) -> void:
+	haptics_enabled = enabled
 
 
 func set_errors(errors: Dictionary) -> void:
@@ -255,7 +260,8 @@ func _reset_guide_feedback() -> void:
 func play_victory() -> void:
 	_reset_victory_animation()
 	victory_origin = _resolve_victory_origin()
-	Input.vibrate_handheld(24)
+	if haptics_enabled:
+		Input.vibrate_handheld(24)
 	victory_tween = create_tween()
 	victory_tween.set_trans(Tween.TRANS_LINEAR).set_ease(Tween.EASE_IN_OUT)
 	victory_tween.tween_method(_set_victory_progress, 0.0, 1.0, VICTORY_TIMELINE_DURATION)
@@ -323,7 +329,8 @@ func _set_victory_progress(value: float) -> void:
 	victory_strength = sin(victory_progress * PI)
 	if not victory_finish_haptic_played and victory_progress >= 0.64:
 		victory_finish_haptic_played = true
-		Input.vibrate_handheld(16)
+		if haptics_enabled:
+			Input.vibrate_handheld(16)
 	queue_redraw()
 
 

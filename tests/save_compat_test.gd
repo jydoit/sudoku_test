@@ -46,6 +46,9 @@ func _verify_current_round_trip() -> void:
 	game.coin_count = 73
 	game.hint_count = 2
 	game.crown_find_count = 1
+	game.music_enabled = false
+	game.sfx_enabled = false
+	game.haptics_enabled = false
 	game.composite_coin_progress["dailyDate"] = game._today_string()
 	game.composite_coin_progress["dailyFreeRoundsUsed"] = 4
 	game.composite_coin_progress["totalPaidRounds"] = 2
@@ -61,6 +64,9 @@ func _verify_current_round_trip() -> void:
 	assert(restored.coin_count == 73, "SAVE-001 should restore coins")
 	assert(restored.hint_count == 2, "SAVE-001 should restore hint uses")
 	assert(restored.crown_find_count == 1, "SAVE-001 should restore lion-finder uses")
+	assert(not restored.music_enabled, "SAVE-001 should restore the music preference")
+	assert(not restored.sfx_enabled, "SAVE-001 should restore the sound-effects preference")
+	assert(not restored.haptics_enabled, "SAVE-001 should restore the haptics preference")
 	assert(int(restored.composite_coin_progress.get("dailyFreeRoundsUsed", -1)) == 4, "SAVE-001 should restore today's used free block rounds")
 	assert(int(restored.composite_coin_progress.get("totalPaidRounds", -1)) == 2, "SAVE-001 should restore cumulative paid block rounds")
 	assert(restored.resume_level_id == expected_level_id, "SAVE-001 should restore the current level id")
@@ -90,6 +96,7 @@ func _verify_version_one_migration() -> void:
 	assert(restored.coin_count == 42, "SAVE-002 should keep legacy coins")
 	assert(restored.hint_count == restored.INITIAL_HINT_COUNT, "SAVE-002 should migrate v1 used-hint data to the default remaining count")
 	assert(restored.crown_find_count == 2, "SAVE-002 should keep compatible lion-finder data")
+	assert(restored.music_enabled and restored.sfx_enabled and restored.haptics_enabled, "SAVE-002 should enable audio and haptics for legacy saves")
 	assert(int(restored.composite_coin_progress.get("dailyFreeRoundsUsed", -1)) == 0, "SAVE-002 should initialize the missing block coin policy")
 	assert(restored.tutorial_completed, "SAVE-002 should preserve tutorial completion")
 	restored.queue_free()

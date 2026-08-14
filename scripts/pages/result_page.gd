@@ -2,6 +2,9 @@ extends ColorRect
 
 signal primary_requested
 signal secondary_requested
+signal music_requested(kind: String)
+signal music_stop_requested
+signal sound_requested(kind: String)
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const CoinRollDisplayScript = preload("res://scripts/components/coin_roll_display.gd")
@@ -53,6 +56,7 @@ var result_coin_tween: Tween
 var result_coin_flight_tweens: Array[Tween] = []
 var result_petal_tweens: Array[Tween] = []
 var result_lion_animation_name := ""
+var result_coin_arrival_sound_values: Dictionary = {}
 var _localizer: Callable
 
 func configure(localizer: Callable = Callable()) -> void:
@@ -63,6 +67,7 @@ func configure(localizer: Callable = Callable()) -> void:
 	completion_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	completion_overlay.z_index = 10
 	completion_overlay.hide()
+	completion_overlay.visibility_changed.connect(_on_result_visibility_changed)
 
 	var sky := ColorRect.new()
 	sky.color = Color("#248DFF")
@@ -199,6 +204,7 @@ func configure(localizer: Callable = Callable()) -> void:
 		"shadow_offset_y": 2,
 	})
 	result_coin_roll_display.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	result_coin_roll_display.roll_finished.connect(_on_result_balance_roll_finished)
 	result_coin_roll_display.hide()
 	showcase_column.add_child(result_coin_roll_display)
 	# Keep the established page API while both locations share one display component.
@@ -346,9 +352,15 @@ func composite_coin_text(reward: int, entry_cost: int, paid_entry: bool) -> Stri
 
 func show_animated() -> void:
 	show()
+	music_requested.emit(overlay_mode)
 	modulate.a = 0.0
 	var tween := create_tween()
 	tween.tween_property(self, "modulate:a", 1.0, 0.2)
+
+
+func _on_result_visibility_changed() -> void:
+	if not visible:
+		music_stop_requested.emit()
 
 
 func _t(source: String, values: Array = []) -> String:
@@ -362,6 +374,7 @@ func play_coin_animation(reward: int, balance_after: int) -> void:
 	if not result_coin_roll_display or reward <= 0 or overlay_mode != "success":
 		return
 	stop_coin_animation()
+	result_coin_arrival_sound_values = _coin_arrival_sound_milestones(reward)
 	result_coin_roll_display.show()
 	balance_after = maxi(0, balance_after)
 	var balance_before := maxi(0, balance_after - reward)
@@ -481,6 +494,8 @@ func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int, 
 		flyer.queue_free()
 	if not self.visible or overlay_mode != "success":
 		return
+	if result_coin_arrival_sound_values.has(value):
+		sound_requested.emit("coin_arrive")
 	if result_reward_coin_icon:
 		if result_coin_pulse_tween and result_coin_pulse_tween.is_valid():
 			result_coin_pulse_tween.kill()
@@ -496,13 +511,23 @@ func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int, 
 func _start_result_balance_reel(balance_after: int) -> void:
 	if not result_coin_roll_display or not self.visible or overlay_mode != "success":
 		return
+	sound_requested.emit("coin_reel")
 	result_coin_roll_display.animate_reel_to(balance_after, RESULT_COIN_REEL_DURATION)
+
+
+func _on_result_balance_roll_finished(_balance: int) -> void:
+	if visible and overlay_mode == "success":
+		sound_requested.emit("coin_settle")
+		# The actual reel owns the music endpoint. This remains correct if the
+		# visual duration changes or intermediate values are skipped later.
+		music_stop_requested.emit()
 
 
 func stop_coin_animation() -> void:
 	if result_coin_tween and result_coin_tween.is_valid():
 		result_coin_tween.kill()
 	result_coin_tween = null
+	result_coin_arrival_sound_values.clear()
 	if result_coin_pulse_tween and result_coin_pulse_tween.is_valid():
 		result_coin_pulse_tween.kill()
 	result_coin_pulse_tween = null
@@ -519,6 +544,17 @@ func stop_coin_animation() -> void:
 		result_reward_coin_icon.scale = Vector2.ONE
 	if result_coin_roll_row:
 		result_coin_roll_row.hide()
+
+
+func _coin_arrival_sound_milestones(reward: int) -> Dictionary:
+	var milestones := {}
+	if reward <= 0:
+		return milestones
+	milestones[1] = true
+	if reward >= 3:
+		milestones[int(ceil(float(reward) * 0.5))] = true
+	milestones[reward] = true
+	return milestones
 
 
 

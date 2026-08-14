@@ -1,5 +1,7 @@
 extends HBoxContainer
 
+signal roll_finished(value: int)
+
 const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resource.gd")
 const MAX_CONTINUOUS_ROLL_STEPS := 10
 
@@ -96,6 +98,7 @@ func animate_to(value: int, total_duration: float) -> void:
 	_refresh_geometry(_displayed_value, target)
 	if target == _displayed_value:
 		set_value(target)
+		roll_finished.emit(target)
 		return
 	var start_value := _displayed_value
 	var direction := 1 if target > start_value else -1
@@ -122,6 +125,7 @@ func animate_reel_to(value: int, total_duration: float, max_visual_steps: int = 
 	_refresh_geometry(_displayed_value, target)
 	if target == _displayed_value:
 		set_value(target)
+		roll_finished.emit(target)
 		return
 	var start_value := _displayed_value
 	var direction := 1 if target > start_value else -1
@@ -371,6 +375,7 @@ func _finish_animation(value: int) -> void:
 	_refresh_geometry(_displayed_value, _displayed_value)
 	_normalize_to_primary()
 	roll_tween = null
+	roll_finished.emit(_displayed_value)
 
 
 func _normalize_to_primary() -> void:

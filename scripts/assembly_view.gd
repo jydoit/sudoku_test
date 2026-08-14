@@ -3,6 +3,9 @@ extends Control
 
 signal placement_requested(piece_id: int, origin: Array)
 signal return_requested(piece_id: int, slot_index: int)
+signal pickup_started(piece_size: int)
+signal snap_target_changed
+signal placement_rejected
 signal intro_finished()
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
@@ -49,6 +52,7 @@ var _drag_piece_id := -1
 var _drag_source := ""
 var _interaction_mode := ""
 var _preview_origin := Vector2i(-99, -99)
+var _last_announced_snap_origin := Vector2i(-99, -99)
 var _return_slot_index := -1
 var _demo_piece_id := -1
 var _demo_origin := Vector2i(-99, -99)
@@ -639,7 +643,15 @@ func _pointer_moved(position: Vector2, pointer_id: int) -> void:
 			_prepare_return_slot_focus()
 		else:
 			_return_slot_index = -1
-			_preview_origin = _origin_for_pointer(position)
+			var next_origin := _origin_for_pointer(position)
+			_preview_origin = next_origin
+			if _origin_allowed(_drag_piece_id, next_origin) and next_origin != _last_announced_snap_origin:
+				_last_announced_snap_origin = next_origin
+				snap_target_changed.emit()
+			elif not _origin_allowed(_drag_piece_id, next_origin):
+				# Leaving a legal socket rearms its feedback, so returning to the
+				# same socket feels magnetic without repeating while hovering.
+				_last_announced_snap_origin = Vector2i(-99, -99)
 		queue_redraw()
 	_last_pointer = position
 	get_viewport().set_input_as_handled()
@@ -652,6 +664,7 @@ func _pointer_released(position: Vector2, pointer_id: int) -> void:
 	var return_slot_index := -1
 	var placement_piece_id := -1
 	var placement_origin := Vector2i(-99, -99)
+	var rejected := false
 	if _interaction_mode == "drag" and _drag_piece_id >= 0:
 		_last_pointer = position
 		var in_return_hotzone := _tray_rect().grow(RETURN_HOTZONE_MARGIN).has_point(position)
@@ -665,6 +678,8 @@ func _pointer_released(position: Vector2, pointer_id: int) -> void:
 		elif _origin_allowed(_drag_piece_id, _preview_origin):
 			placement_piece_id = _drag_piece_id
 			placement_origin = _preview_origin
+		else:
+			rejected = true
 	_reset_pointer()
 	queue_redraw()
 	get_viewport().set_input_as_handled()
@@ -675,6 +690,8 @@ func _pointer_released(position: Vector2, pointer_id: int) -> void:
 		return_requested.emit(return_piece_id, return_slot_index)
 	elif placement_piece_id >= 0:
 		placement_requested.emit(placement_piece_id, [placement_origin.y, placement_origin.x])
+	elif rejected:
+		placement_rejected.emit()
 
 
 func _start_drag(piece_id: int, pointer_position: Vector2) -> void:
@@ -682,6 +699,9 @@ func _start_drag(piece_id: int, pointer_position: Vector2) -> void:
 	_interaction_mode = "drag"
 	_last_pointer = pointer_position
 	_preview_origin = _origin_for_pointer(pointer_position)
+	_last_announced_snap_origin = Vector2i(-99, -99)
+	var piece := _piece_by_id(piece_id)
+	pickup_started.emit(_piece_local_cells(piece).size())
 	queue_redraw()
 
 
@@ -693,6 +713,7 @@ func _reset_pointer() -> void:
 	_drag_source = ""
 	_interaction_mode = ""
 	_preview_origin = Vector2i(-99, -99)
+	_last_announced_snap_origin = Vector2i(-99, -99)
 	_return_slot_index = -1
 	_intro_dragging_piece = false
 	_demo_piece_id = -1

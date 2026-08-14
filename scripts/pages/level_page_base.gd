@@ -15,6 +15,9 @@ signal cell_dragged(row: int, col: int)
 signal cell_drag_ended
 signal assembly_placement_requested(piece_id: int, origin: Array)
 signal assembly_return_requested(piece_id: int, preferred_slot_index: int)
+signal assembly_pickup_started(piece_size: int)
+signal assembly_snap_target_changed
+signal assembly_placement_rejected
 signal assembly_intro_finished
 
 const GameBoardScript = preload("res://scripts/game_board.gd")
@@ -129,6 +132,9 @@ func setup(initial_coins: int, include_assembly: bool, localizer: Callable = Cal
 		assembly_view.z_index = 4
 		assembly_view.placement_requested.connect(func(piece_id: int, origin: Array) -> void: assembly_placement_requested.emit(piece_id, origin))
 		assembly_view.return_requested.connect(func(piece_id: int, preferred_slot_index: int = -1) -> void: assembly_return_requested.emit(piece_id, preferred_slot_index))
+		assembly_view.pickup_started.connect(func(piece_size: int) -> void: assembly_pickup_started.emit(piece_size))
+		assembly_view.snap_target_changed.connect(func() -> void: assembly_snap_target_changed.emit())
+		assembly_view.placement_rejected.connect(func() -> void: assembly_placement_rejected.emit())
 		assembly_view.intro_finished.connect(func() -> void: assembly_intro_finished.emit())
 		add_child(assembly_view)
 		assembly_view.bind_targets(board, assembly_tray_target)

@@ -154,11 +154,14 @@ func _run() -> void:
 	assert(result_coin_display.displayed_value() == 12 and result_coin_display.queued_step_count() == 0, "The coin roll queue should drain to the final balance")
 	assert(result_coin_display.primary_label.text == "12" and not result_coin_display.secondary_label.visible, "A drained roll queue should normalize the final visible label")
 	result_coin_display.set_value(20)
+	var reel_finished_state := {"target": -1}
+	result_coin_display.roll_finished.connect(func(value: int) -> void: reel_finished_state["target"] = value)
 	result_coin_display.animate_reel_to(31, 0.48)
 	await create_timer(0.18).timeout
 	assert(result_coin_display.displayed_value() not in [20, 31], "A result reel should skip through a bounded set of intermediate balances")
 	await create_timer(0.36).timeout
 	assert(result_coin_display.displayed_value() == 31 and not result_coin_display.secondary_label.visible, "A result reel should decelerate and normalize at the exact target balance")
+	assert(int(reel_finished_state["target"]) == 31, "The result reel should emit its real completion event only after stopping at the exact target balance")
 	assert(int(ProjectSettings.get_setting("display/window/size/viewport_width")) == 540 and int(ProjectSettings.get_setting("display/window/size/viewport_height")) == 960, "Coin layouts should be tested against the Pixel-sized 540x960 viewport")
 	game._update_coin_label()
 	result_coin_display.set_value(0)
@@ -233,12 +236,23 @@ func _run() -> void:
 	game._on_settings()
 	assert(game.dialog_controller.is_dialog_open("settings"), "Settings should open through the shared dialog controller")
 	assert(game.language_picker.item_count == 5, "Language settings should list all supported languages")
+	assert(game.settings_content.music_toggle != null and game.settings_content.sfx_toggle != null and game.settings_content.haptics_toggle != null, "Settings should expose independent music, sound-effects and haptics controls")
 	game.language_picker.select(game.localization.locale_index("ar"))
+	game.settings_content.music_toggle.button_pressed = false
+	game.settings_content.sfx_toggle.button_pressed = false
+	game.settings_content.haptics_toggle.button_pressed = false
 	var apply_language_button: Button = game.dialog_controller.find_child("DialogAction_apply", true, false)
 	assert(apply_language_button != null, "Language settings should expose a standard apply action")
 	apply_language_button.pressed.emit()
 	await process_frame
 	assert(game.selected_language == "ar" and game.layout_direction == Control.LAYOUT_DIRECTION_RTL, "Arabic should apply RTL layout")
+	assert(not game.music_enabled and not game.sfx_enabled and not game.haptics_enabled, "Audio and haptics settings should apply independently from the language")
+	assert(not game.board.haptics_enabled, "Disabling haptics should update the active board immediately")
+	game.music_enabled = true
+	game.sfx_enabled = true
+	game.haptics_enabled = true
+	game.audio_controller.set_audio_preferences(true, true, true)
+	game.board.set_haptics_enabled(true)
 	assert(game.localization.text("设置") == "الإعدادات", "Arabic settings copy should come from the localization controller")
 	game.localization.set_locale("fr")
 	await process_frame

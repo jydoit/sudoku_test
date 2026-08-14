@@ -81,6 +81,13 @@ def normalize(samples: list[float], peak_db: float) -> list[float]:
     return [max(-1.0, min(1.0, sample * scale)) for sample in samples]
 
 
+def soft_compress(samples: list[float], drive: float) -> list[float]:
+    """Reduce transient crest factor while preserving a smooth musical contour."""
+    safe_drive = max(1.0, drive)
+    ceiling = math.tanh(safe_drive)
+    return [math.tanh(sample * safe_drive) / ceiling for sample in samples]
+
+
 def wood_tone(freq: float, duration: float, seed: int, warmth: float = 1.0) -> list[float]:
     rng = random.Random(seed)
     length = seconds_to_samples(duration)
@@ -121,6 +128,95 @@ def metal_tap(freq: float, duration: float, seed: int) -> list[float]:
     return apply_fades(result, 0.001, 0.055)
 
 
+def glass_sparkle(freq: float, duration: float, seed: int) -> list[float]:
+    """A restrained crown shimmer that remains clear on phone speakers."""
+    rng = random.Random(seed)
+    phases = [rng.uniform(0.0, TAU) for _ in range(4)]
+    ratios = [1.0, 2.01, 3.98, 6.12]
+    gains = [0.62, 0.26, 0.12, 0.06]
+    result: list[float] = []
+    for index in range(seconds_to_samples(duration)):
+        time = index / SAMPLE_RATE
+        tone = 0.0
+        for harmonic_index, ratio in enumerate(ratios):
+            decay = math.exp(-(3.5 + harmonic_index * 0.9) * time / duration)
+            tone += math.sin(TAU * freq * ratio * time + phases[harmonic_index]) * gains[harmonic_index] * decay
+        result.append(tone)
+    return apply_fades(result, 0.004, min(0.18, duration * 0.42))
+
+
+def kalimba_tone(
+    freq: float,
+    duration: float,
+    seed: int,
+    brightness: float = 1.0,
+) -> list[float]:
+    """A soft toy-kalimba voice for the result-page melody."""
+    rng = random.Random(seed)
+    phases = [rng.uniform(0.0, TAU) for _ in range(5)]
+    ratios = [1.0, 2.01, 3.98, 5.04, 6.97]
+    gains = [0.82, 0.25, 0.11, 0.06, 0.035]
+    result: list[float] = []
+    for index in range(seconds_to_samples(duration)):
+        time = index / SAMPLE_RATE
+        attack = smoothstep(min(1.0, time / 0.006))
+        body = 0.0
+        for harmonic_index, ratio in enumerate(ratios):
+            decay = math.exp(-(4.0 + harmonic_index * 1.25) * time / duration)
+            harmonic_gain = gains[harmonic_index]
+            if harmonic_index > 0:
+                harmonic_gain *= brightness
+            body += (
+                math.sin(TAU * freq * ratio * time + phases[harmonic_index])
+                * harmonic_gain
+                * decay
+            )
+        body += (
+            math.sin(TAU * freq * 0.5 * time + 0.15)
+            * 0.10
+            * math.exp(-5.2 * time / duration)
+        )
+        result.append(body * attack)
+    return apply_fades(result, 0.005, min(0.19, duration * 0.35))
+
+
+def warm_nature_pad(freqs: list[float], duration: float) -> list[float]:
+    """A quiet, breathing acoustic bed without an electronic dance pulse."""
+    result: list[float] = []
+    for index in range(seconds_to_samples(duration)):
+        time = index / SAMPLE_RATE
+        envelope = smoothstep(min(1.0, time / 0.26))
+        release = smoothstep(min(1.0, (duration - time) / 0.72))
+        phrase_breath = 0.86 + 0.14 * math.sin(TAU * 0.31 * time - 0.5)
+        value = 0.0
+        for note_index, frequency in enumerate(freqs):
+            drift = 1.0 + 0.0008 * math.sin(
+                TAU * (0.13 + note_index * 0.025) * time + note_index
+            )
+            value += (
+                math.sin(TAU * frequency * drift * time + note_index * 0.23)
+                * (0.34 / len(freqs))
+            )
+            value += (
+                math.sin(TAU * frequency * 2.0 * time + note_index * 0.17)
+                * (0.045 / len(freqs))
+            )
+        result.append(value * envelope * release * phrase_breath)
+    return result
+
+
+def leaf_shaker(duration: float, seed: int) -> list[float]:
+    """Sparse high-frequency texture resembling a small natural shaker."""
+    rng = random.Random(seed)
+    noise = band_limited_noise(duration, 1_400.0, 5_200.0, rng)
+    result: list[float] = []
+    for index, value in enumerate(noise):
+        time = index / SAMPLE_RATE
+        pulse = math.exp(-22.0 * time) + 0.38 * math.exp(-24.0 * abs(time - 0.15))
+        result.append(value * pulse)
+    return apply_fades(result, 0.008, 0.08)
+
+
 def paper_rub(duration: float, seed: int) -> list[float]:
     """A low, uneven back-and-forth eraser rub."""
     rng = random.Random(seed)
@@ -151,6 +247,17 @@ def make_correct(seed: int) -> list[float]:
         [
             (0.000, wood_tone(329.63, 0.330, seed, 0.95), 0.74),
             (0.135, wood_tone(440.00, 0.340, seed + 1, 0.92), 0.70),
+        ],
+    )
+
+
+def make_final_correct(seed: int) -> list[float]:
+    """A compact final placement tick that leaves room for the victory phrase."""
+    return mix(
+        0.235,
+        [
+            (0.000, wood_tone(392.00, 0.210, seed, 0.72), 0.55),
+            (0.045, metal_tap(784.00, 0.150, seed + 1), 0.12),
         ],
     )
 
@@ -198,19 +305,280 @@ def make_clear(seed: int) -> list[float]:
 
 
 def make_victory(seed: int) -> list[float]:
-    notes = [261.63, 329.63, 392.00, 523.25]
-    offsets = [0.000, 0.240, 0.480, 0.760]
+    # Matches GameBoard's 2.30 second celebration: initial crown confirmation,
+    # rising lion wave, golden sweep, then a held resolving chord.
+    notes = [261.63, 329.63, 392.00, 523.25, 659.25]
+    offsets = [0.000, 0.300, 0.540, 0.780, 1.020]
     layers: list[tuple[float, list[float], float]] = []
     for index, (frequency, offset) in enumerate(zip(notes, offsets)):
-        layers.append((offset, wood_tone(frequency, 0.620, seed + index, 0.92), 0.62))
+        layers.append((offset, wood_tone(frequency, 0.600, seed + index, 0.92), 0.58))
     layers.extend(
         [
-            (1.080, wood_tone(261.63, 0.760, seed + 10, 0.82), 0.34),
-            (1.080, wood_tone(392.00, 0.760, seed + 11, 0.78), 0.30),
-            (1.080, wood_tone(523.25, 0.760, seed + 12, 0.70), 0.24),
+            (0.360, glass_sparkle(784.00, 1.300, seed + 8), 0.16),
+            (1.360, wood_tone(261.63, 0.900, seed + 10, 0.82), 0.34),
+            (1.360, wood_tone(392.00, 0.900, seed + 11, 0.78), 0.30),
+            (1.360, wood_tone(523.25, 0.900, seed + 12, 0.70), 0.24),
+            (1.380, glass_sparkle(1_046.50, 0.880, seed + 13), 0.22),
         ]
     )
-    return mix(1.880, layers)
+    return mix(2.300, layers)
+
+
+def make_wrong_heart(seed: int) -> list[float]:
+    """One readable negative phrase instead of two boosted sounds colliding."""
+    return mix(
+        0.720,
+        [
+            (0.000, wood_tone(220.00, 0.300, seed, 0.78), 0.58),
+            (0.120, wood_tone(185.00, 0.300, seed + 1, 0.72), 0.54),
+            (0.300, wood_tone(146.83, 0.390, seed + 2, 0.88), 0.62),
+        ],
+    )
+
+
+def make_crown_reveal(seed: int) -> list[float]:
+    return mix(
+        0.760,
+        [
+            (0.000, wood_tone(329.63, 0.330, seed, 0.86), 0.58),
+            (0.120, metal_tap(659.25, 0.300, seed + 1), 0.34),
+            (0.210, glass_sparkle(880.00, 0.530, seed + 2), 0.25),
+        ],
+    )
+
+
+def make_block_pickup(seed: int, frequency: float) -> list[float]:
+    return mix(
+        0.170,
+        [
+            (0.000, wood_tone(frequency, 0.150, seed, 0.44), 0.55),
+            (0.018, metal_tap(frequency * 2.0, 0.100, seed + 1), 0.16),
+        ],
+    )
+
+
+def make_block_snap(seed: int) -> list[float]:
+    return mix(0.120, [(0.000, metal_tap(620.00, 0.110, seed), 0.32)])
+
+
+def make_block_place(seed: int, frequency: float, weight: float) -> list[float]:
+    return mix(
+        0.330,
+        [
+            (0.000, wood_tone(frequency, 0.270, seed, weight), 0.76),
+            (0.026, wood_tone(frequency * 1.50, 0.210, seed + 1, 0.48), 0.24),
+        ],
+    )
+
+
+def make_block_reject(seed: int) -> list[float]:
+    return mix(
+        0.280,
+        [
+            (0.000, wood_tone(174.61, 0.220, seed, 0.54), 0.42),
+            (0.085, wood_tone(155.56, 0.190, seed + 1, 0.44), 0.30),
+        ],
+    )
+
+
+def make_block_return(seed: int) -> list[float]:
+    return mix(
+        0.320,
+        [
+            (0.000, glass_sparkle(520.00, 0.230, seed), 0.10),
+            (0.120, wood_tone(246.94, 0.190, seed + 1, 0.44), 0.45),
+        ],
+    )
+
+
+def make_region_complete(seed: int) -> list[float]:
+    return mix(
+        0.620,
+        [
+            (0.000, wood_tone(293.66, 0.350, seed, 0.72), 0.52),
+            (0.130, wood_tone(392.00, 0.390, seed + 1, 0.70), 0.52),
+            (0.250, glass_sparkle(783.99, 0.350, seed + 2), 0.18),
+        ],
+    )
+
+
+def make_deadlock(seed: int) -> list[float]:
+    return mix(
+        0.660,
+        [
+            (0.080, wood_tone(164.81, 0.380, seed, 0.88), 0.56),
+            (0.270, wood_tone(123.47, 0.360, seed + 1, 0.78), 0.48),
+        ],
+    )
+
+
+def make_revive(seed: int) -> list[float]:
+    return mix(
+        0.760,
+        [
+            (0.000, glass_sparkle(440.00, 0.340, seed), 0.12),
+            (0.180, wood_tone(329.63, 0.390, seed + 1, 0.70), 0.48),
+            (0.330, wood_tone(493.88, 0.410, seed + 2, 0.70), 0.50),
+        ],
+    )
+
+
+def make_assembly_complete(seed: int) -> list[float]:
+    return mix(
+        1.050,
+        [
+            (0.000, make_block_place(seed, 155.56, 0.92), 0.64),
+            (0.170, wood_tone(261.63, 0.560, seed + 3, 0.76), 0.42),
+            (0.330, wood_tone(392.00, 0.600, seed + 4, 0.72), 0.44),
+            (0.410, glass_sparkle(783.99, 0.620, seed + 5), 0.25),
+        ],
+    )
+
+
+def make_block_clear(seed: int) -> list[float]:
+    return mix(
+        0.520,
+        [
+            (0.000, make_block_return(seed), 0.44),
+            (0.130, make_block_return(seed + 3), 0.34),
+            (0.250, make_block_return(seed + 6), 0.25),
+        ],
+    )
+
+
+def make_result_lion_nature(seed: int) -> list[float]:
+    """4.2-second result cue shaped around lion, coin-flight and reel beats."""
+    duration = 4.2
+    layers: list[tuple[float, list[float], float]] = [
+        (0.0, warm_nature_pad([130.81, 164.81, 196.00], duration), 0.22),
+        # The lion appears and looks upward.
+        (0.035, kalimba_tone(392.00, 0.52, seed + 1, 0.90), 0.27),
+        (0.180, kalimba_tone(523.25, 0.62, seed + 2, 1.05), 0.35),
+        (0.300, glass_sparkle(783.99, 0.52, seed + 3), 0.065),
+    ]
+
+    # Rise, answer downward, rise higher with the reel, then resolve home.
+    melody = [
+        (0.48, 523.25, 0.43, 0.32),
+        (0.68, 659.25, 0.42, 0.35),
+        (0.89, 783.99, 0.44, 0.38),
+        (1.12, 880.00, 0.52, 0.43),
+        (1.39, 783.99, 0.42, 0.35),
+        (1.60, 659.25, 0.41, 0.32),
+        (1.82, 587.33, 0.49, 0.30),
+        (2.05, 698.46, 0.40, 0.34),
+        (2.25, 880.00, 0.40, 0.38),
+        (2.46, 1_046.50, 0.46, 0.43),
+        (2.69, 1_318.51, 0.55, 0.47),
+        (2.91, 1_174.66, 0.38, 0.37),
+        (3.08, 987.77, 0.39, 0.34),
+        (3.24, 1_046.50, 0.88, 0.47),
+    ]
+    for note_index, (offset, frequency, note_duration, gain) in enumerate(melody):
+        brightness = 0.92 + min(0.18, note_index * 0.012)
+        layers.append(
+            (
+                offset,
+                kalimba_tone(
+                    frequency,
+                    note_duration,
+                    seed + 100 + note_index,
+                    brightness,
+                ),
+                gain,
+            )
+        )
+
+    chords = [
+        (0.45, [261.63, 329.63, 392.00], 0.15),
+        (1.36, [174.61, 220.00, 261.63], 0.14),
+        (2.14, [196.00, 246.94, 293.66], 0.15),
+    ]
+    for chord_index, (offset, frequencies, gain) in enumerate(chords):
+        for note_index, frequency in enumerate(frequencies):
+            layers.append(
+                (
+                    offset,
+                    wood_tone(
+                        frequency,
+                        0.88,
+                        seed + 200 + chord_index * 10 + note_index,
+                        0.54,
+                    ),
+                    gain,
+                )
+            )
+
+    for pulse_index, offset in enumerate([0.62, 1.10, 1.58, 2.06, 2.47, 2.88]):
+        pulse_pitch = 176.0 if pulse_index % 2 == 0 else 198.0
+        layers.append(
+            (
+                offset,
+                wood_tone(pulse_pitch, 0.17, seed + 300 + pulse_index, 0.42),
+                0.13,
+            )
+        )
+    for shaker_index, offset in enumerate([0.86, 1.78, 2.62]):
+        layers.append((offset, leaf_shaker(0.30, seed + 400 + shaker_index), 0.055))
+
+    # Final C6/9 tail remains long enough for a runtime fade after roll_finished.
+    for note_index, frequency in enumerate([261.63, 329.63, 392.00, 440.00, 523.25]):
+        gain = 0.22 if note_index < 3 else 0.17
+        layers.append(
+            (
+                3.16,
+                kalimba_tone(frequency, 1.00, seed + 500 + note_index, 0.96),
+                gain,
+            )
+        )
+    layers.append((3.22, glass_sparkle(1_046.50, 0.88, seed + 510), 0.075))
+    shaped = apply_fades(mix(duration, layers), 0.035, 0.30)
+    # The cue contains very short sparkle peaks. Gentle soft-knee compression
+    # brings the kalimba melody forward on phone speakers without hard clipping.
+    return soft_compress(shaped, 5.0)
+
+
+def make_result_tutorial_soft(seed: int) -> list[float]:
+    """A short, gentle completion cue without the full reward-page fanfare."""
+    return mix(
+        2.35,
+        [
+            (0.00, warm_nature_pad([130.81, 164.81, 196.00], 2.35), 0.18),
+            (0.08, kalimba_tone(392.00, 0.62, seed, 0.82), 0.27),
+            (0.42, kalimba_tone(523.25, 0.70, seed + 1, 0.88), 0.29),
+            (0.82, kalimba_tone(659.25, 0.78, seed + 2, 0.92), 0.31),
+            (1.24, kalimba_tone(523.25, 0.96, seed + 3, 0.82), 0.28),
+            (1.28, glass_sparkle(784.00, 0.70, seed + 4), 0.05),
+        ],
+    )
+
+
+def make_coin_arrive(seed: int) -> list[float]:
+    return mix(
+        0.145,
+        [
+            (0.000, metal_tap(960.0, 0.130, seed), 0.30),
+            (0.010, wood_tone(480.0, 0.115, seed + 1, 0.38), 0.24),
+        ],
+    )
+
+
+def make_coin_reel(seed: int) -> list[float]:
+    layers: list[tuple[float, list[float], float]] = []
+    for index in range(7):
+        frequency = 520.0 + index * 34.0
+        layers.append((index * 0.105, metal_tap(frequency, 0.115, seed + index), 0.16))
+    return mix(0.820, layers)
+
+
+def make_coin_settle(seed: int) -> list[float]:
+    return mix(
+        0.285,
+        [
+            (0.000, wood_tone(523.25, 0.230, seed, 0.56), 0.42),
+            (0.055, metal_tap(1_046.50, 0.210, seed + 1), 0.22),
+        ],
+    )
 
 
 def make_ui_tap(seed: int) -> list[float]:
@@ -234,12 +602,33 @@ def build_pack(output_dir: Path) -> None:
         "metal_mark_02.wav": (metal_tap(860.0, 0.220, 210), -14.0),
         "paper_erase.wav": (make_erase(310), -16.0),
         "wood_correct.wav": (make_correct(410), -11.0),
+        "wood_correct_final.wav": (make_final_correct(420), -14.0),
         "wood_wrong.wav": (make_wrong(510), -13.0),
         "wood_heart_lost.wav": (make_heart_lost(610), -12.5),
         "wood_hint.wav": (make_hint(710), -12.0),
         "paper_clear.wav": (make_clear(810), -15.0),
-        "wood_victory.wav": (make_victory(910), -9.5),
+        "wood_victory_v2.wav": (make_victory(910), -9.5),
         "wood_ui_tap.wav": (make_ui_tap(1010), -17.0),
+        "wood_wrong_heart.wav": (make_wrong_heart(1110), -12.0),
+        "crown_reveal.wav": (make_crown_reveal(1210), -12.0),
+        "block_pickup_01.wav": (make_block_pickup(1310, 310.00), -17.0),
+        "block_pickup_02.wav": (make_block_pickup(1410, 338.00), -17.0),
+        "block_snap.wav": (make_block_snap(1510), -19.0),
+        "block_place_small.wav": (make_block_place(1610, 246.94, 0.66), -14.0),
+        "block_place_medium.wav": (make_block_place(1710, 207.65, 0.78), -13.0),
+        "block_place_large.wav": (make_block_place(1810, 174.61, 0.90), -12.5),
+        "block_reject.wav": (make_block_reject(1910), -17.0),
+        "block_return.wav": (make_block_return(2010), -16.0),
+        "block_region_complete.wav": (make_region_complete(2110), -12.5),
+        "block_deadlock.wav": (make_deadlock(2210), -13.5),
+        "block_revive.wav": (make_revive(2310), -12.5),
+        "block_assembly_complete.wav": (make_assembly_complete(2410), -10.5),
+        "block_clear.wav": (make_block_clear(2510), -15.0),
+        "result_lion_nature_v2.wav": (make_result_lion_nature(4100), -7.0),
+        "result_tutorial_soft.wav": (make_result_tutorial_soft(4200), -12.0),
+        "coin_arrive.wav": (make_coin_arrive(4300), -16.0),
+        "coin_reel.wav": (make_coin_reel(4400), -18.0),
+        "coin_settle.wav": (make_coin_settle(4500), -14.0),
     }
     for filename, (samples, peak_db) in candidates.items():
         write_wav(output_dir / filename, samples, peak_db)
