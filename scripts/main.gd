@@ -521,8 +521,6 @@ func _build_ui() -> void:
 		audio_controller.play_ui_tap()
 		_completion_secondary_pressed()
 	)
-	result_page.music_requested.connect(audio_controller.play_result_music)
-	result_page.music_stop_requested.connect(audio_controller.stop_result_music)
 	result_page.sound_requested.connect(audio_controller.play_result_sound)
 	add_child(result_page)
 	feedback_layer = FeedbackLayerScript.new()
@@ -579,6 +577,7 @@ func _connect_level_page_signals(page) -> void:
 	page.assembly_snap_target_changed.connect(_on_assembly_snap_target_changed)
 	page.assembly_placement_rejected.connect(_on_assembly_placement_rejected)
 	page.assembly_intro_finished.connect(_on_composite_intro_finished)
+	page.assembly_intro_cancelled.connect(_on_composite_intro_cancelled)
 
 
 func _activate_level_page(use_composite_page: bool) -> void:
@@ -1097,15 +1096,32 @@ func _maybe_play_composite_intro() -> void:
 		return
 	composite_intro_running = true
 	composite_intro_marks_seen = true
+	_set_composite_intro_ui(true)
 	assembly_view.play_intro()
 
 
 func _on_composite_intro_finished() -> void:
 	composite_intro_running = false
+	_set_composite_intro_ui(false)
 	if composite_intro_marks_seen:
 		composite_tutorial_seen = true
 		composite_intro_marks_seen = false
 		_save_game()
+	if _is_assembly_phase():
+		_update_assembly_tool_buttons()
+
+
+func _on_composite_intro_cancelled() -> void:
+	composite_intro_running = false
+	composite_intro_marks_seen = false
+	_set_composite_intro_ui(false)
+	if _is_assembly_phase():
+		_update_assembly_tool_buttons()
+
+
+func _set_composite_intro_ui(value: bool) -> void:
+	if composite_level_page:
+		composite_level_page.set_assembly_intro_active(value)
 
 
 func _can_restore_saved_level(rows: int, cols: int, force_resume: bool = false) -> bool:
@@ -1368,6 +1384,8 @@ func _undo() -> void:
 
 
 func _clear_board() -> void:
+	if composite_intro_running and _is_assembly_phase():
+		return
 	if _is_assembly_phase():
 		_clear_assembly_placements()
 		return
@@ -1444,6 +1462,8 @@ func _show_coin_shortage_dialog(tool: String, price: int) -> void:
 
 
 func _use_hint() -> void:
+	if composite_intro_running and _is_assembly_phase():
+		return
 	if _is_assembly_phase():
 		_use_assembly_hint()
 		return
@@ -1477,6 +1497,8 @@ func _use_hint() -> void:
 
 
 func _use_crown_find() -> void:
+	if composite_intro_running and _is_assembly_phase():
+		return
 	if _is_assembly_phase():
 		_use_assembly_direct_find()
 		return
@@ -2305,6 +2327,8 @@ func _replay_level() -> void:
 
 
 func _on_settings() -> void:
+	if composite_intro_running and _is_assembly_phase():
+		return
 	if not dialog_controller or not language_picker:
 		return
 	_refresh_language_picker()
@@ -2323,6 +2347,8 @@ func _on_settings() -> void:
 
 
 func _on_help() -> void:
+	if composite_intro_running and _is_assembly_phase():
+		return
 	if not dialog_controller:
 		return
 	if help_content:
@@ -2345,6 +2371,7 @@ func _replay_composite_intro_from_help() -> void:
 	dialog_controller.hide_dialog(true)
 	composite_intro_marks_seen = false
 	composite_intro_running = true
+	_set_composite_intro_ui(true)
 	assembly_view.play_intro()
 
 
@@ -2881,6 +2908,8 @@ func _update_level_picker() -> void:
 func _show_home() -> void:
 	_hide_tutorial_hand()
 	_cancel_opening_king_intro(false)
+	if assembly_view and assembly_view.is_intro_active():
+		assembly_view.cancel_intro()
 	result_page.stop_lion_animation()
 	result_page.stop_petals()
 	_stop_heart_tweens()

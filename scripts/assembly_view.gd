@@ -7,6 +7,7 @@ signal pickup_started(piece_size: int)
 signal snap_target_changed
 signal placement_rejected
 signal intro_finished()
+signal intro_cancelled()
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const BLOCK_TILE_TEXTURE: Texture2D = preload("res://assets/ui/block_tile_neutral.png")
@@ -54,12 +55,13 @@ var _interaction_mode := ""
 var _preview_origin := Vector2i(-99, -99)
 var _last_announced_snap_origin := Vector2i(-99, -99)
 var _return_slot_index := -1
-var _demo_piece_id := -1
-var _demo_origin := Vector2i(-99, -99)
-var _intro_dragging_piece := false
-
+var _intro_active := false
+var _intro_guided_piece_id := -1
+var _intro_guided_origin := Vector2i(-99, -99)
+var _intro_panel: PanelContainer
 var _intro_caption: Label
-var _intro_hand: Label
+var _intro_skip_button: Button
+var _intro_hand: Control
 var _hint_popup: PanelContainer
 var _hint_title: Label
 var _hint_copy: Label
@@ -68,7 +70,6 @@ var _hint_piece_id := -1
 var _hint_origin := Vector2i(-99, -99)
 var _intro_tween: Tween
 var _tray_focus_tween: Tween
-var _intro_token := 0
 
 
 func _ready() -> void:
@@ -77,6 +78,7 @@ func _ready() -> void:
 	set_process_input(true)
 	resized.connect(queue_redraw)
 	resized.connect(_position_hint_popup)
+	resized.connect(_layout_intro_controls)
 	_build_intro_controls()
 	_build_hint_popup()
 	hide()
@@ -84,12 +86,6 @@ func _ready() -> void:
 
 func set_localizer(localizer: Callable) -> void:
 	_localizer = localizer
-
-
-func _process(_delta: float) -> void:
-	if _intro_dragging_piece and _intro_hand and _intro_hand.visible:
-		_last_pointer = _intro_hand.position + _intro_hand.size * 0.5
-		queue_redraw()
 
 
 func bind_targets(board_control: Control, tray_control: Control) -> void:
@@ -134,9 +130,7 @@ func update_state(current_placements: Dictionary, allowed: Dictionary, tray_slot
 
 
 func deactivate() -> void:
-	_intro_token += 1
-	if _intro_tween and _intro_tween.is_valid():
-		_intro_tween.kill()
+	cancel_intro()
 	if _tray_focus_tween and _tray_focus_tween.is_valid():
 		_tray_focus_tween.kill()
 	_reset_feedback()
@@ -152,77 +146,61 @@ func play_intro() -> void:
 	if not active or not board_target or not tray_target:
 		intro_finished.emit()
 		return
-	_intro_token += 1
-	var token := _intro_token
-	input_locked = true
-	_reset_pointer()
-	_intro_caption.show()
-	_intro_hand.show()
-	var board_rect := _board_draw_rect()
-	var tray_rect := _tray_rect()
-	_intro_caption.text = _localized("锁定区域不需要移动")
-	_intro_hand.position = board_rect.position + board_rect.size * Vector2(0.24, 0.28) - _intro_hand.size * 0.5
-	await get_tree().create_timer(0.95).timeout
-	if not _intro_is_current(token):
+	_reset_intro()
+	var target := _select_intro_target()
+	if target.is_empty():
+		intro_finished.emit()
 		return
-	_intro_caption.text = _localized("把彩色方块拖进空白凹槽")
-	await _move_intro_hand(board_rect.get_center() - Vector2(0, 16), 0.72)
-	if not _intro_is_current(token):
-		return
-	await get_tree().create_timer(0.65).timeout
-	if not _intro_is_current(token):
-		return
-	_intro_caption.text = _localized("左右滑动托盘查看更多")
-	_intro_hand.position = tray_rect.position + Vector2(tray_rect.size.x * 0.72, tray_rect.size.y * 0.50) - _intro_hand.size * 0.5
-	await _move_intro_hand(tray_rect.position + Vector2(tray_rect.size.x * 0.28, tray_rect.size.y * 0.50), 0.72)
-	if not _intro_is_current(token):
-		return
-	await get_tree().create_timer(0.45).timeout
-	if not _intro_is_current(token):
-		return
-	var demo_piece: Dictionary = assembly_data.get("pieces", [])[0] if not assembly_data.get("pieces", []).is_empty() else {}
-	if not demo_piece.is_empty():
-		_demo_piece_id = int(demo_piece["pieceId"])
-		var origins: Array = allowed_by_piece.get(str(_demo_piece_id), [])
-		if not origins.is_empty():
-			_demo_origin = Vector2i(int(origins[0][1]), int(origins[0][0]))
-			_drag_piece_id = _demo_piece_id
-			_drag_source = "tray"
-			_preview_origin = _demo_origin
-			_intro_dragging_piece = true
-			_intro_caption.text = _localized("把彩色方块拖进空白凹槽")
-			await _move_intro_hand(_cell_center(_demo_origin), 0.78)
-			if not _intro_is_current(token):
-				return
-			_intro_dragging_piece = false
-			_drag_piece_id = -1
-			queue_redraw()
-			await get_tree().create_timer(0.55).timeout
-			if not _intro_is_current(token):
-				return
-	_intro_caption.text = _localized("已放方块可以拖回托盘")
-	if _demo_piece_id >= 0:
-		_drag_piece_id = _demo_piece_id
-		_drag_source = "board"
-		_preview_origin = _demo_origin
-		_demo_piece_id = -1
-		_intro_dragging_piece = true
-	await _move_intro_hand(tray_rect.get_center(), 0.72)
-	if not _intro_is_current(token):
-		return
-	_intro_dragging_piece = false
-	_drag_piece_id = -1
-	_demo_piece_id = -1
-	await get_tree().create_timer(0.65).timeout
-	if not _intro_is_current(token):
-		return
-	_hide_intro_controls()
+	_intro_active = true
+	_intro_guided_piece_id = int(target["pieceId"])
+	var origin: Array = target["origin"]
+	_intro_guided_origin = Vector2i(int(origin[1]), int(origin[0]))
 	input_locked = false
-	intro_finished.emit()
+	hide_piece_hint()
+	_reset_pointer()
+	var slot_index := tray_slot_piece_ids.find(_intro_guided_piece_id)
+	if slot_index >= 0:
+		focus_tray_slot(slot_index, false)
+	_intro_panel.show()
+	_intro_hand.show()
+	_show_intro_pickup_prompt()
+	_layout_intro_controls()
+	queue_redraw()
+	_intro_skip_button.call_deferred("grab_focus")
+	call_deferred("_start_intro_hand_hint")
 
 
-func _intro_is_current(token: int) -> bool:
-	return active and token == _intro_token
+func cancel_intro() -> void:
+	if not _intro_active:
+		return
+	_reset_intro()
+	intro_cancelled.emit()
+
+
+func skip_intro() -> void:
+	if _intro_active:
+		_finish_intro()
+
+
+func is_intro_active() -> bool:
+	return _intro_active
+
+
+func intro_piece_id() -> int:
+	return _intro_guided_piece_id
+
+
+func intro_origin() -> Vector2i:
+	return _intro_guided_origin
+
+
+func intro_start_point() -> Vector2:
+	var slot_index := tray_slot_piece_ids.find(_intro_guided_piece_id)
+	return _tray_slot_rect(slot_index).get_center() if slot_index >= 0 else Vector2.ZERO
+
+
+func intro_target_point() -> Vector2:
+	return _snap_pointer_for_origin(_intro_guided_piece_id, _intro_guided_origin)
 
 
 func play_flatten_transition() -> void:
@@ -303,6 +281,8 @@ func _draw() -> void:
 	_piece_hit_rects.clear()
 	_draw_board()
 	_draw_tray()
+	if _intro_active:
+		_draw_intro_overlay()
 	if _drag_piece_id >= 0:
 		_draw_dragging_piece()
 
@@ -333,11 +313,6 @@ func _draw_board() -> void:
 				if int(placed["pieceId"]) != _drag_piece_id:
 					_draw_block(rect, _region_color(int(placed["regionId"])), cell_size, true)
 	_draw_placement_feedback(board_rect.position, cell_size)
-	if _demo_piece_id >= 0 and _demo_origin.x > -90:
-		var demo_piece := _piece_by_id(_demo_piece_id)
-		for cell in _piece_absolute_cells(demo_piece, _demo_origin):
-			if cell.x >= 0 and cell.y >= 0 and cell.y < rows and cell.x < cols:
-				_draw_block(_cell_rect(cell, board_rect.position, cell_size), _region_color(int(demo_piece.get("regionId", 1))), cell_size, true)
 	if _hint_piece_id >= 0 and _hint_origin.x > -90:
 		var hint_piece := _piece_by_id(_hint_piece_id)
 		if not hint_piece.is_empty():
@@ -594,6 +569,9 @@ func _pointer_pressed(position: Vector2, pointer_id: int) -> void:
 	var board_rect := _board_draw_rect()
 	if not tray_rect.has_point(position) and not board_rect.has_point(position):
 		return
+	if _intro_active and not tray_rect.has_point(position):
+		get_viewport().set_input_as_handled()
+		return
 	_pointer_down = true
 	_pointer_id = pointer_id
 	_press_position = position
@@ -607,6 +585,10 @@ func _pointer_pressed(position: Vector2, pointer_id: int) -> void:
 			if (_piece_hit_rects[piece_id] as Rect2).has_point(position) and not placements.has(str(piece_id)):
 				_press_piece_id = int(piece_id)
 				break
+		if _intro_active and _press_piece_id != _intro_guided_piece_id:
+			_reset_pointer()
+			get_viewport().set_input_as_handled()
+			return
 	else:
 		var cell := _cell_at_position(position)
 		var placed_piece := _piece_at_cell(cell)
@@ -622,6 +604,8 @@ func _pointer_moved(position: Vector2, pointer_id: int) -> void:
 	var delta := position - _press_position
 	if _interaction_mode == "pending":
 		var horizontal_scroll := (
+			not _intro_active
+			and
 			_drag_source == "tray"
 			and absf(delta.x) > DRAG_THRESHOLD
 			and absf(delta.x) >= absf(delta.y) * SCROLL_DIRECTION_BIAS
@@ -665,6 +649,7 @@ func _pointer_released(position: Vector2, pointer_id: int) -> void:
 	var placement_piece_id := -1
 	var placement_origin := Vector2i(-99, -99)
 	var rejected := false
+	var completes_intro := false
 	if _interaction_mode == "drag" and _drag_piece_id >= 0:
 		_last_pointer = position
 		var in_return_hotzone := _tray_rect().grow(RETURN_HOTZONE_MARGIN).has_point(position)
@@ -678,6 +663,11 @@ func _pointer_released(position: Vector2, pointer_id: int) -> void:
 		elif _origin_allowed(_drag_piece_id, _preview_origin):
 			placement_piece_id = _drag_piece_id
 			placement_origin = _preview_origin
+			completes_intro = (
+				_intro_active
+				and placement_piece_id == _intro_guided_piece_id
+				and placement_origin == _intro_guided_origin
+			)
 		else:
 			rejected = true
 	_reset_pointer()
@@ -689,9 +679,15 @@ func _pointer_released(position: Vector2, pointer_id: int) -> void:
 	if return_piece_id >= 0:
 		return_requested.emit(return_piece_id, return_slot_index)
 	elif placement_piece_id >= 0:
+		if completes_intro:
+			_finish_intro()
 		placement_requested.emit(placement_piece_id, [placement_origin.y, placement_origin.x])
 	elif rejected:
-		placement_rejected.emit()
+		if _intro_active:
+			_show_intro_pickup_prompt()
+			_start_intro_hand_hint()
+		else:
+			placement_rejected.emit()
 
 
 func _start_drag(piece_id: int, pointer_position: Vector2) -> void:
@@ -701,6 +697,9 @@ func _start_drag(piece_id: int, pointer_position: Vector2) -> void:
 	_preview_origin = _origin_for_pointer(pointer_position)
 	_last_announced_snap_origin = Vector2i(-99, -99)
 	var piece := _piece_by_id(piece_id)
+	if _intro_active and piece_id == _intro_guided_piece_id:
+		_stop_intro_hand_hint()
+		_intro_caption.text = _localized("拖到发光凹槽后松手")
 	pickup_started.emit(_piece_local_cells(piece).size())
 	queue_redraw()
 
@@ -715,9 +714,6 @@ func _reset_pointer() -> void:
 	_preview_origin = Vector2i(-99, -99)
 	_last_announced_snap_origin = Vector2i(-99, -99)
 	_return_slot_index = -1
-	_intro_dragging_piece = false
-	_demo_piece_id = -1
-	_demo_origin = Vector2i(-99, -99)
 
 
 func _reset_feedback() -> void:
@@ -773,6 +769,8 @@ func _nearest_snap_origin(position: Vector2, piece: Dictionary, fallback: Vector
 
 
 func _origin_allowed(piece_id: int, origin: Vector2i) -> bool:
+	if _intro_active and (piece_id != _intro_guided_piece_id or origin != _intro_guided_origin):
+		return false
 	for raw in allowed_by_piece.get(str(piece_id), []):
 		if raw is Array and raw.size() >= 2 and int(raw[0]) == origin.y and int(raw[1]) == origin.x:
 			return true
@@ -810,6 +808,20 @@ func _tray_slot_layout() -> Array:
 			"height": TRAY_SLOT_HEIGHT
 		})
 	return result
+
+
+func _tray_slot_rect(slot_index: int) -> Rect2:
+	var slots := _tray_slot_layout()
+	if slot_index < 0 or slot_index >= slots.size():
+		return Rect2()
+	var slot: Dictionary = slots[slot_index]
+	var tray_rect := _tray_rect()
+	return Rect2(
+		tray_rect.position.x + float(slot["x"]) - tray_scroll,
+		tray_rect.position.y + float(slot["y"]),
+		float(slot["width"]),
+		float(slot["height"])
+	)
 
 
 func _piece_for_initial_slot(slot_index: int) -> Dictionary:
@@ -961,6 +973,17 @@ func _cell_center(cell: Vector2i) -> Vector2:
 	return board_rect.position + Vector2(cell.x + 0.5, cell.y + 0.5) * cell_size
 
 
+func _snap_pointer_for_origin(piece_id: int, origin: Vector2i) -> Vector2:
+	var geometry := _board_geometry()
+	var board_rect: Rect2 = geometry["rect"]
+	var cell_size: float = geometry["cellSize"]
+	var bounds := _piece_bounds(_piece_by_id(piece_id))
+	return board_rect.position + Vector2(
+		(float(origin.x) + float(bounds.size.x) * 0.5) * cell_size,
+		(float(origin.y + bounds.size.y) + DRAG_LIFT_CELLS) * cell_size
+	)
+
+
 func _cell_set(raw_cells: Array) -> Dictionary:
 	var result := {}
 	for raw in raw_cells:
@@ -1067,29 +1090,68 @@ func _build_hint_popup() -> void:
 
 
 func _build_intro_controls() -> void:
+	_intro_panel = PanelContainer.new()
+	_intro_panel.custom_minimum_size = Vector2(280, 68)
+	_intro_panel.z_index = 40
+	_intro_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.07, 0.11, 0.19, 0.94)
+	panel_style.border_color = Color(1.0, 0.78, 0.24, 0.92)
+	panel_style.set_border_width_all(2)
+	panel_style.corner_radius_top_left = 18
+	panel_style.corner_radius_top_right = 18
+	panel_style.corner_radius_bottom_left = 18
+	panel_style.corner_radius_bottom_right = 18
+	panel_style.shadow_color = Color(0.02, 0.04, 0.08, 0.34)
+	panel_style.shadow_size = 10
+	panel_style.shadow_offset = Vector2(0, 4)
+	_intro_panel.add_theme_stylebox_override("panel", panel_style)
+	add_child(_intro_panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	_intro_panel.add_child(margin)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	margin.add_child(row)
 	_intro_caption = Label.new()
-	_intro_caption.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_intro_caption.position = Vector2(-170, 108)
-	_intro_caption.size = Vector2(340, 48)
-	_intro_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_intro_caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_intro_caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_intro_caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_intro_caption.add_theme_color_override("font_color", Color.WHITE)
-	_intro_caption.add_theme_color_override("font_shadow_color", Color(0.05, 0.08, 0.14, 0.75))
-	_intro_caption.add_theme_constant_override("shadow_offset_y", 2)
-	_intro_caption.add_theme_font_size_override("font_size", 18)
+	_intro_caption.add_theme_font_size_override("font_size", 17)
 	_intro_caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_intro_caption.z_index = 20
-	add_child(_intro_caption)
+	row.add_child(_intro_caption)
+	_intro_skip_button = Button.new()
+	_intro_skip_button.name = "AssemblyIntroSkipButton"
+	# Keep the canonical source here so LocalizationController can retain it
+	# when the locale changes after the page has already been constructed.
+	_intro_skip_button.text = "跳过"
+	_intro_skip_button.custom_minimum_size = Vector2(68, 42)
+	_intro_skip_button.focus_mode = Control.FOCUS_ALL
+	_intro_skip_button.pressed.connect(skip_intro)
+	row.add_child(_intro_skip_button)
 
-	_intro_hand = Label.new()
-	_intro_hand.text = "☝"
-	_intro_hand.size = Vector2(72, 72)
-	_intro_hand.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_intro_hand.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_intro_hand.add_theme_color_override("font_color", Color.WHITE)
-	_intro_hand.add_theme_color_override("font_shadow_color", Color(0.05, 0.08, 0.14, 0.72))
-	_intro_hand.add_theme_constant_override("shadow_offset_y", 3)
-	_intro_hand.add_theme_font_size_override("font_size", 58)
+	# A procedural touch marker is stable across fonts and mobile platforms;
+	# unlike an emoji glyph it cannot unexpectedly change style or baseline.
+	var touch_marker := PanelContainer.new()
+	touch_marker.size = Vector2(48, 48)
+	touch_marker.custom_minimum_size = Vector2(48, 48)
+	var touch_style := StyleBoxFlat.new()
+	touch_style.bg_color = Color(1.0, 1.0, 1.0, 0.94)
+	touch_style.border_color = Color(1.0, 0.72, 0.18, 1.0)
+	touch_style.set_border_width_all(4)
+	touch_style.corner_radius_top_left = 24
+	touch_style.corner_radius_top_right = 24
+	touch_style.corner_radius_bottom_left = 24
+	touch_style.corner_radius_bottom_right = 24
+	touch_style.shadow_color = Color(0.03, 0.06, 0.12, 0.34)
+	touch_style.shadow_size = 8
+	touch_style.shadow_offset = Vector2(0, 4)
+	touch_marker.add_theme_stylebox_override("panel", touch_style)
+	_intro_hand = touch_marker
 	_intro_hand.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_intro_hand.z_index = 21
 	add_child(_intro_hand)
@@ -1103,16 +1165,154 @@ func _localized(source: String, values: Array = []) -> String:
 	return translated if values.is_empty() else translated % values
 
 
-func _move_intro_hand(target: Vector2, duration: float) -> void:
+func _start_intro_hand_hint() -> void:
+	if not _intro_active or _drag_piece_id >= 0:
+		return
 	if _intro_tween and _intro_tween.is_valid():
 		_intro_tween.kill()
-	_intro_tween = create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
-	_intro_tween.tween_property(_intro_hand, "position", target - _intro_hand.size * 0.5, duration)
-	await _intro_tween.finished
+	var start := intro_start_point()
+	var target := intro_target_point()
+	if start == Vector2.ZERO or target == Vector2.ZERO:
+		return
+	_intro_hand.show()
+	_intro_hand.position = start - _intro_hand.size * 0.5
+	_intro_hand.modulate.a = 0.0
+	_intro_tween = create_tween().set_loops()
+	_intro_tween.tween_property(_intro_hand, "modulate:a", 1.0, 0.16)
+	_intro_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+	_intro_tween.tween_property(_intro_hand, "position", target - _intro_hand.size * 0.5, 0.90)
+	_intro_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_intro_tween.tween_property(_intro_hand, "modulate:a", 0.0, 0.18)
+	_intro_tween.tween_callback(func() -> void:
+		if _intro_hand:
+			_intro_hand.position = start - _intro_hand.size * 0.5
+	)
+	_intro_tween.tween_interval(0.46)
+
+
+func _stop_intro_hand_hint() -> void:
+	if _intro_tween and _intro_tween.is_valid():
+		_intro_tween.kill()
+	_intro_tween = null
+	if _intro_hand:
+		_intro_hand.hide()
+		_intro_hand.modulate.a = 1.0
+
+
+func _show_intro_pickup_prompt() -> void:
+	if _intro_caption:
+		_intro_caption.text = _localized("拖动高亮方块，放入发光凹槽")
+
+
+func _finish_intro() -> void:
+	if not _intro_active:
+		return
+	_reset_intro()
+	intro_finished.emit()
+
+
+func _reset_intro() -> void:
+	_stop_intro_hand_hint()
+	_intro_active = false
+	_intro_guided_piece_id = -1
+	_intro_guided_origin = Vector2i(-99, -99)
+	input_locked = false
+	if _intro_skip_button:
+		_intro_skip_button.release_focus()
+	_hide_intro_controls()
+	queue_redraw()
+
+
+func _select_intro_target() -> Dictionary:
+	var candidates: Array = []
+	for layout in assembly_data.get("validLayouts", []):
+		if not layout is Dictionary:
+			continue
+		var layout_placements: Dictionary = layout.get("placements", {})
+		var compatible := true
+		for placed_key in placements.keys():
+			if not layout_placements.has(str(placed_key)) or layout_placements[str(placed_key)] != placements[placed_key]:
+				compatible = false
+				break
+		if not compatible:
+			continue
+		for piece in assembly_data.get("pieces", []):
+			var piece_id := int(piece.get("pieceId", -1))
+			var key := str(piece_id)
+			if piece_id < 0 or placements.has(key) or not layout_placements.has(key):
+				continue
+			var raw_origin = layout_placements[key]
+			if not raw_origin is Array or raw_origin.size() < 2:
+				continue
+			var origin := Vector2i(int(raw_origin[1]), int(raw_origin[0]))
+			if not _origin_in_allowed_list(piece_id, origin):
+				continue
+			candidates.append({
+				"pieceId": piece_id,
+				"origin": [origin.y, origin.x],
+				"cellCount": _piece_local_cells(piece).size(),
+				"choiceCount": allowed_by_piece.get(key, []).size(),
+				"slot": tray_slot_piece_ids.find(piece_id)
+			})
+		if not candidates.is_empty():
+			break
+	if candidates.is_empty():
+		return {}
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if int(a["cellCount"]) != int(b["cellCount"]):
+			return int(a["cellCount"]) < int(b["cellCount"])
+		if int(a["choiceCount"]) != int(b["choiceCount"]):
+			return int(a["choiceCount"]) < int(b["choiceCount"])
+		return int(a["slot"]) < int(b["slot"])
+	)
+	return candidates[0]
+
+
+func _origin_in_allowed_list(piece_id: int, origin: Vector2i) -> bool:
+	for raw in allowed_by_piece.get(str(piece_id), []):
+		if raw is Array and raw.size() >= 2 and int(raw[0]) == origin.y and int(raw[1]) == origin.x:
+			return true
+	return false
+
+
+func _draw_intro_overlay() -> void:
+	var mask := Color(0.08, 0.12, 0.18, 0.58)
+	draw_rect(Rect2(Vector2.ZERO, size), mask, true)
+	var slot_index := tray_slot_piece_ids.find(_intro_guided_piece_id)
+	if slot_index >= 0:
+		var slot_rect := _tray_slot_rect(slot_index)
+		var piece := _piece_by_id(_intro_guided_piece_id)
+		if slot_rect.has_area() and not piece.is_empty() and _drag_piece_id != _intro_guided_piece_id:
+			_draw_slot_frame(slot_rect, _region_color(int(piece.get("regionId", 1))), 1.0, true)
+			_draw_piece_preview(piece, slot_rect, 1.0)
+	var geometry := _board_geometry()
+	var board_rect: Rect2 = geometry["rect"]
+	var cell_size: float = geometry["cellSize"]
+	var target_piece := _piece_by_id(_intro_guided_piece_id)
+	for cell in _piece_absolute_cells(target_piece, _intro_guided_origin):
+		var rect := _cell_rect(cell, board_rect.position, cell_size)
+		var halo := UITokensScript.ATTENTION_HALO_COLOR
+		halo.a = 0.42
+		draw_rect(rect.grow(cell_size * 0.06), halo, false, maxf(4.0, cell_size * 0.08))
+		var light := Color.WHITE
+		light.a = 0.16
+		draw_rect(rect.grow(-cell_size * 0.08), light, true)
+
+
+func _layout_intro_controls() -> void:
+	if not _intro_panel or not tray_target:
+		return
+	var panel_width := clampf(size.x - 28.0, 280.0, 430.0)
+	var panel_height := 72.0
+	_intro_panel.size = Vector2(panel_width, panel_height)
+	# The action bar is disabled during the guide, so its space is the safest
+	# place for guidance without covering the header, tray, or board sockets.
+	var panel_y := maxf(12.0, size.y - panel_height - 18.0)
+	_intro_panel.position = Vector2((size.x - panel_width) * 0.5, panel_y)
 
 
 func _hide_intro_controls() -> void:
-	if _intro_caption:
-		_intro_caption.hide()
+	if _intro_panel:
+		_intro_panel.hide()
 	if _intro_hand:
 		_intro_hand.hide()

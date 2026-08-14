@@ -35,6 +35,8 @@ const MESSAGE_ROWS := [
 	["应用", "Apply", "تطبيق", "Appliquer", "Adhibe"],
 	["返回首页", "Back to home", "العودة للرئيسية", "Retour à l’accueil", "Ad domum"],
 	["跳过", "Skip", "تخطّي", "Passer", "Praeteri"],
+	["拖动高亮方块，放入发光凹槽", "Drag the highlighted block into the glowing sockets", "اسحب القطعة المضيئة إلى التجاويف المتوهجة", "Faites glisser le bloc surligné dans les emplacements lumineux", "Tessellam illustratam in cavernas lucentes trahe"],
+	["拖到发光凹槽后松手", "Release over the glowing sockets", "أفلت القطعة فوق التجاويف المتوهجة", "Relâchez sur les emplacements lumineux", "Super cavernas lucentes dimitte"],
 	["跳过新手教程", "Skip tutorial", "تخطّي البرنامج التعليمي", "Passer le tutoriel", "Praecepta praeteri"],
 	["查看消除规则", "View rules", "عرض القواعد", "Voir les règles", "Regulas vide"],
 	["选择关卡", "Select level", "اختيار المرحلة", "Choisir un niveau", "Gradum elige"],

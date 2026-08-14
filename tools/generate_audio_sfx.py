@@ -446,137 +446,73 @@ def make_block_clear(seed: int) -> list[float]:
     )
 
 
-def make_result_lion_nature(seed: int) -> list[float]:
-    """4.2-second result cue shaped around lion, coin-flight and reel beats."""
-    duration = 4.2
-    layers: list[tuple[float, list[float], float]] = [
-        (0.0, warm_nature_pad([130.81, 164.81, 196.00], duration), 0.22),
-        # The lion appears and looks upward.
-        (0.035, kalimba_tone(392.00, 0.52, seed + 1, 0.90), 0.27),
-        (0.180, kalimba_tone(523.25, 0.62, seed + 2, 1.05), 0.35),
-        (0.300, glass_sparkle(783.99, 0.52, seed + 3), 0.065),
-    ]
+def make_petal_scatter(seed: int) -> list[float]:
+    """A short non-musical flutter and sparkle burst for the petal shower."""
+    duration = 1.75
+    rng = random.Random(seed)
+    airy_noise = band_limited_noise(duration, 650.0, 5_600.0, rng)
+    airy: list[float] = []
+    for index, sample in enumerate(airy_noise):
+        time = index / SAMPLE_RATE
+        envelope = math.exp(-1.55 * time)
+        flutter = 0.38 + 0.30 * (0.5 + 0.5 * math.sin(TAU * 9.2 * time))
+        flutter += 0.18 * (0.5 + 0.5 * math.sin(TAU * 15.7 * time + 0.8))
+        airy.append(sample * envelope * flutter)
+    airy = apply_fades(airy, 0.018, 0.24)
 
-    # Rise, answer downward, rise higher with the reel, then resolve home.
-    melody = [
-        (0.48, 523.25, 0.43, 0.32),
-        (0.68, 659.25, 0.42, 0.35),
-        (0.89, 783.99, 0.44, 0.38),
-        (1.12, 880.00, 0.52, 0.43),
-        (1.39, 783.99, 0.42, 0.35),
-        (1.60, 659.25, 0.41, 0.32),
-        (1.82, 587.33, 0.49, 0.30),
-        (2.05, 698.46, 0.40, 0.34),
-        (2.25, 880.00, 0.40, 0.38),
-        (2.46, 1_046.50, 0.46, 0.43),
-        (2.69, 1_318.51, 0.55, 0.47),
-        (2.91, 1_174.66, 0.38, 0.37),
-        (3.08, 987.77, 0.39, 0.34),
-        (3.24, 1_046.50, 0.88, 0.47),
-    ]
-    for note_index, (offset, frequency, note_duration, gain) in enumerate(melody):
-        brightness = 0.92 + min(0.18, note_index * 0.012)
+    layers: list[tuple[float, list[float], float]] = [(0.0, airy, 0.34)]
+    for flutter_index, offset in enumerate([0.04, 0.22, 0.46, 0.73, 1.03]):
         layers.append(
             (
                 offset,
-                kalimba_tone(
-                    frequency,
-                    note_duration,
-                    seed + 100 + note_index,
-                    brightness,
-                ),
-                gain,
+                leaf_shaker(0.34, seed + 10 + flutter_index),
+                0.16 - flutter_index * 0.012,
             )
         )
-
-    chords = [
-        (0.45, [261.63, 329.63, 392.00], 0.15),
-        (1.36, [174.61, 220.00, 261.63], 0.14),
-        (2.14, [196.00, 246.94, 293.66], 0.15),
-    ]
-    for chord_index, (offset, frequencies, gain) in enumerate(chords):
-        for note_index, frequency in enumerate(frequencies):
-            layers.append(
-                (
-                    offset,
-                    wood_tone(
-                        frequency,
-                        0.88,
-                        seed + 200 + chord_index * 10 + note_index,
-                        0.54,
-                    ),
-                    gain,
-                )
-            )
-
-    for pulse_index, offset in enumerate([0.62, 1.10, 1.58, 2.06, 2.47, 2.88]):
-        pulse_pitch = 176.0 if pulse_index % 2 == 0 else 198.0
+    # Sparse sparkles indicate celebration without forming a melody or a beat.
+    for sparkle_index, (offset, frequency) in enumerate(
+        [(0.08, 1_160.0), (0.31, 1_520.0), (0.62, 1_340.0), (0.98, 1_740.0)]
+    ):
         layers.append(
             (
                 offset,
-                wood_tone(pulse_pitch, 0.17, seed + 300 + pulse_index, 0.42),
-                0.13,
+                glass_sparkle(frequency, 0.42, seed + 100 + sparkle_index),
+                0.10,
             )
         )
-    for shaker_index, offset in enumerate([0.86, 1.78, 2.62]):
-        layers.append((offset, leaf_shaker(0.30, seed + 400 + shaker_index), 0.055))
-
-    # Final C6/9 tail remains long enough for a runtime fade after roll_finished.
-    for note_index, frequency in enumerate([261.63, 329.63, 392.00, 440.00, 523.25]):
-        gain = 0.22 if note_index < 3 else 0.17
-        layers.append(
-            (
-                3.16,
-                kalimba_tone(frequency, 1.00, seed + 500 + note_index, 0.96),
-                gain,
-            )
-        )
-    layers.append((3.22, glass_sparkle(1_046.50, 0.88, seed + 510), 0.075))
-    shaped = apply_fades(mix(duration, layers), 0.035, 0.30)
-    # The cue contains very short sparkle peaks. Gentle soft-knee compression
-    # brings the kalimba melody forward on phone speakers without hard clipping.
-    return soft_compress(shaped, 5.0)
-
-
-def make_result_tutorial_soft(seed: int) -> list[float]:
-    """A short, gentle completion cue without the full reward-page fanfare."""
-    return mix(
-        2.35,
-        [
-            (0.00, warm_nature_pad([130.81, 164.81, 196.00], 2.35), 0.18),
-            (0.08, kalimba_tone(392.00, 0.62, seed, 0.82), 0.27),
-            (0.42, kalimba_tone(523.25, 0.70, seed + 1, 0.88), 0.29),
-            (0.82, kalimba_tone(659.25, 0.78, seed + 2, 0.92), 0.31),
-            (1.24, kalimba_tone(523.25, 0.96, seed + 3, 0.82), 0.28),
-            (1.28, glass_sparkle(784.00, 0.70, seed + 4), 0.05),
-        ],
-    )
+    return soft_compress(mix(duration, layers), 2.2)
 
 
 def make_coin_arrive(seed: int) -> list[float]:
+    """A clear two-coin metal collision for each arrival at the balance icon."""
     return mix(
-        0.145,
+        0.220,
         [
-            (0.000, metal_tap(960.0, 0.130, seed), 0.30),
-            (0.010, wood_tone(480.0, 0.115, seed + 1, 0.38), 0.24),
+            (0.000, metal_tap(1_080.0, 0.205, seed), 0.48),
+            (0.012, metal_tap(1_620.0, 0.170, seed + 1), 0.27),
+            (0.030, metal_tap(620.0, 0.165, seed + 2), 0.16),
         ],
     )
 
 
 def make_coin_reel(seed: int) -> list[float]:
+    """A one-second metal ratchet that slows with the visual number reel."""
     layers: list[tuple[float, list[float], float]] = []
-    for index in range(7):
-        frequency = 520.0 + index * 34.0
-        layers.append((index * 0.105, metal_tap(frequency, 0.115, seed + index), 0.16))
-    return mix(0.820, layers)
+    offsets = [0.000, 0.055, 0.112, 0.173, 0.239, 0.311, 0.390, 0.478, 0.577, 0.690, 0.820, 0.958]
+    for index, offset in enumerate(offsets):
+        progress = index / max(1, len(offsets) - 1)
+        frequency = 780.0 - progress * 230.0 + (36.0 if index % 2 == 0 else -22.0)
+        gain = 0.20 + progress * 0.08
+        layers.append((offset, metal_tap(frequency, 0.105 + progress * 0.035, seed + index), gain))
+    return mix(1.080, layers)
 
 
 def make_coin_settle(seed: int) -> list[float]:
     return mix(
         0.285,
         [
-            (0.000, wood_tone(523.25, 0.230, seed, 0.56), 0.42),
-            (0.055, metal_tap(1_046.50, 0.210, seed + 1), 0.22),
+            (0.000, metal_tap(720.00, 0.260, seed), 0.42),
+            (0.045, metal_tap(1_440.00, 0.220, seed + 1), 0.28),
         ],
     )
 
@@ -624,11 +560,10 @@ def build_pack(output_dir: Path) -> None:
         "block_revive.wav": (make_revive(2310), -12.5),
         "block_assembly_complete.wav": (make_assembly_complete(2410), -10.5),
         "block_clear.wav": (make_block_clear(2510), -15.0),
-        "result_lion_nature_v2.wav": (make_result_lion_nature(4100), -7.0),
-        "result_tutorial_soft.wav": (make_result_tutorial_soft(4200), -12.0),
-        "coin_arrive.wav": (make_coin_arrive(4300), -16.0),
-        "coin_reel.wav": (make_coin_reel(4400), -18.0),
-        "coin_settle.wav": (make_coin_settle(4500), -14.0),
+        "petal_scatter.wav": (make_petal_scatter(4250), -12.0),
+        "coin_arrive.wav": (make_coin_arrive(4300), -12.0),
+        "coin_reel.wav": (make_coin_reel(4400), -13.5),
+        "coin_settle.wav": (make_coin_settle(4500), -13.0),
     }
     for filename, (samples, peak_db) in candidates.items():
         write_wav(output_dir / filename, samples, peak_db)

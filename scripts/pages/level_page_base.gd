@@ -19,6 +19,7 @@ signal assembly_pickup_started(piece_size: int)
 signal assembly_snap_target_changed
 signal assembly_placement_rejected
 signal assembly_intro_finished
+signal assembly_intro_cancelled
 
 const GameBoardScript = preload("res://scripts/game_board.gd")
 const AssemblyViewScript = preload("res://scripts/assembly_view.gd")
@@ -136,6 +137,7 @@ func setup(initial_coins: int, include_assembly: bool, localizer: Callable = Cal
 		assembly_view.snap_target_changed.connect(func() -> void: assembly_snap_target_changed.emit())
 		assembly_view.placement_rejected.connect(func() -> void: assembly_placement_rejected.emit())
 		assembly_view.intro_finished.connect(func() -> void: assembly_intro_finished.emit())
+		assembly_view.intro_cancelled.connect(func() -> void: assembly_intro_cancelled.emit())
 		add_child(assembly_view)
 		assembly_view.bind_targets(board, assembly_tray_target)
 
@@ -212,6 +214,18 @@ func set_all_tools_visible(value: bool) -> void:
 	for button in [clear_button, crown_find_button, hint_button]:
 		if button:
 			button.visible = value
+
+
+func set_assembly_intro_active(value: bool) -> void:
+	# Home remains available so the guide never traps the player. All other
+	# page-level actions are suspended while the guided drag owns the screen.
+	for button in [help_button, settings_button, level_select_button, tutorial_skip_button]:
+		if button:
+			button.disabled = value
+	for button in [clear_button, crown_find_button, hint_button]:
+		if button:
+			button.disabled = value
+			_refresh_tool_button_visual(button)
 
 
 func reset_tool_styles() -> void:

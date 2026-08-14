@@ -733,6 +733,8 @@ func _run() -> void:
 	assert(game.hint_count == no_x_hint_count, "Hint uses should not be consumed when no non-crown X target exists")
 
 	game._load_level(0)
+	var result_sound_events: Array[String] = []
+	game.result_page.sound_requested.connect(func(kind: String) -> void: result_sound_events.append(kind))
 	var completion_coins_before: int = game.coin_count
 	var expected_completion_reward := CoinRewardPolicyScript.completion_reward(
 		game.player_level_number,
@@ -750,21 +752,39 @@ func _run() -> void:
 
 	await create_timer(game.board.victory_result_delay() + 0.18).timeout
 	assert(game.result_page.completion_title.text == game._t("EXCELLENT"), "A no-heart-loss multi-heart completion should display Excellent")
-	assert(game.result_page.result_petals_layer.visible and game.result_page.result_petals_layer.get_child_count() > 0, "Excellent should play the falling-petal celebration")
+	assert(game.result_page.result_is_excellent, "Excellent completion should enable the dedicated celebration state")
+	assert(
+		game.result_page.result_petals_layer.visible
+		and game.result_page.result_petals_layer.get_child_count() == game.result_page.RESULT_PETAL_COUNT,
+		"Excellent should play the full extended falling-petal celebration"
+	)
+	assert(game.result_page.result_success_sequence_tween != null, "Excellent should own one serial celebration timeline")
+	assert("petal_scatter" in result_sound_events, "Excellent should start with the dedicated non-musical petal sound")
+	assert("coin_arrive" not in result_sound_events and "coin_reel" not in result_sound_events, "Coin sounds must not overlap the opening petal phase")
+	assert(not game.result_page.has_signal("music_requested"), "The result page should expose no background-music signal")
+	assert(not game.audio_controller.has_method("play_result_music"), "The audio controller should contain no result background-music player")
 
-	await create_timer(game.result_page.RESULT_COIN_MAX_DURATION + 0.12).timeout
+	await create_timer(
+		game.result_page.RESULT_PETAL_SEQUENCE_DURATION
+		+ game.result_page.RESULT_AFTER_PETALS_PAUSE
+		+ game.result_page.RESULT_COIN_MAX_DURATION
+		+ 0.12
+	).timeout
 	assert(game.result_page.result_coin_roll_row.visible and not game.result_page.result_reward_label.visible, "Success result should show the dedicated rolling coin reward")
 	assert(game.result_page.result_coin_roll_display.visual_gap_from_icon_to_number() >= 35.5, "The visible result layout should preserve about 36px from the coin edge to the number start")
 	assert(game.result_page.result_reward_coin_icon != null and game.result_page.result_reward_coin_icon.visible, "The result reward should use a coin icon without a text prefix")
 	assert(game.result_page.result_coin_roll_row.get_child_count() == 3, "The reward row should contain the coin icon, explicit spacing, and rolling number")
 	assert(game.result_page.result_coin_roll_primary.text == str(game.coin_count), "The result coin roller should finish at the player's current balance")
 	assert(game.result_page.result_coin_tween != null, "Granted coins should use a lion-to-balance flight animation on the result page")
-	assert(game.result_page.RESULT_COIN_START_DELAY >= 0.4 and game.result_page.RESULT_COIN_MIN_DURATION >= 1.3, "The reward count-up should remain readable after the result page appears")
+	assert(game.result_page.RESULT_COIN_START_DELAY >= 0.28 and game.result_page.RESULT_COIN_MIN_DURATION >= 1.3, "The reward count-up should retain a readable pause before coin flight")
+	assert(game.result_page.RESULT_COIN_REEL_START_PAUSE >= 0.25, "The number reel should pause after the final coin arrival")
+	assert(result_sound_events.find("petal_scatter") < result_sound_events.find("coin_arrive"), "Petal audio should finish its phase before coin-arrival feedback begins")
+	assert(result_sound_events.find("coin_arrive") < result_sound_events.find("coin_reel"), "Coin arrivals should complete before the reel sound begins")
 	assert(game.result_page.result_piece_icon.texture in game.LION_KING_VICTORY_FRAMES, "Success result should animate with the lion wave frames")
 	assert(game.result_page.result_lion_wave_tween != null, "Success result should run the lion wave animation")
 	assert(game.result_page.result_lion_animation_name in ["wave", "tongue", "funny"], "Success result should randomly choose a supported lion animation")
-	assert(game.result_page.result_piece_icon.scale.is_equal_approx(Vector2.ONE), "Success lion should keep a fixed body scale")
-	assert(is_zero_approx(game.result_page.result_piece_icon.rotation), "Success lion should keep a fixed body position without rotation")
+	assert(game.result_page.result_piece_icon.scale.is_equal_approx(Vector2.ONE), "Success lion should keep a fixed visual size without front-back pulsing")
+	assert(is_zero_approx(game.result_page.result_piece_icon.rotation), "Success lion should keep a fixed body axis without rocking")
 	game.current_heart_limit = 1
 	game.heart_count = 1
 	var manual_balance_after: int = game.coin_count
@@ -792,6 +812,7 @@ func _run() -> void:
 				game.result_page.RESULT_COIN_MAX_DURATION
 				- game.result_page.RESULT_COIN_START_DELAY
 				- game.result_page.RESULT_COIN_FLIGHT_DURATION
+				- game.result_page.RESULT_COIN_REEL_START_PAUSE
 				- game.result_page.RESULT_COIN_REEL_DURATION
 				- game.result_page.RESULT_COIN_REEL_SETTLE_HOLD
 			) / 4.0
@@ -815,7 +836,9 @@ func _run() -> void:
 	await create_timer(game.result_page.RESULT_COIN_REEL_DURATION + 0.24).timeout
 	assert(game.result_page.result_coin_roll_primary.text == str(manual_balance_after) and not game.result_page.result_coin_roll_secondary.visible, "The visible roller should finish at the player's current balance")
 	assert(game.result_page.completion_title.text == game._t("GOOD"), "A single-heart completion should display Good")
+	assert(not game.result_page.result_is_excellent, "Good completion should disable the Excellent-only celebration state")
 	assert(not game.result_page.result_petals_layer.visible, "Good should stop and hide the falling-petal celebration")
+	await create_timer(0.35).timeout
 	game.queue_free()
 	await process_frame
 	_restore_save(had_save, previous_save)

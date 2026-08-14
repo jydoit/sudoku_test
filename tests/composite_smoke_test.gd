@@ -285,10 +285,27 @@ func _run() -> void:
 	game._show_game()
 	await process_frame
 	assert(game._is_assembly_phase(), "Composite schedule should start in assembly")
-	assert(game.composite_intro_running and game.assembly_view.input_locked, "The first composite level should start the flow animation")
-	await game.assembly_view.intro_finished
+	assert(game.composite_intro_running and game.assembly_view.is_intro_active(), "The first composite level should start the interactive placement guide")
+	assert(not game.assembly_view.input_locked, "The interactive guide must accept the guided drag instead of locking all input")
+	game._show_home()
 	await process_frame
-	assert(game.composite_tutorial_seen and not game.composite_intro_running, "Completing the first flow animation should persist its seen state")
+	assert(not game.composite_tutorial_seen and not game.composite_intro_running, "Leaving the guide must cancel it without persisting the seen state")
+	game._show_game()
+	await process_frame
+	await process_frame
+	assert(game.assembly_view.is_intro_active(), "Returning to an unseen block guide should offer it again")
+	var intro_piece_id: int = int(game.assembly_view.intro_piece_id())
+	var intro_origin: Vector2i = game.assembly_view.intro_origin()
+	var intro_start: Vector2 = game.assembly_view.intro_start_point()
+	var intro_target: Vector2 = game.assembly_view.intro_target_point()
+	assert(intro_piece_id >= 0 and intro_origin.x >= 0 and intro_start != Vector2.ZERO and intro_target != Vector2.ZERO, "The guide should expose one real piece and one valid socket")
+	game.assembly_view._pointer_pressed(intro_start, -1)
+	game.assembly_view._pointer_moved(intro_start + Vector2(0, 12), -1)
+	game.assembly_view._pointer_moved(intro_target, -1)
+	game.assembly_view._pointer_released(intro_target, -1)
+	await process_frame
+	assert(game.composite_tutorial_seen and not game.composite_intro_running, "Completing the guided placement should persist its seen state")
+	assert(game.composite_placements.has(str(intro_piece_id)), "The tutorial gesture must use the normal placement pipeline and keep the placed block")
 	var saved_view_data: Dictionary = game.assembly_view.assembly_data
 	var saved_view_allowed: Dictionary = game.assembly_view.allowed_by_piece
 	var tall_piece := {

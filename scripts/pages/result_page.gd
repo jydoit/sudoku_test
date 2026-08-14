@@ -2,8 +2,6 @@ extends ColorRect
 
 signal primary_requested
 signal secondary_requested
-signal music_requested(kind: String)
-signal music_stop_requested
 signal sound_requested(kind: String)
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
@@ -20,16 +18,23 @@ const LION_KING_VICTORY_WINK_ICON = preload("res://assets/ui/lion_king_victory_w
 const LION_KING_VICTORY_FUNNY_ICON = preload("res://assets/ui/lion_king_victory_funny.png")
 const CARD := UITokensScript.SURFACE_CARD
 const INK := UITokensScript.INK
-const RESULT_COIN_START_DELAY := 0.45
+const RESULT_COIN_START_DELAY := 0.30
 const RESULT_COIN_MIN_DURATION := 2.15
 const RESULT_COIN_MAX_DURATION := 3.30
 const RESULT_COIN_FLIGHT_DURATION := 0.72
 const RESULT_COIN_FLIGHT_MIN_STAGGER := 0.08
 const RESULT_COIN_FLIGHT_MAX_STAGGER := 0.16
+const RESULT_COIN_REEL_START_PAUSE := 0.28
 const RESULT_COIN_REEL_DURATION := 1.00
 const RESULT_COIN_REEL_SETTLE_HOLD := 0.08
 const RESULT_COIN_FLYER_SIZE := Vector2(29, 29)
 const RESULT_COIN_BALANCE_GAP := 28.0
+const RESULT_PETAL_COUNT := 30
+const RESULT_PETAL_DELAY_MAX := 1.25
+const RESULT_PETAL_DURATION_MIN := 3.00
+const RESULT_PETAL_DURATION_MAX := 4.00
+const RESULT_PETAL_SEQUENCE_DURATION := RESULT_PETAL_DELAY_MAX + RESULT_PETAL_DURATION_MAX + 0.05
+const RESULT_AFTER_PETALS_PAUSE := 0.24
 
 var completion_overlay: ColorRect
 var completion_title: Label
@@ -53,10 +58,12 @@ var result_coin_pulse_tween: Tween
 var result_lion_tween: Tween
 var result_lion_wave_tween: Tween
 var result_coin_tween: Tween
+var result_success_sequence_tween: Tween
 var result_coin_flight_tweens: Array[Tween] = []
 var result_petal_tweens: Array[Tween] = []
 var result_lion_animation_name := ""
 var result_coin_arrival_sound_values: Dictionary = {}
+var result_is_excellent := false
 var _localizer: Callable
 
 func configure(localizer: Callable = Callable()) -> void:
@@ -247,6 +254,9 @@ func configure(localizer: Callable = Callable()) -> void:
 func present_success(data: Dictionary) -> void:
 	overlay_mode = "success"
 	var excellent := bool(data.get("excellent", false))
+	stop_success_sequence()
+	stop_petals()
+	result_is_excellent = excellent
 	var composite := bool(data.get("composite", false))
 	var reward := maxi(0, int(data.get("reward", 0)))
 	completion_title.text = _t("EXCELLENT") if excellent else _t("GOOD")
@@ -277,16 +287,18 @@ func present_success(data: Dictionary) -> void:
 		completion_next_button.text = _t("下一局") if composite else _t("下一关")
 	completion_replay_button.text = _t("主菜单")
 	completion_replay_button.show()
-	stop_petals()
-	if excellent:
-		call_deferred("play_petals")
 	call_deferred("play_lion_animation")
-	if reward > 0:
-		call_deferred("play_coin_animation", reward, int(data.get("coinBalance", reward)))
+	call_deferred(
+		"play_success_sequence",
+		excellent,
+		reward,
+		int(data.get("coinBalance", reward))
+	)
 
 
 func present_failure(data: Dictionary) -> void:
 	overlay_mode = "failure"
+	result_is_excellent = false
 	stop_all_animations()
 	var composite := bool(data.get("composite", false))
 	completion_title.text = _t("挑战失败")
@@ -310,6 +322,7 @@ func present_failure(data: Dictionary) -> void:
 
 func present_deadlock(revive_price: int) -> void:
 	overlay_mode = "assembly_deadlock"
+	result_is_excellent = false
 	stop_all_animations()
 	completion_title.text = _t("拼块死局")
 	reward_label.text = _t("同色区域已被隔离")
@@ -329,6 +342,7 @@ func present_deadlock(revive_price: int) -> void:
 
 func present_tutorial_complete(has_saved_progress: bool) -> void:
 	overlay_mode = "tutorial"
+	result_is_excellent = false
 	stop_all_animations()
 	completion_title.text = _t("已经了解全部规则")
 	reward_label.text = _t("开始真正的挑战吧！")
@@ -352,7 +366,6 @@ func composite_coin_text(reward: int, entry_cost: int, paid_entry: bool) -> Stri
 
 func show_animated() -> void:
 	show()
-	music_requested.emit(overlay_mode)
 	modulate.a = 0.0
 	var tween := create_tween()
 	tween.tween_property(self, "modulate:a", 1.0, 0.2)
@@ -360,7 +373,7 @@ func show_animated() -> void:
 
 func _on_result_visibility_changed() -> void:
 	if not visible:
-		music_stop_requested.emit()
+		stop_all_animations()
 
 
 func _t(source: String, values: Array = []) -> String:
@@ -407,13 +420,19 @@ func play_coin_animation(reward: int, balance_after: int) -> void:
 					RESULT_COIN_MAX_DURATION
 					- RESULT_COIN_START_DELAY
 					- RESULT_COIN_FLIGHT_DURATION
+					- RESULT_COIN_REEL_START_PAUSE
 					- RESULT_COIN_REEL_DURATION
 					- RESULT_COIN_REEL_SETTLE_HOLD
 				) / float(reward - 1)
 			)
 		)
 	var flight_sequence_duration := RESULT_COIN_FLIGHT_DURATION + stagger * float(maxi(0, reward - 1))
-	var sequence_duration := RESULT_COIN_START_DELAY + flight_sequence_duration + RESULT_COIN_REEL_DURATION
+	var sequence_duration := (
+		RESULT_COIN_START_DELAY
+		+ flight_sequence_duration
+		+ RESULT_COIN_REEL_START_PAUSE
+		+ RESULT_COIN_REEL_DURATION
+	)
 	var completion_hold := maxf(RESULT_COIN_REEL_SETTLE_HOLD, RESULT_COIN_MIN_DURATION - sequence_duration)
 	result_coin_tween = create_tween()
 	result_coin_tween.tween_interval(RESULT_COIN_START_DELAY)
@@ -424,6 +443,8 @@ func play_coin_animation(reward: int, balance_after: int) -> void:
 		if index < reward - 1:
 			result_coin_tween.tween_interval(stagger)
 	result_coin_tween.tween_interval(RESULT_COIN_FLIGHT_DURATION)
+	result_coin_tween.tween_interval(RESULT_COIN_REEL_START_PAUSE)
+	result_coin_tween.tween_callback(_start_result_balance_reel.bind(balance_after))
 	result_coin_tween.tween_interval(RESULT_COIN_REEL_DURATION + completion_hold)
 	result_coin_tween.tween_callback(func() -> void:
 		result_coin_roll_display.set_value(balance_after)
@@ -463,7 +484,7 @@ func _launch_result_coin_flyer(index: int, reward: int, balance_after: int, sour
 	flyer.position = start - RESULT_COIN_FLYER_SIZE * 0.5
 	flyer.scale = Vector2(0.56, 0.56)
 	flyer.modulate.a = 0.0
-	_set_result_lion_frame(LION_KING_VICTORY_OUT_ICON if index % 2 == 0 else LION_KING_VICTORY_WAVE_OUT_MID_ICON)
+	_set_result_lion_coin_frame(index, reward)
 	var flight_tween := flyer.create_tween()
 	result_coin_flight_tweens.append(flight_tween)
 	flight_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
@@ -475,7 +496,7 @@ func _launch_result_coin_flyer(index: int, reward: int, balance_after: int, sour
 	)
 	flight_tween.parallel().tween_property(flyer, "modulate:a", 1.0, 0.12)
 	flight_tween.parallel().tween_property(flyer, "scale", Vector2.ONE, 0.20).set_ease(Tween.EASE_OUT)
-	flight_tween.tween_callback(_on_result_coin_flyer_arrived.bind(flyer, index + 1, reward, balance_after))
+	flight_tween.tween_callback(_on_result_coin_flyer_arrived.bind(flyer, index + 1, reward))
 
 
 func _set_result_coin_flyer_progress(progress: float, flyer: TextureRect, start: Vector2, curve: Vector2, target: Vector2) -> void:
@@ -489,7 +510,7 @@ func _set_result_coin_flyer_progress(progress: float, flyer: TextureRect, start:
 		flyer.scale = Vector2.ONE * lerpf(1.0, 0.72, (progress - 0.78) / 0.22)
 
 
-func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int, balance_after: int) -> void:
+func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int) -> void:
 	if is_instance_valid(flyer):
 		flyer.queue_free()
 	if not self.visible or overlay_mode != "success":
@@ -505,7 +526,6 @@ func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int, 
 		result_coin_pulse_tween.tween_property(result_reward_coin_icon, "scale", Vector2.ONE, 0.10).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	if value >= reward:
 		_set_result_lion_frame(LION_KING_VICTORY_ICON)
-		_start_result_balance_reel(balance_after)
 
 
 func _start_result_balance_reel(balance_after: int) -> void:
@@ -518,9 +538,33 @@ func _start_result_balance_reel(balance_after: int) -> void:
 func _on_result_balance_roll_finished(_balance: int) -> void:
 	if visible and overlay_mode == "success":
 		sound_requested.emit("coin_settle")
-		# The actual reel owns the music endpoint. This remains correct if the
-		# visual duration changes or intermediate values are skipped later.
-		music_stop_requested.emit()
+
+
+func play_success_sequence(excellent: bool, reward: int, balance_after: int) -> void:
+	stop_success_sequence()
+	if excellent:
+		play_petals()
+		result_success_sequence_tween = create_tween()
+		result_success_sequence_tween.tween_interval(RESULT_PETAL_SEQUENCE_DURATION)
+		result_success_sequence_tween.tween_callback(_finish_petals_phase)
+		result_success_sequence_tween.tween_interval(RESULT_AFTER_PETALS_PAUSE)
+		if reward > 0:
+			result_success_sequence_tween.tween_callback(
+				play_coin_animation.bind(reward, balance_after)
+			)
+		return
+	if reward > 0:
+		play_coin_animation(reward, balance_after)
+
+
+func stop_success_sequence() -> void:
+	if result_success_sequence_tween and result_success_sequence_tween.is_valid():
+		result_success_sequence_tween.kill()
+	result_success_sequence_tween = null
+
+
+func _finish_petals_phase() -> void:
+	stop_petals()
 
 
 func stop_coin_animation() -> void:
@@ -568,8 +612,7 @@ func play_lion_animation() -> void:
 	result_piece_icon.rotation = 0.0
 	result_piece_icon.modulate.a = 0.0
 	result_lion_tween = create_tween()
-	result_lion_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	result_lion_tween.tween_property(result_piece_icon, "modulate:a", 1.0, 0.20)
+	result_lion_tween.tween_property(result_piece_icon, "modulate:a", 1.0, 0.32).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	await result_lion_tween.finished
 	if not self.visible or overlay_mode == "failure":
 		return
@@ -595,10 +638,14 @@ func _start_random_result_lion_animation() -> void:
 				LION_KING_VICTORY_OUT_ICON,
 				LION_KING_VICTORY_WAVE_OUT_MID_ICON,
 				LION_KING_VICTORY_ICON,
-				LION_KING_VICTORY_WAVE_IN_MID_ICON
+				LION_KING_VICTORY_WAVE_IN_MID_ICON,
+				LION_KING_VICTORY_IN_ICON,
+				LION_KING_VICTORY_WAVE_IN_MID_ICON,
+				LION_KING_VICTORY_ICON,
+				LION_KING_VICTORY_WAVE_OUT_MID_ICON
 			],
-			[0.18, 0.08, 0.07, 0.08, 0.19, 0.08, 0.09, 0.08],
-			0.34
+			[0.14, 0.09, 0.09, 0.09, 0.16, 0.09, 0.09, 0.09, 0.15, 0.09, 0.12, 0.10],
+			0.28
 		)
 	elif animation_index == 1:
 		_start_result_lion_frame_sequence(
@@ -606,13 +653,16 @@ func _start_random_result_lion_animation() -> void:
 			[
 				LION_KING_VICTORY_ICON,
 				LION_KING_VICTORY_TONGUE_PEEK_ICON,
-				LION_KING_VICTORY_ICON,
 				LION_KING_VICTORY_TONGUE_OUT_ICON,
+				LION_KING_VICTORY_TONGUE_PEEK_ICON,
 				LION_KING_VICTORY_ICON,
-				LION_KING_VICTORY_TONGUE_PEEK_ICON
+				LION_KING_VICTORY_WINK_ICON,
+				LION_KING_VICTORY_ICON,
+				LION_KING_VICTORY_TONGUE_PEEK_ICON,
+				LION_KING_VICTORY_ICON
 			],
-			[0.34, 0.10, 0.09, 0.38, 0.12, 0.10],
-			0.52
+			[0.28, 0.11, 0.32, 0.11, 0.16, 0.12, 0.16, 0.11, 0.15],
+			0.42
 		)
 	else:
 		_start_result_lion_frame_sequence(
@@ -622,10 +672,14 @@ func _start_random_result_lion_animation() -> void:
 				LION_KING_VICTORY_WINK_ICON,
 				LION_KING_VICTORY_FUNNY_ICON,
 				LION_KING_VICTORY_WINK_ICON,
+				LION_KING_VICTORY_ICON,
+				LION_KING_VICTORY_WAVE_IN_MID_ICON,
+				LION_KING_VICTORY_ICON,
+				LION_KING_VICTORY_WINK_ICON,
 				LION_KING_VICTORY_ICON
 			],
-			[0.28, 0.12, 0.46, 0.13, 0.18],
-			0.60
+			[0.24, 0.11, 0.38, 0.11, 0.16, 0.10, 0.14, 0.10, 0.15],
+			0.48
 		)
 
 
@@ -641,6 +695,27 @@ func _start_result_lion_frame_sequence(animation_name: String, frames: Array, du
 func _set_result_lion_frame(frame: Texture2D) -> void:
 	if result_piece_icon:
 		result_piece_icon.texture = frame
+
+
+func _set_result_lion_coin_frame(index: int, reward: int) -> void:
+	var frames := [
+		LION_KING_VICTORY_IN_ICON,
+		LION_KING_VICTORY_WAVE_IN_MID_ICON,
+		LION_KING_VICTORY_ICON,
+		LION_KING_VICTORY_WAVE_OUT_MID_ICON,
+		LION_KING_VICTORY_OUT_ICON,
+		LION_KING_VICTORY_WAVE_OUT_MID_ICON,
+		LION_KING_VICTORY_ICON,
+		LION_KING_VICTORY_WAVE_IN_MID_ICON,
+	]
+	var frame_index := 2
+	if reward > 1:
+		frame_index = clampi(
+			roundi(float(index) / float(reward - 1) * float(frames.size() - 1)),
+			0,
+			frames.size() - 1
+		)
+	_set_result_lion_frame(frames[frame_index])
 
 
 func stop_lion_animation() -> void:
@@ -660,9 +735,10 @@ func stop_lion_animation() -> void:
 
 
 func play_petals() -> void:
-	if not result_petals_layer or not self.visible or overlay_mode != "success":
+	if not result_petals_layer or not self.visible or overlay_mode != "success" or not result_is_excellent:
 		return
 	stop_petals()
+	sound_requested.emit("petal_scatter")
 	result_petals_layer.show()
 	var viewport_size := self.size
 	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
@@ -670,7 +746,7 @@ func play_petals() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	var colors := [Color("#FFD86B"), Color("#FF8FA8"), Color("#F7A7D8"), Color("#FFF3C4"), Color("#A8E6CF")]
-	for index in range(24):
+	for index in range(RESULT_PETAL_COUNT):
 		var petal := Polygon2D.new()
 		var scale_factor := rng.randf_range(0.72, 1.22)
 		petal.polygon = PackedVector2Array([
@@ -683,8 +759,8 @@ func play_petals() -> void:
 		petal.rotation = rng.randf_range(-PI, PI)
 		petal.visible = false
 		result_petals_layer.add_child(petal)
-		var delay := rng.randf_range(0.0, 0.95)
-		var duration := rng.randf_range(1.85, 2.75)
+		var delay := rng.randf_range(0.0, RESULT_PETAL_DELAY_MAX)
+		var duration := rng.randf_range(RESULT_PETAL_DURATION_MIN, RESULT_PETAL_DURATION_MAX)
 		var end_position := Vector2(
 			clampf(petal.position.x + rng.randf_range(-90.0, 90.0), 8.0, viewport_size.x - 8.0),
 			viewport_size.y + 35.0
@@ -713,6 +789,7 @@ func stop_petals() -> void:
 
 
 func stop_all_animations() -> void:
+	stop_success_sequence()
 	stop_coin_animation()
 	stop_lion_animation()
 	stop_petals()
