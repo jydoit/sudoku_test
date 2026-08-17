@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c447uj1373nql"
-path="res://.godot/imported/coin.png-d9debef27353ce88915cf147748ea67d.ctex"
+uid="uid://dfob5tr8i27xf"
+path="res://.godot/imported/lion_king_victory_wink.svg-5d5fc3724f46547801fdf35685b8019b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/ui/coin.png"
-dest_files=["res://.godot/imported/coin.png-d9debef27353ce88915cf147748ea67d.ctex"]
+source_file="res://assets/ui/lion_king_victory_wink.svg"
+dest_files=["res://.godot/imported/lion_king_victory_wink.svg-5d5fc3724f46547801fdf35685b8019b.ctex"]
 
 [params]
 
@@ -38,3 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
+svg/scale=1.0
+editor/scale_with_editor_scale=false
+editor/convert_colors_with_editor_theme=false

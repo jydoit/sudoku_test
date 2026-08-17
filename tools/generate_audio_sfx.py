@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the warm wooden-toy and paper SFX candidate pack."""
+"""Generate the warm wooden-toy, paper, and result-celebration audio pack."""
 
 from __future__ import annotations
 
@@ -145,6 +145,21 @@ def glass_sparkle(freq: float, duration: float, seed: int) -> list[float]:
     return apply_fades(result, 0.004, min(0.18, duration * 0.42))
 
 
+def picker_tick(freq: float, duration: float, seed: int) -> list[float]:
+    """A short, damped selector-wheel notch without a bright metal tail."""
+    rng = random.Random(seed)
+    transient = band_limited_noise(duration, 260.0, 1_650.0, rng)
+    result: list[float] = []
+    for index in range(seconds_to_samples(duration)):
+        time = index / SAMPLE_RATE
+        position = time / duration
+        body = math.sin(TAU * freq * time + 0.18) * math.exp(-8.5 * position)
+        body += math.sin(TAU * freq * 1.92 * time + 0.42) * 0.09 * math.exp(-12.0 * position)
+        contact = transient[index] * 0.075 * math.exp(-42.0 * position)
+        result.append(body * 0.52 + contact)
+    return apply_fades(result, 0.0015, min(0.032, duration * 0.28))
+
+
 def kalimba_tone(
     freq: float,
     duration: float,
@@ -233,10 +248,22 @@ def paper_rub(duration: float, seed: int) -> list[float]:
 
 def make_erase(seed: int) -> list[float]:
     return mix(
-        0.310,
+        0.185,
         [
-            (0.015, paper_rub(0.245, seed), 0.56),
-            (0.080, paper_rub(0.180, seed + 1), 0.22),
+            (0.006, paper_rub(0.145, seed), 0.42),
+            (0.047, paper_rub(0.105, seed + 1), 0.15),
+        ],
+    )
+
+
+def make_mark(seed: int, frequency: float) -> list[float]:
+    """A compact, low-brightness placement tick paired with paper erase."""
+    return mix(
+        0.125,
+        [
+            (0.000, picker_tick(frequency, 0.105, seed), 0.46),
+            (0.006, paper_rub(0.070, seed + 1), 0.12),
+            (0.020, wood_tone(196.0, 0.085, seed + 2, 0.38), 0.11),
         ],
     )
 
@@ -446,73 +473,100 @@ def make_block_clear(seed: int) -> list[float]:
     )
 
 
-def make_petal_scatter(seed: int) -> list[float]:
-    """A short non-musical flutter and sparkle burst for the petal shower."""
-    duration = 1.75
-    rng = random.Random(seed)
-    airy_noise = band_limited_noise(duration, 650.0, 5_600.0, rng)
-    airy: list[float] = []
-    for index, sample in enumerate(airy_noise):
-        time = index / SAMPLE_RATE
-        envelope = math.exp(-1.55 * time)
-        flutter = 0.38 + 0.30 * (0.5 + 0.5 * math.sin(TAU * 9.2 * time))
-        flutter += 0.18 * (0.5 + 0.5 * math.sin(TAU * 15.7 * time + 0.8))
-        airy.append(sample * envelope * flutter)
-    airy = apply_fades(airy, 0.018, 0.24)
+def make_result_cheerful(seed: int) -> list[float]:
+    """A warm, playful result cue with a gentle rise and a quiet landing.
 
-    layers: list[tuple[float, list[float], float]] = [(0.0, airy, 0.34)]
-    for flutter_index, offset in enumerate([0.04, 0.22, 0.46, 0.73, 1.03]):
+    The melodic phrase fills the compact petal phase.  After roughly 4.8
+    seconds it deliberately thins out, leaving room for the physical coin
+    arrival and reel sounds without an abrupt musical cut.
+    """
+    duration = 9.00
+    layers: list[tuple[float, list[float], float]] = [
+        (0.0, warm_nature_pad([130.81, 164.81, 196.00], duration), 0.52),
+    ]
+
+    melody = [
+        (0.16, 392.00), (0.48, 440.00), (0.80, 523.25), (1.14, 587.33),
+        (1.48, 523.25), (1.82, 440.00), (2.16, 392.00),
+        (2.52, 440.00), (2.86, 523.25), (3.20, 659.25),
+        (3.54, 587.33), (3.88, 523.25), (4.22, 440.00), (4.48, 523.25),
+    ]
+    for note_index, (offset, frequency) in enumerate(melody):
+        phrase_progress = offset / 4.6
+        gain = 0.25 if phrase_progress < 0.72 else 0.21
         layers.append(
             (
                 offset,
-                leaf_shaker(0.34, seed + 10 + flutter_index),
-                0.16 - flutter_index * 0.012,
+                kalimba_tone(
+                    frequency,
+                    0.72,
+                    seed + note_index,
+                    brightness=0.48,
+                ),
+                gain,
             )
         )
-    # Sparse sparkles indicate celebration without forming a melody or a beat.
-    for sparkle_index, (offset, frequency) in enumerate(
-        [(0.08, 1_160.0), (0.31, 1_520.0), (0.62, 1_340.0), (0.98, 1_740.0)]
+
+    # Low wooden beats add cheerful motion without the brittle high-frequency
+    # sparkle that made the previous result cue harsh on phone speakers.
+    for beat_index, (offset, frequency) in enumerate(
+        [
+            (0.16, 196.00), (0.84, 220.00), (1.52, 261.63),
+            (2.20, 196.00), (2.88, 220.00), (3.56, 261.63),
+            (4.24, 220.00),
+        ]
     ):
         layers.append(
             (
                 offset,
-                glass_sparkle(frequency, 0.42, seed + 100 + sparkle_index),
-                0.10,
+                wood_tone(frequency, 0.46, seed + 100 + beat_index, 0.62),
+                0.16,
             )
         )
-    return soft_compress(mix(duration, layers), 2.2)
+
+    for shaker_index, offset in enumerate([0.10, 0.78, 1.46, 2.14, 2.82, 3.50, 4.18]):
+        layers.append(
+            (offset, leaf_shaker(0.30, seed + 200 + shaker_index), 0.055)
+        )
+
+    # The final two low notes bridge into the coin phase; the long source fade
+    # lets AudioController stop it at the exact end of the number reel.
+    layers.extend(
+        [
+            (4.74, kalimba_tone(523.25, 0.84, seed + 300, brightness=0.38), 0.14),
+            (5.42, kalimba_tone(392.00, 1.00, seed + 301, brightness=0.34), 0.11),
+        ]
+    )
+    cue = soft_compress(mix(duration, layers), 1.65)
+    return apply_fades(cue, 0.12, 1.10)
 
 
 def make_coin_arrive(seed: int) -> list[float]:
-    """A clear two-coin metal collision for each arrival at the balance icon."""
-    return mix(
-        0.220,
-        [
-            (0.000, metal_tap(1_080.0, 0.205, seed), 0.48),
-            (0.012, metal_tap(1_620.0, 0.170, seed + 1), 0.27),
-            (0.030, metal_tap(620.0, 0.165, seed + 2), 0.16),
-        ],
+    """A muted gold-coin landing with a compact, non-ringing contact."""
+    soft_bronze = lowpass(metal_tap(520.0, 0.155, seed), 1_850.0)
+    return soft_compress(
+        mix(
+            0.180,
+            [
+                (0.000, soft_bronze, 0.34),
+                (0.012, picker_tick(310.0, 0.135, seed + 1), 0.42),
+            ],
+        ),
+        1.35,
     )
 
 
 def make_coin_reel(seed: int) -> list[float]:
-    """A one-second metal ratchet that slows with the visual number reel."""
-    layers: list[tuple[float, list[float], float]] = []
-    offsets = [0.000, 0.055, 0.112, 0.173, 0.239, 0.311, 0.390, 0.478, 0.577, 0.690, 0.820, 0.958]
-    for index, offset in enumerate(offsets):
-        progress = index / max(1, len(offsets) - 1)
-        frequency = 780.0 - progress * 230.0 + (36.0 if index % 2 == 0 else -22.0)
-        gain = 0.20 + progress * 0.08
-        layers.append((offset, metal_tap(frequency, 0.105 + progress * 0.035, seed + index), gain))
-    return mix(1.080, layers)
+    """One tactile notch; runtime schedules it at each real reel step."""
+    return mix(0.095, [(0.0, picker_tick(385.0, 0.090, seed), 0.58)])
 
 
 def make_coin_settle(seed: int) -> list[float]:
     return mix(
-        0.285,
+        0.190,
         [
-            (0.000, metal_tap(720.00, 0.260, seed), 0.42),
-            (0.045, metal_tap(1_440.00, 0.220, seed + 1), 0.28),
+            (0.000, picker_tick(330.0, 0.150, seed), 0.52),
+            (0.028, wood_tone(196.0, 0.145, seed + 1, 0.45), 0.20),
         ],
     )
 
@@ -534,9 +588,9 @@ def write_wav(path: Path, samples: list[float], peak_db: float) -> None:
 
 def build_pack(output_dir: Path) -> None:
     candidates = {
-        "metal_mark_01.wav": (metal_tap(790.0, 0.230, 110), -14.0),
-        "metal_mark_02.wav": (metal_tap(860.0, 0.220, 210), -14.0),
-        "paper_erase.wav": (make_erase(310), -16.0),
+        "metal_mark_01.wav": (make_mark(110, 430.0), -16.5),
+        "metal_mark_02.wav": (make_mark(210, 470.0), -16.5),
+        "paper_erase.wav": (make_erase(310), -16.5),
         "wood_correct.wav": (make_correct(410), -11.0),
         "wood_correct_final.wav": (make_final_correct(420), -14.0),
         "wood_wrong.wav": (make_wrong(510), -13.0),
@@ -560,10 +614,10 @@ def build_pack(output_dir: Path) -> None:
         "block_revive.wav": (make_revive(2310), -12.5),
         "block_assembly_complete.wav": (make_assembly_complete(2410), -10.5),
         "block_clear.wav": (make_block_clear(2510), -15.0),
-        "petal_scatter.wav": (make_petal_scatter(4250), -12.0),
-        "coin_arrive.wav": (make_coin_arrive(4300), -12.0),
-        "coin_reel.wav": (make_coin_reel(4400), -13.5),
-        "coin_settle.wav": (make_coin_settle(4500), -13.0),
+        "result_cheerful.wav": (make_result_cheerful(4250), -10.0),
+        "coin_arrive.wav": (make_coin_arrive(4300), -15.0),
+        "coin_reel.wav": (make_coin_reel(4400), -18.0),
+        "coin_settle.wav": (make_coin_settle(4500), -16.0),
     }
     for filename, (samples, peak_db) in candidates.items():
         write_wav(output_dir / filename, samples, peak_db)

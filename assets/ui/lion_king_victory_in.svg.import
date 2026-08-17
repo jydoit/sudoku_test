@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d10rphu8xuvgj"
-path="res://.godot/imported/lion_king_victory_wave_out_mid.png-e9c7867ce71865be5c6d99ee04f5f3b5.ctex"
+uid="uid://bagjt6cpv1lo5"
+path="res://.godot/imported/lion_king_victory_in.svg-d54146520f7b15f7f0d116cf680fcdca.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/ui/lion_king_victory_wave_out_mid.png"
-dest_files=["res://.godot/imported/lion_king_victory_wave_out_mid.png-e9c7867ce71865be5c6d99ee04f5f3b5.ctex"]
+source_file="res://assets/ui/lion_king_victory_in.svg"
+dest_files=["res://.godot/imported/lion_king_victory_in.svg-d54146520f7b15f7f0d116cf680fcdca.ctex"]
 
 [params]
 
@@ -38,3 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
+svg/scale=1.0
+editor/scale_with_editor_scale=false
+editor/convert_colors_with_editor_theme=false

@@ -247,6 +247,24 @@ static func evaluate_placement_state(
 			if not has_space:
 				return {"valid": true, "deadlocked": true, "layout": {}, "allowedByPiece": {}}
 	return {"valid": true, "deadlocked": false, "layout": {}, "allowedByPiece": allowed}
+
+
+static func placement_disconnects_same_color(
+	data: Dictionary,
+	placements: Dictionary,
+	piece_id: int,
+	origin: Array
+) -> bool:
+	if origin.size() < 2:
+		return false
+	var candidate := placements.duplicate(true)
+	candidate[str(piece_id)] = [int(origin[0]), int(origin[1])]
+	var occupancy := _placement_occupancy(data, candidate)
+	if not bool(occupancy.get("valid", false)):
+		return false
+	return not _placed_regions_can_still_connect(data, occupancy.get("regions", {}))
+
+
 static func _placed_regions_can_still_connect(data: Dictionary, occupied_regions: Dictionary) -> bool:
 	var base_regions: Array = data.get("baseRegions", [])
 	var rows := int(data.get("rows", base_regions.size()))

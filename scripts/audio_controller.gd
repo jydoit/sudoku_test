@@ -32,13 +32,15 @@ const BLOCK_CLEAR_STREAM = preload("res://assets/audio/candidates/block_clear.wa
 const COIN_ARRIVE_STREAM = preload("res://assets/audio/candidates/coin_arrive.wav")
 const COIN_REEL_STREAM = preload("res://assets/audio/candidates/coin_reel.wav")
 const COIN_SETTLE_STREAM = preload("res://assets/audio/candidates/coin_settle.wav")
-const PETAL_SCATTER_STREAM = preload("res://assets/audio/candidates/petal_scatter.wav")
+const RESULT_MUSIC_PATHS := {
+	"celebration": "res://assets/audio/candidates/result_cheerful.wav",
+}
 
 const GAMEPLAY_POOL_SIZE := 7
 const UI_POOL_SIZE := 4
 const CELEBRATION_POOL_SIZE := 2
-const MARK_INTERVAL_MS := 160
-const ERASE_INTERVAL_MS := 125
+const MARK_INTERVAL_MS := 110
+const ERASE_INTERVAL_MS := 105
 const SNAP_INTERVAL_MS := 90
 const DEADLOCK_INTERVAL_MS := 500
 const CELEBRATION_DUCK_DB := -3.5
@@ -47,6 +49,11 @@ const CELEBRATION_DUCK_OUT := 0.30
 const GAMEPLAY_BUS := &"GameplaySFX"
 const UI_BUS := &"UISFX"
 const CELEBRATION_BUS := &"CelebrationSFX"
+const RESULT_MUSIC_BUS := &"ResultMusic"
+const RESULT_MUSIC_VOLUME_DB := -5.0
+const RESULT_MUSIC_SILENT_DB := -42.0
+const RESULT_MUSIC_FADE_IN := 0.28
+const RESULT_MUSIC_FADE_OUT := 0.55
 const MASTER_LIMITER_CEILING_DB := -1.0
 
 var gameplay_players: Array[AudioStreamPlayer] = []
@@ -60,6 +67,10 @@ var last_erase_ms := -ERASE_INTERVAL_MS
 var last_snap_ms := -SNAP_INTERVAL_MS
 var last_deadlock_ms := -DEADLOCK_INTERVAL_MS
 var celebration_duck_tween: Tween
+var result_music_player: AudioStreamPlayer
+var result_music_tween: Tween
+var result_music_streams: Dictionary = {}
+var result_music_kind := ""
 var music_enabled := true
 var sfx_enabled := true
 var haptics_enabled := true
@@ -69,11 +80,17 @@ func _ready() -> void:
 	_ensure_bus(GAMEPLAY_BUS)
 	_ensure_bus(UI_BUS)
 	_ensure_bus(CELEBRATION_BUS)
+	_ensure_bus(RESULT_MUSIC_BUS)
 	_ensure_master_limiter()
 	gameplay_players = _build_pool(GAMEPLAY_POOL_SIZE, GAMEPLAY_BUS)
 	ui_players = _build_pool(UI_POOL_SIZE, UI_BUS)
 	celebration_players = _build_pool(CELEBRATION_POOL_SIZE, CELEBRATION_BUS)
+	result_music_player = AudioStreamPlayer.new()
+	result_music_player.bus = RESULT_MUSIC_BUS
+	add_child(result_music_player)
 	_apply_audio_preferences()
+	if not music_enabled:
+		stop_result_music(true)
 
 
 func set_audio_preferences(enable_music: bool, enable_sfx: bool, enable_haptics: bool) -> void:
@@ -81,6 +98,8 @@ func set_audio_preferences(enable_music: bool, enable_sfx: bool, enable_haptics:
 	sfx_enabled = enable_sfx
 	haptics_enabled = enable_haptics
 	_apply_audio_preferences()
+	if not music_enabled:
+		stop_result_music(true)
 
 
 func audio_preferences() -> Dictionary:
@@ -97,7 +116,7 @@ func play_mark() -> void:
 		return
 	last_mark_ms = now
 	var stream = MARK_STREAMS[randi() % MARK_STREAMS.size()]
-	_play_gameplay(stream, -1.5, randf_range(0.96, 1.04))
+	_play_gameplay(stream, -1.0, randf_range(0.98, 1.02))
 
 
 func play_erase(throttled: bool = false) -> void:
@@ -106,7 +125,7 @@ func play_erase(throttled: bool = false) -> void:
 		if now - last_erase_ms < ERASE_INTERVAL_MS:
 			return
 		last_erase_ms = now
-	_play_gameplay(ERASE_STREAM, -1.5, randf_range(0.98, 1.02))
+	_play_gameplay(ERASE_STREAM, -1.0, randf_range(0.99, 1.01))
 
 
 func play_correct() -> void:
@@ -212,14 +231,58 @@ func play_block_clear() -> void:
 
 func play_result_sound(kind: String) -> void:
 	match kind:
-		"petal_scatter":
-			_play_celebration(PETAL_SCATTER_STREAM, -1.5)
 		"coin_arrive":
-			_play_ui(COIN_ARRIVE_STREAM, -2.0, randf_range(0.98, 1.04))
+			_play_ui(COIN_ARRIVE_STREAM, -1.5, randf_range(0.99, 1.01))
 		"coin_reel":
-			_play_ui(COIN_REEL_STREAM, -1.0)
+			_play_ui(COIN_REEL_STREAM, -0.5)
 		"coin_settle":
 			_play_ui(COIN_SETTLE_STREAM, -1.0)
+
+
+func play_result_music(kind: String) -> void:
+	if not result_music_player or not music_enabled or not RESULT_MUSIC_PATHS.has(kind):
+		return
+	if result_music_player.playing and result_music_kind == kind:
+		return
+	if result_music_tween and result_music_tween.is_valid():
+		result_music_tween.kill()
+	result_music_player.stop()
+	if not result_music_streams.has(kind):
+		var stream := load(str(RESULT_MUSIC_PATHS[kind])) as AudioStream
+		if not stream:
+			return
+		result_music_streams[kind] = stream
+	result_music_kind = kind
+	result_music_player.stream = result_music_streams[kind]
+	result_music_player.volume_db = RESULT_MUSIC_SILENT_DB
+	result_music_player.play()
+	result_music_tween = create_tween()
+	result_music_tween.tween_property(
+		result_music_player,
+		"volume_db",
+		RESULT_MUSIC_VOLUME_DB,
+		RESULT_MUSIC_FADE_IN
+	).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+
+func stop_result_music(immediate: bool = false) -> void:
+	result_music_kind = ""
+	if result_music_tween and result_music_tween.is_valid():
+		result_music_tween.kill()
+	result_music_tween = null
+	if not result_music_player or not result_music_player.playing:
+		return
+	if immediate:
+		result_music_player.stop()
+		return
+	result_music_tween = create_tween()
+	result_music_tween.tween_property(
+		result_music_player,
+		"volume_db",
+		RESULT_MUSIC_SILENT_DB,
+		RESULT_MUSIC_FADE_OUT
+	).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	result_music_tween.tween_callback(result_music_player.stop)
 
 func _play_gameplay(stream: AudioStream, volume_db: float = 0.0, pitch_scale: float = 1.0) -> void:
 	next_gameplay_player = _play_from_pool(gameplay_players, next_gameplay_player, stream, volume_db, pitch_scale)
@@ -296,6 +359,9 @@ func _apply_audio_preferences() -> void:
 		var bus_index := AudioServer.get_bus_index(bus_name)
 		if bus_index >= 0:
 			AudioServer.set_bus_mute(bus_index, not sfx_enabled)
+	var music_bus_index := AudioServer.get_bus_index(RESULT_MUSIC_BUS)
+	if music_bus_index >= 0:
+		AudioServer.set_bus_mute(music_bus_index, not music_enabled)
 
 
 func _begin_celebration_duck(duration: float) -> void:

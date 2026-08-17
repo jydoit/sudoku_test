@@ -186,6 +186,117 @@ static func evaluate_candidate(data: Dictionary, placements: Dictionary, piece_i
 	return evaluation
 
 
+static func tutorial_demo_targets(data: Dictionary) -> Dictionary:
+	if data.is_empty():
+		return {}
+	var open_origins := allowed_origins(data, {})
+	var correct_candidates: Array[Dictionary] = []
+	for raw_layout in data.get("validLayouts", []):
+		if not raw_layout is Dictionary:
+			continue
+		var layout: Dictionary = raw_layout
+		var layout_placements: Dictionary = layout.get("placements", {})
+		for piece in data.get("pieces", []):
+			var piece_id := int(piece.get("pieceId", -1))
+			var key := str(piece_id)
+			if piece_id < 0 or not layout_placements.has(key):
+				continue
+			var origin = layout_placements[key]
+			if not origin is Array or not origin_in_list(origin, open_origins.get(key, [])):
+				continue
+			var touching_cells := _fixed_same_color_neighbors(data, piece, origin)
+			if touching_cells.is_empty():
+				continue
+			correct_candidates.append({
+				"pieceId": piece_id,
+				"origin": [int(origin[0]), int(origin[1])],
+				"regionId": int(piece.get("regionId", -1)),
+				"touchingCells": touching_cells,
+				"cellCount": (piece.get("cells", []) as Array).size()
+			})
+	if correct_candidates.is_empty():
+		return {}
+
+	correct_candidates.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
+		if int(first["cellCount"]) != int(second["cellCount"]):
+			return int(first["cellCount"]) < int(second["cellCount"])
+		return int(first["pieceId"]) < int(second["pieceId"])
+	)
+	for correct in correct_candidates:
+		var piece_id := int(correct["pieceId"])
+		var wrong := _wrong_connectivity_target(data, piece_id, open_origins.get(str(piece_id), []), correct["origin"])
+		if not wrong.is_empty():
+			return {"wrong": wrong, "correct": correct}
+	for correct in correct_candidates:
+		for piece in data.get("pieces", []):
+			var piece_id := int(piece.get("pieceId", -1))
+			var wrong := _wrong_connectivity_target(data, piece_id, open_origins.get(str(piece_id), []), [])
+			if not wrong.is_empty():
+				return {"wrong": wrong, "correct": correct}
+	return {}
+
+
+static func _wrong_connectivity_target(
+	data: Dictionary,
+	piece_id: int,
+	origins: Array,
+	excluded_origin
+) -> Dictionary:
+	for raw_origin in origins:
+		if not raw_origin is Array or raw_origin.size() < 2:
+			continue
+		if excluded_origin is Array and origins_equal(raw_origin, excluded_origin):
+			continue
+		if CompositeLevelScript.placement_disconnects_same_color(data, {}, piece_id, raw_origin):
+			var piece := _piece_by_id(data, piece_id)
+			return {
+				"pieceId": piece_id,
+				"origin": [int(raw_origin[0]), int(raw_origin[1])],
+				"regionId": int(piece.get("regionId", -1)),
+				"cellCount": (piece.get("cells", []) as Array).size()
+			}
+	return {}
+
+
+static func _fixed_same_color_neighbors(data: Dictionary, piece: Dictionary, origin: Array) -> Array:
+	var result: Array = []
+	if origin.size() < 2:
+		return result
+	var rows := int(data.get("rows", 0))
+	var cols := int(data.get("cols", 0))
+	var base_regions: Array = data.get("baseRegions", [])
+	var construction := {}
+	for raw_cell in data.get("constructionCells", []):
+		if raw_cell is Array and raw_cell.size() >= 2:
+			construction["%d,%d" % [int(raw_cell[0]), int(raw_cell[1])]] = true
+	var region_id := int(piece.get("regionId", -1))
+	var seen := {}
+	for raw_cell in piece.get("cells", []):
+		if not raw_cell is Array or raw_cell.size() < 2:
+			continue
+		var row := int(origin[0]) + int(raw_cell[0])
+		var col := int(origin[1]) + int(raw_cell[1])
+		for direction in [[-1, 0], [1, 0], [0, -1], [0, 1]]:
+			var neighbor_row := row + int(direction[0])
+			var neighbor_col := col + int(direction[1])
+			if neighbor_row < 0 or neighbor_col < 0 or neighbor_row >= rows or neighbor_col >= cols:
+				continue
+			var key := "%d,%d" % [neighbor_row, neighbor_col]
+			if construction.has(key) or seen.has(key):
+				continue
+			if neighbor_row < base_regions.size() and neighbor_col < (base_regions[neighbor_row] as Array).size() and int(base_regions[neighbor_row][neighbor_col]) == region_id:
+				seen[key] = true
+				result.append([neighbor_row, neighbor_col])
+	return result
+
+
+static func _piece_by_id(data: Dictionary, piece_id: int) -> Dictionary:
+	for piece in data.get("pieces", []):
+		if int(piece.get("pieceId", -1)) == piece_id:
+			return piece
+	return {}
+
+
 static func origin_in_list(origin: Array, origins: Array) -> bool:
 	for raw_origin in origins:
 		if origins_equal(origin, raw_origin):

@@ -31,7 +31,7 @@ const KING_SOLUTION_ORDINALS := [2, 4, 6, 8]
 const DIFFICULTY_ORDER := ["simple", "medium", "hard", "challenge"]
 const SIZE_UNLOCK_DISPLAY_LEVELS := {
 	5: 1,
-	6: 20,
+	6: 11,
 	7: 80,
 	8: 160,
 	9: 240

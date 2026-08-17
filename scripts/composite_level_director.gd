@@ -2,6 +2,7 @@ class_name CompositeLevelDirector
 extends RefCounted
 
 const LevelDirectorScript = preload("res://scripts/level_director.gd")
+const CompositePlacementEngineScript = preload("res://scripts/rules/composite_placement_engine.gd")
 
 const PATTERNS := ["simple", "medium", "hard"]
 const MIN_BOARD_SIZE := 6
@@ -10,6 +11,7 @@ const EXPLORATION_END := 0.20
 const FULL_EVIDENCE_TOTAL := 30
 const FULL_EVIDENCE_PER_PATTERN := 6
 const MAX_RUN_HISTORY := 40
+const OPENING_PATTERN_CYCLE := ["simple", "medium", "simple", "medium"]
 
 
 static func normalize_progress(progress: Dictionary) -> Dictionary:
@@ -83,20 +85,42 @@ static func recommend(
 	if patterns.is_empty():
 		return {}
 	var size := int(selected_level.get("rows", 0))
-	_ensure_pattern_size(progress, size, patterns)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = _recommendation_seed(round_number, formal_display_level, progress)
-	var exploration := exploration_probability(progress, size)
-	var selection_mode := "random_exploration"
 	var pattern := ""
-	if rng.randf() < exploration:
-		pattern = str(patterns[rng.randi_range(0, patterns.size() - 1)])
+	var offline_data: Dictionary = {}
+	var exploration := 0.0
+	var selection_mode := "opening_cycle"
+	if round_number >= 1 and round_number <= OPENING_PATTERN_CYCLE.size():
+		var preferred_pattern := str(OPENING_PATTERN_CYCLE[round_number - 1])
+		if round_number == 1:
+			var opening := _opening_two_piece_candidate(
+				catalog_levels, composite_entries, selected_level, preferred_pattern
+			)
+			if opening.is_empty():
+				return {}
+			selected_level = opening["level"]
+			source_index = int(selected_level.get("compositeSourceIndex", -1))
+			level_id = int(selected_level.get("levelId", -1))
+			size = int(selected_level.get("rows", 0))
+			patterns = _available_patterns(composite_entries, level_id)
+			pattern = str(opening["pattern"])
+			offline_data = opening["data"]
+		else:
+			pattern = preferred_pattern if patterns.has(preferred_pattern) else _opening_fallback_pattern(patterns)
+			offline_data = _find_entry(composite_entries, level_id, pattern)
 	else:
-		selection_mode = "posterior_multinomial"
-		pattern = _sample_pattern_from_posterior(progress, size, patterns, rng)
-	var offline_data = _find_entry(composite_entries, level_id, pattern)
-	if not offline_data is Dictionary or offline_data.is_empty():
+		var rng := RandomNumberGenerator.new()
+		rng.seed = _recommendation_seed(round_number, formal_display_level, progress)
+		exploration = exploration_probability(progress, size)
+		selection_mode = "random_exploration"
+		if rng.randf() < exploration:
+			pattern = str(patterns[rng.randi_range(0, patterns.size() - 1)])
+		else:
+			selection_mode = "posterior_multinomial"
+			pattern = _sample_pattern_from_posterior(progress, size, patterns, rng)
+		offline_data = _find_entry(composite_entries, level_id, pattern)
+	if offline_data.is_empty():
 		return {}
+	_ensure_pattern_size(progress, size, patterns)
 
 	var schedule := LevelDirectorScript.manual_schedule_for_level(levels, source_index, 1, "home_composite")
 	schedule["assemblyEnabled"] = true
@@ -114,6 +138,48 @@ static func recommend(
 		"difficultyPattern": pattern,
 		"schedule": schedule
 	}
+
+
+static func _opening_two_piece_candidate(
+	catalog_levels: Array,
+	composite_entries,
+	preferred_level: Dictionary,
+	preferred_pattern: String
+) -> Dictionary:
+	var candidates := catalog_levels.duplicate(false)
+	var preferred_size := int(preferred_level.get("rows", 0))
+	var preferred_source := int(preferred_level.get("compositeSourceIndex", -1))
+	candidates.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
+		var first_size_penalty := 0 if int(first.get("rows", 0)) == preferred_size else 1
+		var second_size_penalty := 0 if int(second.get("rows", 0)) == preferred_size else 1
+		if first_size_penalty != second_size_penalty:
+			return first_size_penalty < second_size_penalty
+		return absi(int(first.get("compositeSourceIndex", -1)) - preferred_source) < absi(int(second.get("compositeSourceIndex", -1)) - preferred_source)
+	)
+	for level in candidates:
+		var level_id := int(level.get("levelId", -1))
+		var patterns := _available_patterns(composite_entries, level_id)
+		var ordered_patterns: Array = []
+		if patterns.has(preferred_pattern):
+			ordered_patterns.append(preferred_pattern)
+		for fallback in ["simple", "medium"]:
+			if patterns.has(fallback) and not ordered_patterns.has(fallback):
+				ordered_patterns.append(fallback)
+		for pattern in ordered_patterns:
+			var data := _find_entry(composite_entries, level_id, str(pattern))
+			if data.is_empty() or (data.get("pieces", []) as Array).size() != 2:
+				continue
+			var targets := CompositePlacementEngineScript.tutorial_demo_targets(data)
+			if targets.has("wrong") and targets.has("correct"):
+				return {"level": level, "pattern": str(pattern), "data": data}
+	return {}
+
+
+static func _opening_fallback_pattern(patterns: Array) -> String:
+	for fallback in ["simple", "medium"]:
+		if patterns.has(fallback):
+			return fallback
+	return ""
 
 
 static func record_result(

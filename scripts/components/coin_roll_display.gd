@@ -1,6 +1,7 @@
 extends HBoxContainer
 
 signal roll_finished(value: int)
+signal reel_notch(value: int, step_index: int, step_count: int)
 
 const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resource.gd")
 const MAX_CONTINUOUS_ROLL_STEPS := 10
@@ -178,7 +179,9 @@ func animate_reel_to(value: int, total_duration: float, max_visual_steps: int = 
 		else:
 			outgoing_roll.set_trans(Tween.TRANS_LINEAR)
 			incoming_roll.set_trans(Tween.TRANS_LINEAR)
-		roll_tween.tween_callback(_finish_roll_step.bind(incoming, next_value))
+		roll_tween.tween_callback(
+			_finish_reel_step.bind(incoming, next_value, step_index, visual_step_count)
+		)
 	roll_tween.tween_callback(_finish_animation.bind(target))
 
 
@@ -358,6 +361,11 @@ func _prepare_roll_step(outgoing: Label, incoming: Label, value: int, direction:
 func _finish_roll_step(incoming: Label, value: int) -> void:
 	_displayed_value = maxi(0, value)
 	_primary_active = incoming == primary_label
+
+
+func _finish_reel_step(incoming: Label, value: int, step_index: int, step_count: int) -> void:
+	_finish_roll_step(incoming, value)
+	reel_notch.emit(_displayed_value, step_index, step_count)
 
 
 func _finish_queued_step(incoming: Label, value: int) -> void:

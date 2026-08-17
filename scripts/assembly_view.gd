@@ -10,7 +10,8 @@ signal intro_finished()
 signal intro_cancelled()
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
-const BLOCK_TILE_TEXTURE: Texture2D = preload("res://assets/ui/block_tile_neutral.png")
+const CompositePlacementEngineScript = preload("res://scripts/rules/composite_placement_engine.gd")
+const BLOCK_TILE_TEXTURE: Texture2D = preload("res://assets/ui/block_tile_neutral.svg")
 const BOARD_LAYOUT_INSET := 10.0
 const TRAY_CELL_SIZE := 21.0
 const TRAY_SLOT_HEIGHT := 94.0
@@ -58,6 +59,15 @@ var _return_slot_index := -1
 var _intro_active := false
 var _intro_guided_piece_id := -1
 var _intro_guided_origin := Vector2i(-99, -99)
+var _intro_targets: Dictionary = {}
+var _intro_stage := ""
+var _intro_demo_piece_id := -1
+var _intro_demo_origin := Vector2i(-99, -99)
+var _intro_demo_pointer := Vector2.ZERO
+var _intro_demo_start := Vector2.ZERO
+var _intro_demo_destination := Vector2.ZERO
+var _intro_demo_visible := false
+var _intro_demo_placed := false
 var _intro_panel: PanelContainer
 var _intro_caption: Label
 var _intro_skip_button: Button
@@ -147,27 +157,28 @@ func play_intro() -> void:
 		intro_finished.emit()
 		return
 	_reset_intro()
-	var target := _select_intro_target()
-	if target.is_empty():
+	_intro_targets = CompositePlacementEngineScript.tutorial_demo_targets(assembly_data)
+	if not _intro_targets.has("wrong") or not _intro_targets.has("correct"):
 		intro_finished.emit()
 		return
+	var target: Dictionary = _intro_targets["correct"]
 	_intro_active = true
 	_intro_guided_piece_id = int(target["pieceId"])
 	var origin: Array = target["origin"]
 	_intro_guided_origin = Vector2i(int(origin[1]), int(origin[0]))
-	input_locked = false
+	input_locked = true
 	hide_piece_hint()
 	_reset_pointer()
-	var slot_index := tray_slot_piece_ids.find(_intro_guided_piece_id)
+	var wrong: Dictionary = _intro_targets["wrong"]
+	var slot_index := tray_slot_piece_ids.find(int(wrong["pieceId"]))
 	if slot_index >= 0:
 		focus_tray_slot(slot_index, false)
 	_intro_panel.show()
-	_intro_hand.show()
-	_show_intro_pickup_prompt()
+	_intro_hand.hide()
 	_layout_intro_controls()
 	queue_redraw()
 	_intro_skip_button.call_deferred("grab_focus")
-	call_deferred("_start_intro_hand_hint")
+	call_deferred("_play_intro_demo_sequence")
 
 
 func cancel_intro() -> void:
@@ -201,6 +212,15 @@ func intro_start_point() -> Vector2:
 
 func intro_target_point() -> Vector2:
 	return _snap_pointer_for_origin(_intro_guided_piece_id, _intro_guided_origin)
+
+
+func intro_wrong_piece_id() -> int:
+	return int(_intro_targets.get("wrong", {}).get("pieceId", -1))
+
+
+func intro_wrong_origin() -> Vector2i:
+	var raw = _intro_targets.get("wrong", {}).get("origin", [])
+	return Vector2i(int(raw[1]), int(raw[0])) if raw is Array and raw.size() >= 2 else Vector2i(-99, -99)
 
 
 func play_flatten_transition() -> void:
@@ -1199,6 +1219,134 @@ func _stop_intro_hand_hint() -> void:
 		_intro_hand.modulate.a = 1.0
 
 
+func _play_intro_demo_sequence() -> void:
+	if not _intro_active or not _intro_targets.has("wrong") or not _intro_targets.has("correct"):
+		return
+	_stop_intro_hand_hint()
+	_intro_tween = create_tween()
+	_intro_tween.tween_callback(_begin_wrong_intro_demo)
+	_intro_tween.tween_interval(0.24)
+	_append_intro_drag(_intro_tween, _intro_targets["wrong"], 0.86)
+	_intro_tween.tween_callback(_land_wrong_intro_demo)
+	_intro_tween.tween_interval(0.82)
+	_intro_tween.tween_callback(_clear_intro_demo)
+	_intro_tween.tween_interval(0.28)
+	_intro_tween.tween_callback(_begin_correct_intro_demo)
+	_intro_tween.tween_interval(0.20)
+	_append_intro_drag(_intro_tween, _intro_targets["correct"], 0.86)
+	_intro_tween.tween_callback(_land_correct_intro_demo)
+	_intro_tween.tween_interval(0.82)
+	_intro_tween.tween_callback(_show_intro_reset_state)
+	_intro_tween.tween_interval(0.58)
+	_intro_tween.tween_callback(_finish_intro)
+
+
+func _append_intro_drag(tween: Tween, target: Dictionary, duration: float) -> void:
+	tween.tween_callback(_prepare_intro_drag.bind(target))
+	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+	tween.tween_method(_set_intro_drag_progress, 0.0, 1.0, duration)
+
+
+func _prepare_intro_drag(target: Dictionary) -> void:
+	var piece_id := int(target.get("pieceId", -1))
+	var raw_origin = target.get("origin", [])
+	if piece_id < 0 or not raw_origin is Array or raw_origin.size() < 2:
+		return
+	var slot_index := tray_slot_piece_ids.find(piece_id)
+	var start := _tray_slot_rect(slot_index).get_center() if slot_index >= 0 else Vector2.ZERO
+	var origin := Vector2i(int(raw_origin[1]), int(raw_origin[0]))
+	var destination := _snap_pointer_for_origin(piece_id, origin)
+	_intro_demo_piece_id = piece_id
+	_intro_demo_origin = origin
+	_intro_demo_pointer = start
+	_intro_demo_start = start
+	_intro_demo_destination = destination
+	_intro_demo_visible = true
+	_intro_demo_placed = false
+	_intro_hand.position = start - _intro_hand.size * 0.5
+	_intro_hand.modulate.a = 1.0
+	_intro_hand.show()
+	queue_redraw()
+
+
+func _begin_wrong_intro_demo() -> void:
+	if not _intro_active:
+		return
+	_intro_stage = "wrong_move"
+	var target: Dictionary = _intro_targets["wrong"]
+	var raw_origin: Array = target.get("origin", [])
+	_intro_demo_piece_id = int(target.get("pieceId", -1))
+	_intro_demo_origin = Vector2i(int(raw_origin[1]), int(raw_origin[0]))
+	_intro_caption.text = _localized("错误示范：这样会隔断同色区域")
+	queue_redraw()
+
+
+func _land_wrong_intro_demo() -> void:
+	if not _intro_active:
+		return
+	_intro_stage = "wrong_hold"
+	_intro_demo_placed = true
+	_intro_hand.hide()
+	_intro_caption.text = _localized("错误：同色区域已经无法连通")
+	placement_rejected.emit()
+	queue_redraw()
+
+
+func _begin_correct_intro_demo() -> void:
+	if not _intro_active:
+		return
+	_intro_stage = "correct_move"
+	var target: Dictionary = _intro_targets["correct"]
+	var raw_origin: Array = target.get("origin", [])
+	_intro_demo_piece_id = int(target.get("pieceId", -1))
+	_intro_demo_origin = Vector2i(int(raw_origin[1]), int(raw_origin[0]))
+	_intro_caption.text = _localized("正确示范：把方块接到周围同色区域")
+	var slot_index := tray_slot_piece_ids.find(int(target.get("pieceId", -1)))
+	if slot_index >= 0:
+		focus_tray_slot(slot_index, true)
+	queue_redraw()
+
+
+func _land_correct_intro_demo() -> void:
+	if not _intro_active:
+		return
+	_intro_stage = "correct_hold"
+	_intro_demo_placed = true
+	_intro_hand.hide()
+	_intro_caption.text = _localized("正确：方块与同色区域保持连通")
+	snap_target_changed.emit()
+	queue_redraw()
+
+
+func _show_intro_reset_state() -> void:
+	if not _intro_active:
+		return
+	_clear_intro_demo()
+	_intro_stage = "reset"
+	_intro_caption.text = _localized("棋盘已恢复，轮到你来放置")
+	queue_redraw()
+
+
+func _clear_intro_demo() -> void:
+	_intro_demo_piece_id = -1
+	_intro_demo_origin = Vector2i(-99, -99)
+	_intro_demo_pointer = Vector2.ZERO
+	_intro_demo_start = Vector2.ZERO
+	_intro_demo_destination = Vector2.ZERO
+	_intro_demo_visible = false
+	_intro_demo_placed = false
+	if _intro_hand:
+		_intro_hand.hide()
+	queue_redraw()
+
+
+func _set_intro_drag_progress(value: float) -> void:
+	_intro_demo_pointer = _intro_demo_start.lerp(_intro_demo_destination, clampf(value, 0.0, 1.0))
+	if _intro_hand:
+		_intro_hand.position = _intro_demo_pointer - _intro_hand.size * 0.5
+	queue_redraw()
+
+
 func _show_intro_pickup_prompt() -> void:
 	if _intro_caption:
 		_intro_caption.text = _localized("拖动高亮方块，放入发光凹槽")
@@ -1216,6 +1364,9 @@ func _reset_intro() -> void:
 	_intro_active = false
 	_intro_guided_piece_id = -1
 	_intro_guided_origin = Vector2i(-99, -99)
+	_intro_targets.clear()
+	_intro_stage = ""
+	_clear_intro_demo()
 	input_locked = false
 	if _intro_skip_button:
 		_intro_skip_button.release_focus()
@@ -1278,25 +1429,57 @@ func _origin_in_allowed_list(piece_id: int, origin: Vector2i) -> bool:
 func _draw_intro_overlay() -> void:
 	var mask := Color(0.08, 0.12, 0.18, 0.58)
 	draw_rect(Rect2(Vector2.ZERO, size), mask, true)
-	var slot_index := tray_slot_piece_ids.find(_intro_guided_piece_id)
+	var active_piece_id := _intro_demo_piece_id
+	if active_piece_id < 0:
+		active_piece_id = int(_intro_targets.get("wrong", {}).get("pieceId", _intro_guided_piece_id))
+	var slot_index := tray_slot_piece_ids.find(active_piece_id)
 	if slot_index >= 0:
 		var slot_rect := _tray_slot_rect(slot_index)
-		var piece := _piece_by_id(_intro_guided_piece_id)
-		if slot_rect.has_area() and not piece.is_empty() and _drag_piece_id != _intro_guided_piece_id:
+		var piece := _piece_by_id(active_piece_id)
+		if slot_rect.has_area() and not piece.is_empty() and not _intro_demo_visible:
 			_draw_slot_frame(slot_rect, _region_color(int(piece.get("regionId", 1))), 1.0, true)
 			_draw_piece_preview(piece, slot_rect, 1.0)
 	var geometry := _board_geometry()
 	var board_rect: Rect2 = geometry["rect"]
 	var cell_size: float = geometry["cellSize"]
-	var target_piece := _piece_by_id(_intro_guided_piece_id)
-	for cell in _piece_absolute_cells(target_piece, _intro_guided_origin):
-		var rect := _cell_rect(cell, board_rect.position, cell_size)
-		var halo := UITokensScript.ATTENTION_HALO_COLOR
-		halo.a = 0.42
-		draw_rect(rect.grow(cell_size * 0.06), halo, false, maxf(4.0, cell_size * 0.08))
-		var light := Color.WHITE
-		light.a = 0.16
-		draw_rect(rect.grow(-cell_size * 0.08), light, true)
+	if _intro_demo_piece_id >= 0 and _intro_demo_origin.x > -90:
+		var target_piece := _piece_by_id(_intro_demo_piece_id)
+		var is_wrong := _intro_stage.begins_with("wrong")
+		for cell in _piece_absolute_cells(target_piece, _intro_demo_origin):
+			var rect := _cell_rect(cell, board_rect.position, cell_size)
+			var halo := UITokensScript.DANGER_RED if is_wrong else UITokensScript.ATTENTION_HALO_COLOR
+			halo.a = 0.62 if _intro_demo_placed else 0.42
+			draw_rect(rect.grow(cell_size * 0.06), halo, false, maxf(4.0, cell_size * 0.08))
+			var light := Color.WHITE
+			light.a = 0.12
+			draw_rect(rect.grow(-cell_size * 0.08), light, true)
+		if not is_wrong:
+			for raw_cell in _intro_targets.get("correct", {}).get("touchingCells", []):
+				if raw_cell is Array and raw_cell.size() >= 2:
+					var neighbor := Vector2i(int(raw_cell[1]), int(raw_cell[0]))
+					var neighbor_rect := _cell_rect(neighbor, board_rect.position, cell_size)
+					var connection_color := UITokensScript.ATTENTION_HALO_COLOR
+					connection_color.a = 0.72
+					draw_rect(neighbor_rect.grow(cell_size * 0.035), connection_color, false, maxf(3.0, cell_size * 0.065))
+	_draw_intro_demo_piece(board_rect.position, cell_size)
+
+
+func _draw_intro_demo_piece(board_origin: Vector2, cell_size: float) -> void:
+	if not _intro_demo_visible or _intro_demo_piece_id < 0:
+		return
+	var piece := _piece_by_id(_intro_demo_piece_id)
+	if piece.is_empty():
+		return
+	var color := _region_color(int(piece.get("regionId", 1)))
+	if _intro_demo_placed:
+		for cell in _piece_absolute_cells(piece, _intro_demo_origin):
+			_draw_block(_cell_rect(cell, board_origin, cell_size), color, cell_size, true)
+		return
+	var bounds := _piece_bounds(piece)
+	var draw_size := Vector2(bounds.size.x, bounds.size.y) * cell_size
+	var draw_origin := _intro_demo_pointer - Vector2(draw_size.x * 0.5, draw_size.y + cell_size * DRAG_LIFT_CELLS)
+	for cell in _piece_local_cells(piece):
+		_draw_block(Rect2(draw_origin + Vector2(cell.x, cell.y) * cell_size, Vector2.ONE * cell_size), color, cell_size, true)
 
 
 func _layout_intro_controls() -> void:

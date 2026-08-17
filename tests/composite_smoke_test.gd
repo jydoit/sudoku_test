@@ -170,9 +170,10 @@ func _run() -> void:
 	assert(game._is_assembly_phase() and int(game.current_level.get("rows", 0)) == 6, "Home block entry should open a 6x6 assembly")
 	assert(not game.home_composite_progress_snapshot.is_empty(), "Home block entry should snapshot formal progress")
 	var first_pattern := str(game.composite_data.get("difficulty", ""))
-	assert(game.home_composite_round == 1 and CompositeLevelDirectorScript.PATTERNS.has(first_pattern), "The first block round should sample a supported assembly pattern")
-	assert(is_equal_approx(float(game.active_schedule.get("compositeExplorationProbability", 0.0)), 0.50), "A cold block model should start with 50% random exploration")
-	assert(["random_exploration", "posterior_multinomial"].has(str(game.active_schedule.get("compositePatternSelectionMode", ""))), "The schedule should expose its pattern selection branch")
+	assert(game.home_composite_round == 1 and ["simple", "medium"].has(first_pattern), "The first block round should use an opening simple or medium pattern")
+	assert(game.composite_data.get("pieces", []).size() == 2, "The first block round must contain exactly two movable pieces")
+	assert(is_equal_approx(float(game.active_schedule.get("compositeExplorationProbability", -1.0)), 0.0), "Opening rounds should not enter random pattern exploration")
+	assert(str(game.active_schedule.get("compositePatternSelectionMode", "")) == "opening_cycle", "The first four rounds should expose the deterministic opening cycle")
 	assert(str(game.active_schedule.get("compositeBaseDifficultyClass", "")) == str(game.current_level.get("difficulty", "")), "The block director should retain the ordinary recommendation difficulty class")
 	assert(game.composite_data.get("validLayouts", []).size() == 1, "The debug flow should stop after its first legal layout")
 	assert(not game.active_schedule.has("assemblyPrebuiltData"), "Transient prebuilt assembly data must be consumed before the schedule is saved")
@@ -279,14 +280,19 @@ func _run() -> void:
 	assert(not game.opening_king_overlay.visible and not game.opening_king_reveal_pending, "Returning home from a saved crown-phase block round must clear the opening-king popup")
 	game.home_composite_history = unfinished_history
 	game.composite_tutorial_seen = false
-	var schedule := LevelDirectorScript.manual_schedule_for_level(game.levels, level_index, 80)
-	assert(bool(schedule.get("assemblyEnabled", false)), "A 6x6 milestone schedule should enable assembly")
+	var tutorial_recommendation := CompositeLevelDirectorScript.recommend(
+		game.levels, game.composite_levels, 1, LevelDirectorScript.minimum_display_for_size(6), {}
+	)
+	assert(not tutorial_recommendation.is_empty(), "The opening director should provide a tutorial-ready round")
+	level_index = int(tutorial_recommendation.get("levelIndex", -1))
+	var schedule: Dictionary = tutorial_recommendation.get("schedule", {})
+	assert(bool(schedule.get("assemblyEnabled", false)), "The opening tutorial schedule should enable assembly")
 	game._load_level(level_index, false, schedule)
 	game._show_game()
 	await process_frame
 	assert(game._is_assembly_phase(), "Composite schedule should start in assembly")
-	assert(game.composite_intro_running and game.assembly_view.is_intro_active(), "The first composite level should start the interactive placement guide")
-	assert(not game.assembly_view.input_locked, "The interactive guide must accept the guided drag instead of locking all input")
+	assert(game.composite_intro_running and game.assembly_view.is_intro_active(), "The first composite level should start the automatic placement walkthrough")
+	assert(game.assembly_view.input_locked, "The automatic walkthrough must lock board input while keeping its skip control available")
 	game._show_home()
 	await process_frame
 	assert(not game.composite_tutorial_seen and not game.composite_intro_running, "Leaving the guide must cancel it without persisting the seen state")
@@ -296,16 +302,18 @@ func _run() -> void:
 	assert(game.assembly_view.is_intro_active(), "Returning to an unseen block guide should offer it again")
 	var intro_piece_id: int = int(game.assembly_view.intro_piece_id())
 	var intro_origin: Vector2i = game.assembly_view.intro_origin()
-	var intro_start: Vector2 = game.assembly_view.intro_start_point()
-	var intro_target: Vector2 = game.assembly_view.intro_target_point()
-	assert(intro_piece_id >= 0 and intro_origin.x >= 0 and intro_start != Vector2.ZERO and intro_target != Vector2.ZERO, "The guide should expose one real piece and one valid socket")
-	game.assembly_view._pointer_pressed(intro_start, -1)
-	game.assembly_view._pointer_moved(intro_start + Vector2(0, 12), -1)
-	game.assembly_view._pointer_moved(intro_target, -1)
-	game.assembly_view._pointer_released(intro_target, -1)
-	await process_frame
-	assert(game.composite_tutorial_seen and not game.composite_intro_running, "Completing the guided placement should persist its seen state")
-	assert(game.composite_placements.has(str(intro_piece_id)), "The tutorial gesture must use the normal placement pipeline and keep the placed block")
+	var wrong_piece_id: int = int(game.assembly_view.intro_wrong_piece_id())
+	var wrong_origin: Vector2i = game.assembly_view.intro_wrong_origin()
+	var intro_targets: Dictionary = CompositePlacementEngineScript.tutorial_demo_targets(game.composite_data)
+	assert(intro_piece_id >= 0 and intro_origin.x >= 0 and wrong_piece_id >= 0 and wrong_origin.x >= 0, "The guide should expose real correct and wrong placements")
+	assert(not intro_targets.get("correct", {}).get("touchingCells", []).is_empty(), "The correct demonstration must touch a fixed area of the same color")
+	assert(
+		CompositeLevelScript.placement_disconnects_same_color(game.composite_data, {}, wrong_piece_id, [wrong_origin.y, wrong_origin.x]),
+		"The wrong demonstration must be a spatially legal placement that makes same-color connectivity impossible"
+	)
+	await create_timer(5.1).timeout
+	assert(game.composite_tutorial_seen and not game.composite_intro_running, "Completing the automatic walkthrough should persist its seen state")
+	assert(game.composite_placements.is_empty(), "Both demonstrations must reset before the player receives control")
 	var saved_view_data: Dictionary = game.assembly_view.assembly_data
 	var saved_view_allowed: Dictionary = game.assembly_view.allowed_by_piece
 	var tall_piece := {
@@ -453,9 +461,19 @@ func _test_composite_director_model(levels: Array, entries) -> void:
 	var schedule: Dictionary = candidate.get("schedule", {})
 	assert(str(schedule.get("compositeBaseDifficultyClass", "")) == str(level.get("difficulty", "")), "The base difficulty class must come from the ordinary level recommendation")
 	assert(not CompositeLevelStoreScript.find(entries, int(level.get("levelId", -1)), str(schedule.get("assemblyDifficultyPattern", ""))).is_empty(), "The recommended pattern must exist offline")
+	var opening_data := CompositeLevelStoreScript.find(entries, int(level.get("levelId", -1)), str(schedule.get("assemblyDifficultyPattern", "")))
+	assert(opening_data.get("pieces", []).size() == 2, "Round one should select an offline level with exactly two movable pieces")
+	var opening_targets := CompositePlacementEngineScript.tutorial_demo_targets(opening_data)
+	assert(opening_targets.has("wrong") and opening_targets.has("correct"), "Round one should support both connectivity demonstrations")
+	for opening_round in range(1, 5):
+		var opening_candidate := CompositeLevelDirectorScript.recommend(levels, entries, opening_round, 1, {})
+		assert(not opening_candidate.is_empty(), "Every opening round should have an offline recommendation")
+		var opening_pattern := str(opening_candidate.get("difficultyPattern", ""))
+		assert(["simple", "medium"].has(opening_pattern), "Rounds one through four must never use Hard")
+		assert(str(opening_candidate.get("schedule", {}).get("compositePatternSelectionMode", "")) == "opening_cycle", "Opening rounds should use the simple/medium cycle")
 	var advanced_candidate := CompositeLevelDirectorScript.recommend(levels, entries, 1, 180, {})
 	var advanced_level: Dictionary = levels[int(advanced_candidate.get("levelIndex", -1))]
-	assert(int(advanced_level.get("rows", 0)) == 7 and str(advanced_level.get("difficulty", "")) == "medium", "A newly unlocked composite size should reuse the ordinary director's Medium cold-start probe")
+	assert(int(advanced_level.get("rows", 0)) == 7, "The two-piece opening search should preserve the ordinary director's newly unlocked size when possible")
 
 	for sample_index in range(30):
 		var sampled_schedule := schedule.duplicate(true)

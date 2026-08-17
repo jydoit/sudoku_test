@@ -2,7 +2,7 @@ class_name RuleIllustration
 extends Control
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
-const LION_KING_ICON = preload("res://assets/ui/lion_king.png")
+const LION_KING_ICON = preload("res://assets/ui/lion_king.svg")
 
 const ADJACENT := "adjacent"
 const ROW_COLUMN := "row_column"

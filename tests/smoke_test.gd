@@ -83,6 +83,12 @@ func _run() -> void:
 	assert(game.LION_KING_VICTORY_FRAMES.size() == 9, "Completion lion should provide wave and expression animation frames")
 	assert(game.board.PIECE_TEXTURE == game.LION_KING_ICON, "Board pieces and UI should share the same lion king texture")
 	assert(game.board.WRONG_PIECE_TEXTURE == game.LION_KING_WRONG_ICON, "Wrong board pieces and UI should share the worried lion texture")
+	assert(game.board.HAPPY_PIECE_TEXTURE.resource_path == "res://assets/ui/lion_king_happy.svg", "Correct crown feedback should preload the dedicated happy lion expression")
+	var ui_asset_directory := DirAccess.open("res://assets/ui")
+	assert(ui_asset_directory != null, "Runtime UI asset directory should be readable")
+	if ui_asset_directory:
+		for ui_asset_name in ui_asset_directory.get_files():
+			assert(not ui_asset_name.to_lower().ends_with(".png"), "Runtime UI assets must use SVG instead of PNG: %s" % ui_asset_name)
 	var level_coin_icon := game.coin_balance_roll_clip.get_parent().get_node_or_null("CoinIcon") as TextureRect
 	assert(level_coin_icon != null and level_coin_icon.texture != null, "Level coin balance should render the SVG coin icon beside its rolling value")
 	var level_coin_display = game.game_screen.coin_roll_display
@@ -155,13 +161,19 @@ func _run() -> void:
 	assert(result_coin_display.primary_label.text == "12" and not result_coin_display.secondary_label.visible, "A drained roll queue should normalize the final visible label")
 	result_coin_display.set_value(20)
 	var reel_finished_state := {"target": -1}
+	var reel_notch_state := {"count": 0, "indices": []}
 	result_coin_display.roll_finished.connect(func(value: int) -> void: reel_finished_state["target"] = value)
+	result_coin_display.reel_notch.connect(func(_value: int, step_index: int, _step_count: int) -> void:
+		reel_notch_state["count"] = int(reel_notch_state["count"]) + 1
+		reel_notch_state["indices"].append(step_index)
+	)
 	result_coin_display.animate_reel_to(31, 0.48)
 	await create_timer(0.18).timeout
 	assert(result_coin_display.displayed_value() not in [20, 31], "A result reel should skip through a bounded set of intermediate balances")
 	await create_timer(0.36).timeout
 	assert(result_coin_display.displayed_value() == 31 and not result_coin_display.secondary_label.visible, "A result reel should decelerate and normalize at the exact target balance")
 	assert(int(reel_finished_state["target"]) == 31, "The result reel should emit its real completion event only after stopping at the exact target balance")
+	assert(int(reel_notch_state["count"]) == 4 and reel_notch_state["indices"] == [0, 1, 2, 3], "The reel should emit one synchronized notch per visible weighted step")
 	assert(int(ProjectSettings.get_setting("display/window/size/viewport_width")) == 540 and int(ProjectSettings.get_setting("display/window/size/viewport_height")) == 960, "Coin layouts should be tested against the Pixel-sized 540x960 viewport")
 	game._update_coin_label()
 	result_coin_display.set_value(0)
@@ -236,7 +248,19 @@ func _run() -> void:
 	game._on_settings()
 	assert(game.dialog_controller.is_dialog_open("settings"), "Settings should open through the shared dialog controller")
 	assert(game.language_picker.item_count == 5, "Language settings should list all supported languages")
-	assert(game.settings_content.music_toggle != null and game.settings_content.sfx_toggle != null and game.settings_content.haptics_toggle != null, "Settings should expose independent music, sound-effects and haptics controls")
+	assert(game.settings_content.music_toggle != null and game.settings_content.sfx_toggle != null and game.settings_content.haptics_toggle != null, "Settings should expose music, sound-effects and haptics controls")
+	assert(
+		game.settings_content.music_toggle.text == game._t("开启")
+		and game.settings_content.sfx_toggle.text == game._t("开启")
+		and game.settings_content.haptics_toggle.text == game._t("开启"),
+		"Enabled settings should render explicit readable localized state text: %s / %s / %s / expected %s" % [
+			game.settings_content.music_toggle.text,
+			game.settings_content.sfx_toggle.text,
+			game.settings_content.haptics_toggle.text,
+			game._t("开启"),
+		]
+	)
+	assert(game.settings_content.sfx_toggle.custom_minimum_size.y >= 44.0, "Mobile settings toggles should preserve a reliable touch target")
 	game.language_picker.select(game.localization.locale_index("ar"))
 	game.settings_content.music_toggle.button_pressed = false
 	game.settings_content.sfx_toggle.button_pressed = false
@@ -246,7 +270,7 @@ func _run() -> void:
 	apply_language_button.pressed.emit()
 	await process_frame
 	assert(game.selected_language == "ar" and game.layout_direction == Control.LAYOUT_DIRECTION_RTL, "Arabic should apply RTL layout")
-	assert(not game.music_enabled and not game.sfx_enabled and not game.haptics_enabled, "Audio and haptics settings should apply independently from the language")
+	assert(not game.music_enabled and not game.sfx_enabled and not game.haptics_enabled, "Music, sound effects and haptics settings should apply independently")
 	assert(not game.board.haptics_enabled, "Disabling haptics should update the active board immediately")
 	game.music_enabled = true
 	game.sfx_enabled = true
@@ -396,6 +420,7 @@ func _run() -> void:
 	var level_index: Dictionary = LevelDirectorScript.build_level_index(game.levels)
 	assert(level_index[5]["simple"].slice(0, 5) == [0, 1, 2, 10, 11], "Level index should group levels by size and difficulty")
 	var composite_unlock_display := int(LevelDirectorScript.SIZE_UNLOCK_DISPLAY_LEVELS[6])
+	assert(composite_unlock_display == 11, "6x6 should unlock at display level 11 for the current testing cycle")
 	assert(LevelDirectorScript.minimum_display_for_size(6) == composite_unlock_display, "The 6x6 unlock display should have one shared source of truth")
 	assert(not LevelDirectorScript.is_size_unlocked(6, composite_unlock_display - 1), "6x6 should stay locked before its configured display level")
 	assert(LevelDirectorScript.is_size_unlocked(6, composite_unlock_display), "6x6 should unlock at its configured display level")
@@ -543,6 +568,7 @@ func _run() -> void:
 	var solution_cell: Array = _first_editable_solution_cell(game)
 	game._on_cell_double_pressed(int(solution_cell[0]), int(solution_cell[1]))
 	assert(game.cell_states[int(solution_cell[0])][int(solution_cell[1])] == "piece", "Double tap on the answer must place a crown")
+	assert(game.board.reaction_kind == "correct" and game.board.reaction_cell == Vector2i(int(solution_cell[1]), int(solution_cell[0])), "Correct crowns should trigger the dedicated cheerful lion reaction")
 	game._undo()
 	assert(game.cell_states[int(solution_cell[0])][int(solution_cell[1])] == "empty", "Undo should remove the placed crown")
 	var wrong_cells := _first_non_solution_cells(game, game.INITIAL_HEART_COUNT)
@@ -552,6 +578,7 @@ func _run() -> void:
 	game._on_cell_double_pressed(wrong_cell.y, wrong_cell.x)
 	assert(game.cell_states[wrong_cell.y][wrong_cell.x] == "wrong", "Double tap on a non-answer cell should mark a red X")
 	assert(game.board.shake_cell == wrong_cell, "Wrong crown attempts should trigger the board wrong-feedback shake")
+	assert(game.board.reaction_kind == "wrong" and game.board.reaction_cell == wrong_cell, "Wrong crown attempts should temporarily show the worried lion reaction")
 	assert(game.heart_count == hearts_before_wrong - 1, "Wrong crown attempts should consume one heart")
 	assert(game.crown_find_count == crown_find_count_before_wrong, "Wrong crown attempts must not consume crown-find uses")
 	assert(game.level_heart_slots[game.heart_count].get_theme_color("font_color") == game.HEART_EMPTY_COLOR, "A lost heart should turn gray")
@@ -734,7 +761,9 @@ func _run() -> void:
 
 	game._load_level(0)
 	var result_sound_events: Array[String] = []
+	var result_music_events: Array[String] = []
 	game.result_page.sound_requested.connect(func(kind: String) -> void: result_sound_events.append(kind))
+	game.result_page.music_requested.connect(func(kind: String) -> void: result_music_events.append(kind))
 	var completion_coins_before: int = game.coin_count
 	var expected_completion_reward := CoinRewardPolicyScript.completion_reward(
 		game.player_level_number,
@@ -756,17 +785,29 @@ func _run() -> void:
 	assert(
 		game.result_page.result_petals_layer.visible
 		and game.result_page.result_petals_layer.get_child_count() == game.result_page.RESULT_PETAL_COUNT,
-		"Excellent should play the full extended falling-petal celebration"
+		"Excellent should play the complete falling-petal celebration"
 	)
 	assert(game.result_page.result_success_sequence_tween != null, "Excellent should own one serial celebration timeline")
-	assert("petal_scatter" in result_sound_events, "Excellent should start with the dedicated non-musical petal sound")
+	assert("celebration" in result_music_events, "Excellent should start the warm celebration cue with the petals")
 	assert("coin_arrive" not in result_sound_events and "coin_reel" not in result_sound_events, "Coin sounds must not overlap the opening petal phase")
-	assert(not game.result_page.has_signal("music_requested"), "The result page should expose no background-music signal")
-	assert(not game.audio_controller.has_method("play_result_music"), "The audio controller should contain no result background-music player")
+	assert(game.audio_controller.has_method("play_result_music"), "The audio controller should lazy-load the Excellent celebration cue")
+	assert(game.audio_controller.RESULT_MUSIC_PATHS.has("celebration"), "Excellent should map to the packaged cheerful result cue")
+	assert(game.result_page.RESULT_PETAL_SEQUENCE_DURATION >= 4.7 and game.result_page.RESULT_PETAL_SEQUENCE_DURATION <= 4.9, "The petal phase should stay readable without delaying the reward sequence")
+	assert(game.result_page.RESULT_PETAL_FADE_FRACTION <= 0.16, "Petals should remain visible until they are close to the lion")
+	var expected_petal_receiver: Vector2 = game.result_page._control_center_in_layer(
+		game.result_page.result_piece_icon,
+		game.result_page.result_petals_layer
+	)
+	var actual_petal_receiver: Vector2 = game.result_page._result_petal_receiver(game.result_page.size)
+	assert(actual_petal_receiver.distance_to(expected_petal_receiver) < 0.5, "Falling petals should fade around the lion rather than the coin balance")
+	var subtitle_center: Vector2 = game.result_page._control_center_in_layer(
+		game.result_page.reward_label,
+		game.result_page.result_petals_layer
+	)
+	assert(actual_petal_receiver.y > subtitle_center.y + game.result_page.reward_label.size.y * 0.5, "The resolved petal target must sit below the result header")
 
 	await create_timer(
 		game.result_page.RESULT_PETAL_SEQUENCE_DURATION
-		+ game.result_page.RESULT_AFTER_PETALS_PAUSE
 		+ game.result_page.RESULT_COIN_MAX_DURATION
 		+ 0.12
 	).timeout
@@ -776,10 +817,9 @@ func _run() -> void:
 	assert(game.result_page.result_coin_roll_row.get_child_count() == 3, "The reward row should contain the coin icon, explicit spacing, and rolling number")
 	assert(game.result_page.result_coin_roll_primary.text == str(game.coin_count), "The result coin roller should finish at the player's current balance")
 	assert(game.result_page.result_coin_tween != null, "Granted coins should use a lion-to-balance flight animation on the result page")
-	assert(game.result_page.RESULT_COIN_START_DELAY >= 0.28 and game.result_page.RESULT_COIN_MIN_DURATION >= 1.3, "The reward count-up should retain a readable pause before coin flight")
-	assert(game.result_page.RESULT_COIN_REEL_START_PAUSE >= 0.25, "The number reel should pause after the final coin arrival")
-	assert(result_sound_events.find("petal_scatter") < result_sound_events.find("coin_arrive"), "Petal audio should finish its phase before coin-arrival feedback begins")
+	assert(is_zero_approx(game.result_page.RESULT_COIN_START_DELAY), "Coin flight should begin immediately when the final petal phase ends")
 	assert(result_sound_events.find("coin_arrive") < result_sound_events.find("coin_reel"), "Coin arrivals should complete before the reel sound begins")
+	assert(result_sound_events.count("coin_reel") >= 1, "The result reel should emit tactile notch sounds from its real visual steps")
 	assert(game.result_page.result_piece_icon.texture in game.LION_KING_VICTORY_FRAMES, "Success result should animate with the lion wave frames")
 	assert(game.result_page.result_lion_wave_tween != null, "Success result should run the lion wave animation")
 	assert(game.result_page.result_lion_animation_name in ["wave", "tongue", "funny"], "Success result should randomly choose a supported lion animation")
@@ -810,10 +850,9 @@ func _run() -> void:
 			game.result_page.RESULT_COIN_FLIGHT_MIN_STAGGER,
 			(
 				game.result_page.RESULT_COIN_MAX_DURATION
-				- game.result_page.RESULT_COIN_START_DELAY
-				- game.result_page.RESULT_COIN_FLIGHT_DURATION
-				- game.result_page.RESULT_COIN_REEL_START_PAUSE
-				- game.result_page.RESULT_COIN_REEL_DURATION
+					- game.result_page.RESULT_COIN_START_DELAY
+					- game.result_page.RESULT_COIN_FLIGHT_DURATION
+					- game.result_page.RESULT_COIN_REEL_DURATION
 				- game.result_page.RESULT_COIN_REEL_SETTLE_HOLD
 			) / 4.0
 		)

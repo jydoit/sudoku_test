@@ -2,39 +2,40 @@ extends ColorRect
 
 signal primary_requested
 signal secondary_requested
+signal music_requested(kind: String)
+signal music_stop_requested
 signal sound_requested(kind: String)
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const CoinRollDisplayScript = preload("res://scripts/components/coin_roll_display.gd")
 const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resource.gd")
-const LION_KING_VICTORY_ICON = preload("res://assets/ui/lion_king_victory.png")
-const LION_KING_VICTORY_OUT_ICON = preload("res://assets/ui/lion_king_victory_out.png")
-const LION_KING_VICTORY_IN_ICON = preload("res://assets/ui/lion_king_victory_in.png")
-const LION_KING_VICTORY_WAVE_OUT_MID_ICON = preload("res://assets/ui/lion_king_victory_wave_out_mid.png")
-const LION_KING_VICTORY_WAVE_IN_MID_ICON = preload("res://assets/ui/lion_king_victory_wave_in_mid.png")
-const LION_KING_VICTORY_TONGUE_PEEK_ICON = preload("res://assets/ui/lion_king_victory_tongue_peek.png")
-const LION_KING_VICTORY_TONGUE_OUT_ICON = preload("res://assets/ui/lion_king_victory_tongue_out.png")
-const LION_KING_VICTORY_WINK_ICON = preload("res://assets/ui/lion_king_victory_wink.png")
-const LION_KING_VICTORY_FUNNY_ICON = preload("res://assets/ui/lion_king_victory_funny.png")
+const LION_KING_VICTORY_ICON = preload("res://assets/ui/lion_king_victory.svg")
+const LION_KING_VICTORY_OUT_ICON = preload("res://assets/ui/lion_king_victory_out.svg")
+const LION_KING_VICTORY_IN_ICON = preload("res://assets/ui/lion_king_victory_in.svg")
+const LION_KING_VICTORY_WAVE_OUT_MID_ICON = preload("res://assets/ui/lion_king_victory_wave_out_mid.svg")
+const LION_KING_VICTORY_WAVE_IN_MID_ICON = preload("res://assets/ui/lion_king_victory_wave_in_mid.svg")
+const LION_KING_VICTORY_TONGUE_PEEK_ICON = preload("res://assets/ui/lion_king_victory_tongue_peek.svg")
+const LION_KING_VICTORY_TONGUE_OUT_ICON = preload("res://assets/ui/lion_king_victory_tongue_out.svg")
+const LION_KING_VICTORY_WINK_ICON = preload("res://assets/ui/lion_king_victory_wink.svg")
+const LION_KING_VICTORY_FUNNY_ICON = preload("res://assets/ui/lion_king_victory_funny.svg")
 const CARD := UITokensScript.SURFACE_CARD
 const INK := UITokensScript.INK
-const RESULT_COIN_START_DELAY := 0.30
+const RESULT_COIN_START_DELAY := 0.00
 const RESULT_COIN_MIN_DURATION := 2.15
 const RESULT_COIN_MAX_DURATION := 3.30
 const RESULT_COIN_FLIGHT_DURATION := 0.72
 const RESULT_COIN_FLIGHT_MIN_STAGGER := 0.08
 const RESULT_COIN_FLIGHT_MAX_STAGGER := 0.16
-const RESULT_COIN_REEL_START_PAUSE := 0.28
 const RESULT_COIN_REEL_DURATION := 1.00
 const RESULT_COIN_REEL_SETTLE_HOLD := 0.08
 const RESULT_COIN_FLYER_SIZE := Vector2(29, 29)
 const RESULT_COIN_BALANCE_GAP := 28.0
-const RESULT_PETAL_COUNT := 30
-const RESULT_PETAL_DELAY_MAX := 1.25
-const RESULT_PETAL_DURATION_MIN := 3.00
-const RESULT_PETAL_DURATION_MAX := 4.00
+const RESULT_PETAL_COUNT := 32
+const RESULT_PETAL_DELAY_MAX := 0.55
+const RESULT_PETAL_DURATION_MIN := 3.35
+const RESULT_PETAL_DURATION_MAX := 4.20
+const RESULT_PETAL_FADE_FRACTION := 0.14
 const RESULT_PETAL_SEQUENCE_DURATION := RESULT_PETAL_DELAY_MAX + RESULT_PETAL_DURATION_MAX + 0.05
-const RESULT_AFTER_PETALS_PAUSE := 0.24
 
 var completion_overlay: ColorRect
 var completion_title: Label
@@ -64,6 +65,7 @@ var result_petal_tweens: Array[Tween] = []
 var result_lion_animation_name := ""
 var result_coin_arrival_sound_values: Dictionary = {}
 var result_is_excellent := false
+var result_sequence_generation := 0
 var _localizer: Callable
 
 func configure(localizer: Callable = Callable()) -> void:
@@ -95,6 +97,7 @@ func configure(localizer: Callable = Callable()) -> void:
 	result_petals_layer.name = "ResultPetalsLayer"
 	result_petals_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	result_petals_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	result_petals_layer.z_index = 20
 	result_petals_layer.hide()
 	completion_overlay.add_child(result_petals_layer)
 
@@ -212,6 +215,7 @@ func configure(localizer: Callable = Callable()) -> void:
 	})
 	result_coin_roll_display.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	result_coin_roll_display.roll_finished.connect(_on_result_balance_roll_finished)
+	result_coin_roll_display.reel_notch.connect(_on_result_coin_reel_notch)
 	result_coin_roll_display.hide()
 	showcase_column.add_child(result_coin_roll_display)
 	# Keep the established page API while both locations share one display component.
@@ -254,6 +258,7 @@ func configure(localizer: Callable = Callable()) -> void:
 func present_success(data: Dictionary) -> void:
 	overlay_mode = "success"
 	var excellent := bool(data.get("excellent", false))
+	music_stop_requested.emit()
 	stop_success_sequence()
 	stop_petals()
 	result_is_excellent = excellent
@@ -420,7 +425,6 @@ func play_coin_animation(reward: int, balance_after: int) -> void:
 					RESULT_COIN_MAX_DURATION
 					- RESULT_COIN_START_DELAY
 					- RESULT_COIN_FLIGHT_DURATION
-					- RESULT_COIN_REEL_START_PAUSE
 					- RESULT_COIN_REEL_DURATION
 					- RESULT_COIN_REEL_SETTLE_HOLD
 				) / float(reward - 1)
@@ -430,7 +434,6 @@ func play_coin_animation(reward: int, balance_after: int) -> void:
 	var sequence_duration := (
 		RESULT_COIN_START_DELAY
 		+ flight_sequence_duration
-		+ RESULT_COIN_REEL_START_PAUSE
 		+ RESULT_COIN_REEL_DURATION
 	)
 	var completion_hold := maxf(RESULT_COIN_REEL_SETTLE_HOLD, RESULT_COIN_MIN_DURATION - sequence_duration)
@@ -443,8 +446,6 @@ func play_coin_animation(reward: int, balance_after: int) -> void:
 		if index < reward - 1:
 			result_coin_tween.tween_interval(stagger)
 	result_coin_tween.tween_interval(RESULT_COIN_FLIGHT_DURATION)
-	result_coin_tween.tween_interval(RESULT_COIN_REEL_START_PAUSE)
-	result_coin_tween.tween_callback(_start_result_balance_reel.bind(balance_after))
 	result_coin_tween.tween_interval(RESULT_COIN_REEL_DURATION + completion_hold)
 	result_coin_tween.tween_callback(func() -> void:
 		result_coin_roll_display.set_value(balance_after)
@@ -496,7 +497,7 @@ func _launch_result_coin_flyer(index: int, reward: int, balance_after: int, sour
 	)
 	flight_tween.parallel().tween_property(flyer, "modulate:a", 1.0, 0.12)
 	flight_tween.parallel().tween_property(flyer, "scale", Vector2.ONE, 0.20).set_ease(Tween.EASE_OUT)
-	flight_tween.tween_callback(_on_result_coin_flyer_arrived.bind(flyer, index + 1, reward))
+	flight_tween.tween_callback(_on_result_coin_flyer_arrived.bind(flyer, index + 1, reward, balance_after))
 
 
 func _set_result_coin_flyer_progress(progress: float, flyer: TextureRect, start: Vector2, curve: Vector2, target: Vector2) -> void:
@@ -510,7 +511,7 @@ func _set_result_coin_flyer_progress(progress: float, flyer: TextureRect, start:
 		flyer.scale = Vector2.ONE * lerpf(1.0, 0.72, (progress - 0.78) / 0.22)
 
 
-func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int) -> void:
+func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int, balance_after: int) -> void:
 	if is_instance_valid(flyer):
 		flyer.queue_free()
 	if not self.visible or overlay_mode != "success":
@@ -526,6 +527,7 @@ func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int) 
 		result_coin_pulse_tween.tween_property(result_reward_coin_icon, "scale", Vector2.ONE, 0.10).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	if value >= reward:
 		_set_result_lion_frame(LION_KING_VICTORY_ICON)
+		_start_result_balance_reel(balance_after)
 
 
 func _start_result_balance_reel(balance_after: int) -> void:
@@ -535,29 +537,51 @@ func _start_result_balance_reel(balance_after: int) -> void:
 	result_coin_roll_display.animate_reel_to(balance_after, RESULT_COIN_REEL_DURATION)
 
 
+func _on_result_coin_reel_notch(_value: int, step_index: int, step_count: int) -> void:
+	# The final notch is owned by the dedicated settle sound. Intermediate
+	# notches follow the reel's real weighted step timing instead of a fixed loop.
+	if visible and overlay_mode == "success" and step_index < step_count - 1:
+		sound_requested.emit("coin_reel")
+
+
 func _on_result_balance_roll_finished(_balance: int) -> void:
 	if visible and overlay_mode == "success":
 		sound_requested.emit("coin_settle")
+		music_stop_requested.emit()
 
 
 func play_success_sequence(excellent: bool, reward: int, balance_after: int) -> void:
 	stop_success_sequence()
+	var sequence_generation := result_sequence_generation
+	# The result page is built from nested Containers. Let them complete two layout
+	# passes before resolving the lion's global center, otherwise the petal target
+	# can still point at the header's previous layout position.
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if (
+		sequence_generation != result_sequence_generation
+		or not visible
+		or overlay_mode != "success"
+	):
+		return
 	if excellent:
 		play_petals()
 		result_success_sequence_tween = create_tween()
 		result_success_sequence_tween.tween_interval(RESULT_PETAL_SEQUENCE_DURATION)
 		result_success_sequence_tween.tween_callback(_finish_petals_phase)
-		result_success_sequence_tween.tween_interval(RESULT_AFTER_PETALS_PAUSE)
 		if reward > 0:
 			result_success_sequence_tween.tween_callback(
 				play_coin_animation.bind(reward, balance_after)
 			)
+		else:
+			result_success_sequence_tween.tween_callback(func() -> void: music_stop_requested.emit())
 		return
 	if reward > 0:
 		play_coin_animation(reward, balance_after)
 
 
 func stop_success_sequence() -> void:
+	result_sequence_generation += 1
 	if result_success_sequence_tween and result_success_sequence_tween.is_valid():
 		result_success_sequence_tween.kill()
 	result_success_sequence_tween = null
@@ -738,11 +762,12 @@ func play_petals() -> void:
 	if not result_petals_layer or not self.visible or overlay_mode != "success" or not result_is_excellent:
 		return
 	stop_petals()
-	sound_requested.emit("petal_scatter")
+	music_requested.emit("celebration")
 	result_petals_layer.show()
 	var viewport_size := self.size
 	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
 		viewport_size = get_viewport_rect().size
+	var receiver := _result_petal_receiver(viewport_size)
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	var colors := [Color("#FFD86B"), Color("#FF8FA8"), Color("#F7A7D8"), Color("#FFF3C4"), Color("#A8E6CF")]
@@ -761,18 +786,56 @@ func play_petals() -> void:
 		result_petals_layer.add_child(petal)
 		var delay := rng.randf_range(0.0, RESULT_PETAL_DELAY_MAX)
 		var duration := rng.randf_range(RESULT_PETAL_DURATION_MIN, RESULT_PETAL_DURATION_MAX)
-		var end_position := Vector2(
-			clampf(petal.position.x + rng.randf_range(-90.0, 90.0), 8.0, viewport_size.x - 8.0),
-			viewport_size.y + 35.0
+		var start_position := petal.position
+		var end_position := receiver + Vector2(rng.randf_range(-30.0, 30.0), rng.randf_range(-22.0, 22.0))
+		var curve_position := Vector2(
+			lerpf(start_position.x, end_position.x, 0.48) + rng.randf_range(-58.0, 58.0),
+			minf(end_position.y - 48.0, lerpf(start_position.y, end_position.y, 0.56))
 		)
 		var petal_tween := petal.create_tween()
 		petal_tween.tween_interval(delay)
 		petal_tween.tween_callback(petal.show)
-		petal_tween.tween_property(petal, "position", end_position, duration).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+		petal_tween.tween_method(
+			_set_result_petal_progress.bind(petal, start_position, curve_position, end_position),
+			0.0,
+			1.0,
+			duration
+		).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 		petal_tween.parallel().tween_property(petal, "rotation", petal.rotation + rng.randf_range(PI * 2.0, PI * 5.0), duration)
-		petal_tween.parallel().tween_property(petal, "modulate:a", 0.08, duration * 0.28).set_delay(duration * 0.72)
+		petal_tween.parallel().tween_property(
+			petal,
+			"modulate:a",
+			0.0,
+			duration * RESULT_PETAL_FADE_FRACTION
+		).set_delay(duration * (1.0 - RESULT_PETAL_FADE_FRACTION))
 		petal_tween.tween_callback(petal.queue_free)
 		result_petal_tweens.append(petal_tween)
+
+
+func _set_result_petal_progress(
+	progress: float,
+	petal: Polygon2D,
+	start: Vector2,
+	curve: Vector2,
+	target: Vector2
+) -> void:
+	if not is_instance_valid(petal):
+		return
+	var inverse := 1.0 - progress
+	petal.position = inverse * inverse * start + 2.0 * inverse * progress * curve + progress * progress * target
+
+
+func _control_center_in_layer(control: Control, layer: Control) -> Vector2:
+	if not control or not layer:
+		return Vector2.ZERO
+	var canvas_point := control.get_global_transform_with_canvas() * (control.size * 0.5)
+	return layer.get_global_transform_with_canvas().affine_inverse() * canvas_point
+
+
+func _result_petal_receiver(viewport_size: Vector2) -> Vector2:
+	if result_piece_icon and result_piece_icon.visible:
+		return _control_center_in_layer(result_piece_icon, result_petals_layer)
+	return Vector2(viewport_size.x * 0.5, viewport_size.y * 0.50)
 
 
 func stop_petals() -> void:
@@ -789,6 +852,7 @@ func stop_petals() -> void:
 
 
 func stop_all_animations() -> void:
+	music_stop_requested.emit()
 	stop_success_sequence()
 	stop_coin_animation()
 	stop_lion_animation()

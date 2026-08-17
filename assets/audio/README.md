@@ -1,11 +1,11 @@
-# 候选音效包：木质玩具 + 纸笔
+# 候选音频包：木质玩具 + 纸笔
 
 本目录中的 `candidates/*.wav` 是第一轮游戏音效素材，由 `scripts/audio_controller.gd` 统一接入游戏事件。
 
 | 文件 | 建议场景 |
 | --- | --- |
-| `metal_mark_01.wav` / `metal_mark_02.wav` | 短促、干净的小金属敲击声，标记普通 X，随机使用两个版本 |
-| `paper_erase.wav` | 橡皮擦纸，取消普通 X |
+| `metal_mark_01.wav` / `metal_mark_02.wav` | 低亮度、短尾音的软金属落笔声，标记普通 X；两个轻微音高版本保持同一触感 |
+| `paper_erase.wav` | 与落 X 响度和时长接近的轻纸面擦除声，取消普通 X |
 | `wood_correct.wav` | 正确放置小狮子皇冠 |
 | `wood_correct_final.wav` | 最后一只小狮子的短确认，给完整通关旋律留出空间 |
 | `wood_wrong.wav` | 错误放置反馈 |
@@ -26,8 +26,8 @@
 | `block_revive.wav` | 自动放回最后一块并解除死局 |
 | `block_assembly_complete.wav` | 全部拼块完成并进入 0.88 秒压平转换 |
 | `block_clear.wav` | 一次清除所有已放置方块 |
-| `petal_scatter.wav` | EXCELLENT 撒花开始时的一次性纸片飘散与闪光音效，不包含旋律或持续背景声 |
-| `coin_arrive.wav` / `coin_reel.wav` / `coin_settle.wav` | 双金币金属碰撞、约 1.08 秒减速金属滚轮和最终金属锁止；飞入声最多三次 |
+| `result_cheerful.wav` | EXCELLENT 专用柔和欢快音乐；低亮度木质与卡林巴旋律覆盖约 4.8 秒撒花阶段，后段主动留白给金币音效 |
+| `coin_arrive.wav` / `coin_reel.wav` / `coin_settle.wav` | 阻尼金币落槽、单次系统选择器式滚轮刻度和低频停止锁定；刻度由实际数字步进事件驱动 |
 
 技术规格：`44.1kHz / 16-bit / mono WAV`。生成脚本为 `tools/generate_audio_sfx.py`，固定随机种子，重复运行可得到一致结果。
 
@@ -39,4 +39,4 @@ python3 tools/generate_audio_sfx.py --output assets/audio/candidates
 
 页面脚本只调用语义化播放方法，音频加载、随机变体、滑动/吸附节流和并发播放统一由音效控制器处理。运行时分为 `GameplaySFX`、`UISFX` 和 `CelebrationSFX` 三组播放器池，普通操作不得截断通关或拼块完成的尾音。
 
-结算页面完全不播放背景音乐。EXCELLENT 依次执行“撒花音效与花瓣动画 → 安静停顿 → 金币飞入与落点碰撞 → 安静停顿 → 金属滚轮与数字滚动 → 金属锁止”，各阶段不得并行叠音。历史结算背景音乐素材已从资源包与生成脚本删除；保留音效由同一生成脚本使用固定种子生成，不依赖外部音乐版权。
+EXCELLENT 结算延迟加载 `result_cheerful.wav`，并依次执行“音乐与约 4.8 秒撒花同步开始，花瓣从顶部向下飘至小狮子处渐隐 → 立即飞币并播放阻尼落槽声 → 最后一枚到达后立即滚动数字，每个真实可视步播放一次短选择器刻度 → 最后一格播放低频锁定并淡出音乐”。视觉阶段之间不插入人工空白，滚轮刻度按照 Tween 的实际减速节奏触发，不使用与画面脱节的固定连续录音。GOOD 不播放庆祝音乐。所有素材由同一生成脚本使用固定种子生成，不依赖外部音乐版权。

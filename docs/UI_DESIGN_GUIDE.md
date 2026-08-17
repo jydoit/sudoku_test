@@ -206,7 +206,7 @@ func _region_border_width(cell_size: float) -> float:
 - 背后增加 `danger_red`、alpha `0.22` 的柔和圆形底晕，圆半径为格子尺寸的 `32%`。
 - 错误 X 必须明显强于普通 X，但不能遮挡区域底色和棋盘边界。
 
-X 属于基础可缩放符号，当前优先使用 Godot 自绘线条。若后续主题皮肤需要纹理化图案，再使用透明 SVG/PNG 贴图；贴图应保留相同尺寸比例和语义颜色。
+X 属于基础可缩放符号，当前优先使用 Godot 自绘线条。若后续主题皮肤需要纹理化图案，只使用透明 SVG 矢量贴图；贴图应保留相同尺寸比例和语义颜色。
 
 ### 6.3 开局提示皇冠与进度规范
 
@@ -441,7 +441,7 @@ Help 结构：
 - 顶部金币标签只显示图标和余额，不使用闪烁、红点或强促销动画。
 - 顶部红心与金币标签同高；每颗红心保留至少 `32 × 38px` 独立空间，不允许通过压缩间距或字号适配。
 - 有效红心使用红色实心图案，循环播放两次轻微心跳后停顿；失去的红心立即恢复 `1.0` 比例、变为灰色实心图案并停止动画。
-- 金币图标使用 `assets/ui/coin.png` 的透明 PNG 贴图，显示尺寸为 `28 × 28px`；不得退化为圆点字符或货币符号。
+- 金币图标使用 `assets/ui/coin.svg` 的透明 SVG 矢量贴图，显示尺寸为 `28 × 28px`；不得退化为圆点字符或货币符号。
 - 免费次数存在时，道具按钮显示 `×剩余次数`；免费次数耗尽后改为 `-金币价格`。
 - 所有价格必须在点击前可见，扣款后余额立即刷新。
 - 金币不足弹窗需要同时展示价格、当前余额和缺口。
@@ -563,9 +563,9 @@ tests/*.gd 保障关键行为不回退
 | 外框线宽 | `scripts/ui_tokens.gd` 的 `board_border_width()` | `game_board.gd` 调用，按棋盘尺寸分档 |
 | 普通 X | `scripts/ui_tokens.gd` 的 `BLOCKED_X_*` | `game_board.gd` 的 `_draw_blocked()` 引用 |
 | 错误 X | `scripts/ui_tokens.gd` 的 `WRONG_X_*` | `game_board.gd` 的 `_draw_wrong()` 引用 |
-| 正确皇冠角色 | `assets/ui/lion_king.png` | 张嘴开心笑、眼睛带高光的正脸狮子，供普通、提示和开局皇冠共用 |
-| 错误皇冠角色 | `assets/ui/lion_king_wrong.png` | 嘴角向下的苦笑狮子，并由棋盘叠加小型红色 X 徽标 |
-| 通关角色 | `assets/ui/lion_king_victory*.png` | 开心站立的橘色狮子，随机播放多帧自然挥手、逐步吐舌头或眨眼做鬼脸；身体固定位置、固定比例且不旋转 |
+| 正确皇冠角色 | `assets/ui/lion_king.svg` | 张嘴开心笑、眼睛带高光的正脸狮子，供普通、提示和开局皇冠共用 |
+| 错误皇冠角色 | `assets/ui/lion_king_wrong.svg` | 嘴角向下的苦笑狮子，并由棋盘叠加小型红色 X 徽标 |
+| 通关角色 | `assets/ui/lion_king_victory*.svg` | 开心站立的橘色狮子，随机播放多帧自然挥手、逐步吐舌头或眨眼做鬼脸；身体固定位置、固定比例且不旋转 |
 | 顶部红心体力 | `scripts/main.gd` 的 `_build_heart_display()`、`_update_heart_label()` | 独立槽位、有效心跳动、失去后灰色静止 |
 | 底部道具布局 | `scripts/main.gd` 的 `_build_action_bar()`、`_tool_button()` | 清除、皇冠直找、提示三等分，图标在上文字在下 |
 | 提示与清除图标 | `scripts/tool_icon.gd` | 使用可缩放的自绘灯泡与清除图标，避免小位图模糊 |

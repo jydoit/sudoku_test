@@ -1,7 +1,7 @@
 extends ColorRect
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
-const LION_KING_ICON = preload("res://assets/ui/lion_king.png")
+const LION_KING_ICON = preload("res://assets/ui/lion_king.svg")
 
 var panel: PanelContainer
 var title_label: Label

@@ -37,17 +37,17 @@ const GameSaveServiceScript = preload("res://scripts/storage/game_save_service.g
 const RunResultServiceScript = preload("res://scripts/services/run_result_service.gd")
 const UI_FONT: Font = preload("res://assets/fonts/NotoSansSC-Regular.ttf")
 const ARABIC_FONT: Font = preload("res://assets/fonts/NotoSansArabic-Regular.ttf")
-const LION_KING_ICON = preload("res://assets/ui/lion_king.png")
-const LION_KING_WRONG_ICON = preload("res://assets/ui/lion_king_wrong.png")
-const LION_KING_VICTORY_ICON = preload("res://assets/ui/lion_king_victory.png")
-const LION_KING_VICTORY_OUT_ICON = preload("res://assets/ui/lion_king_victory_out.png")
-const LION_KING_VICTORY_IN_ICON = preload("res://assets/ui/lion_king_victory_in.png")
-const LION_KING_VICTORY_WAVE_OUT_MID_ICON = preload("res://assets/ui/lion_king_victory_wave_out_mid.png")
-const LION_KING_VICTORY_WAVE_IN_MID_ICON = preload("res://assets/ui/lion_king_victory_wave_in_mid.png")
-const LION_KING_VICTORY_TONGUE_PEEK_ICON = preload("res://assets/ui/lion_king_victory_tongue_peek.png")
-const LION_KING_VICTORY_TONGUE_OUT_ICON = preload("res://assets/ui/lion_king_victory_tongue_out.png")
-const LION_KING_VICTORY_WINK_ICON = preload("res://assets/ui/lion_king_victory_wink.png")
-const LION_KING_VICTORY_FUNNY_ICON = preload("res://assets/ui/lion_king_victory_funny.png")
+const LION_KING_ICON = preload("res://assets/ui/lion_king.svg")
+const LION_KING_WRONG_ICON = preload("res://assets/ui/lion_king_wrong.svg")
+const LION_KING_VICTORY_ICON = preload("res://assets/ui/lion_king_victory.svg")
+const LION_KING_VICTORY_OUT_ICON = preload("res://assets/ui/lion_king_victory_out.svg")
+const LION_KING_VICTORY_IN_ICON = preload("res://assets/ui/lion_king_victory_in.svg")
+const LION_KING_VICTORY_WAVE_OUT_MID_ICON = preload("res://assets/ui/lion_king_victory_wave_out_mid.svg")
+const LION_KING_VICTORY_WAVE_IN_MID_ICON = preload("res://assets/ui/lion_king_victory_wave_in_mid.svg")
+const LION_KING_VICTORY_TONGUE_PEEK_ICON = preload("res://assets/ui/lion_king_victory_tongue_peek.svg")
+const LION_KING_VICTORY_TONGUE_OUT_ICON = preload("res://assets/ui/lion_king_victory_tongue_out.svg")
+const LION_KING_VICTORY_WINK_ICON = preload("res://assets/ui/lion_king_victory_wink.svg")
+const LION_KING_VICTORY_FUNNY_ICON = preload("res://assets/ui/lion_king_victory_funny.svg")
 const LION_KING_VICTORY_FRAMES = [
 	LION_KING_VICTORY_ICON,
 	LION_KING_VICTORY_OUT_ICON,
@@ -521,6 +521,8 @@ func _build_ui() -> void:
 		audio_controller.play_ui_tap()
 		_completion_secondary_pressed()
 	)
+	result_page.music_requested.connect(audio_controller.play_result_music)
+	result_page.music_stop_requested.connect(audio_controller.stop_result_music)
 	result_page.sound_requested.connect(audio_controller.play_result_sound)
 	add_child(result_page)
 	feedback_layer = FeedbackLayerScript.new()
@@ -1094,6 +1096,10 @@ func _composite_save_state() -> Dictionary:
 func _maybe_play_composite_intro() -> void:
 	if not _is_assembly_phase() or composite_tutorial_seen or composite_intro_running or not game_screen.visible:
 		return
+	# The walkthrough is a view-only demonstration. Always begin it from the
+	# untouched round state so an older partial save cannot leak into the demo.
+	composite_controller.clear_placements()
+	assembly_view.update_state(composite_placements, _assembly_allowed_origins(), composite_tray_slots)
 	composite_intro_running = true
 	composite_intro_marks_seen = true
 	_set_composite_intro_ui(true)
@@ -1108,6 +1114,7 @@ func _on_composite_intro_finished() -> void:
 		composite_intro_marks_seen = false
 		_save_game()
 	if _is_assembly_phase():
+		assembly_view.update_state(composite_placements, _assembly_allowed_origins(), composite_tray_slots)
 		_update_assembly_tool_buttons()
 
 
@@ -1294,7 +1301,7 @@ func _on_cell_double_pressed(row: int, col: int) -> void:
 	cell_states = result["states"]
 	board.set_states(cell_states)
 	if bool(result["correct"]):
-		board.play_cell_feedback(row, col)
+		board.play_correct_feedback(row, col)
 		var found_count := _piece_positions().size()
 		var total_count := int(current_level.get("targetCount", 1))
 		audio_controller.play_crown_place(found_count, total_count, found_count >= total_count)
@@ -1751,7 +1758,7 @@ func _on_tutorial_single_map_double_pressed(row: int, col: int) -> void:
 	cell_states = result["states"]
 	audio_controller.play_correct()
 	board.set_states(cell_states)
-	board.play_cell_feedback(row, col)
+	board.play_correct_feedback(row, col)
 	_update_tutorial_progress()
 	if bool(result.get("first", false)):
 		_show_toast("成功找到第一个皇冠")
@@ -2477,6 +2484,8 @@ func _refresh_localized_ui() -> void:
 		home_screen.refresh_localized_text()
 	if help_content:
 		help_content.refresh_localized_text()
+	if settings_content:
+		settings_content.refresh_localized_text()
 	if in_tutorial:
 		level_label.text = _t("新手教程")
 		_update_tutorial_action_bar()

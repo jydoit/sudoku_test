@@ -8,8 +8,9 @@ signal cell_dragged(row: int, col: int)
 signal cell_drag_ended()
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
-const PIECE_TEXTURE = preload("res://assets/ui/lion_king.png")
-const WRONG_PIECE_TEXTURE = preload("res://assets/ui/lion_king_wrong.png")
+const PIECE_TEXTURE = preload("res://assets/ui/lion_king.svg")
+const HAPPY_PIECE_TEXTURE = preload("res://assets/ui/lion_king_happy.svg")
+const WRONG_PIECE_TEXTURE = preload("res://assets/ui/lion_king_wrong.svg")
 const BOARD_INK := UITokensScript.INK
 const EMPTY_MARK := "empty"
 const PIECE_MARK := "piece"
@@ -24,6 +25,8 @@ const DOUBLE_TAP_MAX_MS := 320
 const DOUBLE_TAP_MAX_DISTANCE := 18.0
 const TAP_MAX_DRIFT := 14.0
 const TOUCH_MOUSE_SUPPRESS_MS := 700
+const CORRECT_REACTION_DURATION := 0.72
+const WRONG_REACTION_DURATION := 0.82
 const VICTORY_TIMELINE_DURATION := 2.30
 const VICTORY_RESULT_DELAY := 2.52
 const VICTORY_STAR_POINTS := [
@@ -51,6 +54,10 @@ var pulse_cell := Vector2i(-1, -1)
 var pulse_strength := 0.0
 var shake_cell := Vector2i(-1, -1)
 var shake_strength := 0.0
+var reaction_cell := Vector2i(-1, -1)
+var reaction_kind := ""
+var reaction_progress := 0.0
+var reaction_tween: Tween
 var guide_pulse_cell := Vector2i(-1, -1)
 var guide_pulse_cells: Dictionary = {}
 var guide_pulse_strength := 0.0
@@ -98,6 +105,7 @@ func set_level(level: Dictionary, states: Array, colors: Array) -> void:
 	king_reveal_cells.clear()
 	hidden_king_cells.clear()
 	king_reveal_strength = 0.0
+	_reset_cell_reaction()
 	tutorial_mask_enabled = false
 	tutorial_focus_cell = Vector2i(-1, -1)
 	_reset_victory_animation()
@@ -140,7 +148,25 @@ func play_cell_feedback(row: int, col: int) -> void:
 	tween.tween_method(_set_pulse, 1.0, 0.0, 0.18)
 
 
+func play_correct_feedback(row: int, col: int) -> void:
+	_reset_cell_reaction()
+	reaction_cell = Vector2i(col, row)
+	reaction_kind = "correct"
+	play_cell_feedback(row, col)
+	reaction_tween = create_tween()
+	reaction_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	reaction_tween.tween_method(_set_reaction_progress, 0.0, 1.0, CORRECT_REACTION_DURATION)
+	reaction_tween.finished.connect(_finish_cell_reaction)
+
+
 func play_wrong_feedback(row: int, col: int) -> void:
+	_reset_cell_reaction()
+	reaction_cell = Vector2i(col, row)
+	reaction_kind = "wrong"
+	reaction_tween = create_tween()
+	reaction_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	reaction_tween.tween_method(_set_reaction_progress, 0.0, 1.0, WRONG_REACTION_DURATION)
+	reaction_tween.finished.connect(_finish_cell_reaction)
 	shake_cell = Vector2i(col, row)
 	var tween := create_tween()
 	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
@@ -306,6 +332,29 @@ func _set_pulse(value: float) -> void:
 
 func _set_shake(value: float) -> void:
 	shake_strength = value
+	queue_redraw()
+
+
+func _set_reaction_progress(value: float) -> void:
+	reaction_progress = clampf(value, 0.0, 1.0)
+	queue_redraw()
+
+
+func _reset_cell_reaction() -> void:
+	if reaction_tween and reaction_tween.is_valid():
+		reaction_tween.kill()
+	reaction_tween = null
+	reaction_cell = Vector2i(-1, -1)
+	reaction_kind = ""
+	reaction_progress = 0.0
+	queue_redraw()
+
+
+func _finish_cell_reaction() -> void:
+	reaction_tween = null
+	reaction_cell = Vector2i(-1, -1)
+	reaction_kind = ""
+	reaction_progress = 0.0
 	queue_redraw()
 
 
@@ -500,6 +549,8 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 	var rect := _cell_rect(row, col, origin, cell_size)
 	var cell_key := Vector2i(col, row)
 	var state: String = cell_states[row][col]
+	var cell_reaction_kind := reaction_kind if cell_key == reaction_cell else ""
+	var cell_reaction_progress := reaction_progress if cell_key == reaction_cell else 0.0
 	var cell_pulse_strength := pulse_strength if cell_key == pulse_cell else 0.0
 	if cell_pulse_strength > 0.0:
 		rect = rect.grow(cell_size * 0.045 * cell_pulse_strength)
@@ -543,12 +594,16 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 			state == KING_MARK,
 			king_reveal_scale,
 			cell_pulse_strength,
-			victory_lion_strength
+			victory_lion_strength,
+			cell_reaction_kind,
+			cell_reaction_progress
 		)
 	elif state == BLOCKED_MARK:
 		_draw_blocked(rect, cell_size)
 	elif state == WRONG_MARK:
 		_draw_wrong(rect, cell_size)
+		if cell_reaction_kind == "wrong":
+			_draw_wrong_lion_reaction(rect, cell_size, cell_reaction_progress)
 
 
 func _draw_cell_gap_backgrounds(origin: Vector2, cell_size: float) -> void:
@@ -817,7 +872,9 @@ func _draw_piece(
 	_is_king: bool = false,
 	king_reveal_scale: float = 0.0,
 	cell_pulse_strength: float = 0.0,
-	victory_lion_strength: float = 0.0
+	victory_lion_strength: float = 0.0,
+	cell_reaction_kind: String = "",
+	cell_reaction_progress: float = 0.0
 ) -> void:
 	var texture_ratio := minf(
 		UITokensScript.CROWN_MAX_FONT_RATIO,
@@ -827,7 +884,23 @@ func _draw_piece(
 	)
 	var texture_size := cell_size * texture_ratio
 	var texture_rect := Rect2(rect.get_center() - Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size)
-	if victory_lion_strength > 0.0:
+	if cell_reaction_kind == "correct":
+		var rise_phase := clampf(cell_reaction_progress / 0.42, 0.0, 1.0)
+		var settle_phase := clampf((cell_reaction_progress - 0.42) / 0.58, 0.0, 1.0)
+		var cheerful_pop := sin(rise_phase * PI) * 0.20 + sin(settle_phase * PI) * 0.055
+		var cheerful_lift := -cell_size * (0.07 * sin(rise_phase * PI) + 0.025 * sin(settle_phase * PI))
+		var happy_blend_in := smoothstep(0.10, 0.24, cell_reaction_progress)
+		var happy_blend_out := 1.0 - smoothstep(0.78, 0.96, cell_reaction_progress)
+		var happy_alpha := happy_blend_in * happy_blend_out
+		var reaction_rect := Rect2(-Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size)
+		draw_set_transform(rect.get_center() + Vector2(0.0, cheerful_lift), 0.0, Vector2.ONE * (1.0 + cheerful_pop))
+		if happy_alpha < 0.995:
+			draw_texture_rect(PIECE_TEXTURE, reaction_rect, false, Color(1.0, 1.0, 1.0, 1.0 - happy_alpha))
+		if happy_alpha > 0.005:
+			draw_texture_rect(HAPPY_PIECE_TEXTURE, reaction_rect, false, Color(1.0, 1.0, 1.0, happy_alpha))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		_draw_correct_reaction_accents(rect, cell_size, cell_reaction_progress)
+	elif victory_lion_strength > 0.0:
 		var victory_scale := 1.0 + victory_lion_strength * 0.24
 		var victory_lift := -cell_size * 0.11 * victory_lion_strength
 		draw_set_transform(rect.get_center() + Vector2(0.0, victory_lift), 0.0, Vector2.ONE * victory_scale)
@@ -840,6 +913,44 @@ func _draw_piece(
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	else:
 		draw_texture_rect(PIECE_TEXTURE, texture_rect, false)
+
+
+func _draw_correct_reaction_accents(rect: Rect2, cell_size: float, progress: float) -> void:
+	var accent_phase := clampf((progress - 0.10) / 0.72, 0.0, 1.0)
+	var alpha := sin(accent_phase * PI)
+	if alpha <= 0.01:
+		return
+	var center := rect.get_center()
+	var accent_color := Color(UITokensScript.CROWN_GOLD, alpha * 0.92)
+	var offsets := [Vector2(-0.34, -0.27), Vector2(0.34, -0.24), Vector2(-0.29, 0.25), Vector2(0.31, 0.21)]
+	for index in range(offsets.size()):
+		var travel := cell_size * (0.86 + 0.20 * accent_phase)
+		var point: Vector2 = center + offsets[index] * travel
+		var radius := cell_size * (0.027 + 0.012 * sin((accent_phase + float(index) * 0.13) * PI))
+		draw_circle(point, radius, accent_color, true, -1.0, true)
+
+
+func _draw_wrong_lion_reaction(rect: Rect2, cell_size: float, progress: float) -> void:
+	var enter := clampf(progress / 0.22, 0.0, 1.0)
+	var exit := clampf((progress - 0.62) / 0.38, 0.0, 1.0)
+	var alpha := enter * (1.0 - exit)
+	if alpha <= 0.01:
+		return
+	var texture_size := cell_size * UITokensScript.CROWN_MAX_FONT_RATIO
+	var scale_value := lerpf(0.82, 1.04, sin(enter * PI * 0.5)) * lerpf(1.0, 0.94, exit)
+	var drop := cell_size * 0.035 * clampf((progress - 0.25) / 0.50, 0.0, 1.0)
+	draw_set_transform(rect.get_center() + Vector2(0.0, drop), 0.0, Vector2.ONE * scale_value)
+	draw_texture_rect(
+		WRONG_PIECE_TEXTURE,
+		Rect2(-Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size),
+		false,
+		Color(1.0, 1.0, 1.0, alpha)
+	)
+	if progress >= 0.30 and progress <= 0.72:
+		var tear_alpha := sin(clampf((progress - 0.30) / 0.42, 0.0, 1.0) * PI) * alpha
+		var tear_center := Vector2(texture_size * 0.145, -texture_size * 0.015)
+		draw_circle(tear_center, maxf(1.5, cell_size * 0.025), Color(0.38, 0.75, 1.0, tear_alpha), true, -1.0, true)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 func _cell_has_lion(cell: Vector2i) -> bool:
