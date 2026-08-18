@@ -1,13 +1,10 @@
 class_name CompositeCoinPolicy
 extends RefCounted
 
-const DAILY_FREE_ROUNDS := 5
-const MIN_ROUND_REWARD := 2
-const MAX_ROUND_REWARD := 8
-const ROUNDS_PER_REWARD_STEP := 10
-const MIN_ENTRY_COST := 2
-const PAID_REWARD_BONUS_RATE := 0.50
-const MIN_PAID_REWARD_BONUS := 2
+const DAILY_FREE_ROUNDS := 3
+const PAID_ENTRY_COST := 2
+const GOOD_COMPLETION_REWARD := 1
+const EXCELLENT_COMPLETION_REWARD := 3
 
 
 static func default_progress() -> Dictionary:
@@ -33,31 +30,28 @@ static func normalize_progress(progress: Dictionary, today: String = "") -> Dict
 	return progress
 
 
-static func base_reward_for_round(round_number: int) -> int:
-	var step := int((maxi(1, round_number) - 1) / ROUNDS_PER_REWARD_STEP)
-	return clampi(MIN_ROUND_REWARD + step, MIN_ROUND_REWARD, MAX_ROUND_REWARD)
+static func completion_reward(excellent: bool) -> int:
+	return EXCELLENT_COMPLETION_REWARD if excellent else GOOD_COMPLETION_REWARD
 
 
-static func entry_cost_for_round(round_number: int) -> int:
-	return maxi(MIN_ENTRY_COST, base_reward_for_round(round_number) - 2)
-
-
-static func paid_reward_bonus(entry_cost: int) -> int:
-	return maxi(MIN_PAID_REWARD_BONUS, int(ceil(float(maxi(0, entry_cost)) * PAID_REWARD_BONUS_RATE)))
+static func entry_cost_for_round(_round_number: int) -> int:
+	return PAID_ENTRY_COST
 
 
 static func round_quote(round_number: int, progress: Dictionary, today: String) -> Dictionary:
 	normalize_progress(progress, today)
 	var free_used := int(progress.get("dailyFreeRoundsUsed", 0))
 	var paid := free_used >= DAILY_FREE_ROUNDS
-	var base_reward := base_reward_for_round(round_number)
 	var entry_cost := entry_cost_for_round(round_number) if paid else 0
 	return {
 		"round": maxi(1, round_number),
 		"paid": paid,
 		"entryCost": entry_cost,
-		"baseReward": base_reward,
-		"reward": base_reward + paid_reward_bonus(entry_cost) if paid else base_reward,
+		"goodReward": GOOD_COMPLETION_REWARD,
+		"excellentReward": EXCELLENT_COMPLETION_REWARD,
+		# Keep the legacy quote field as the guaranteed Good reward. The actual
+		# completion reward is selected only after the run's heart result is known.
+		"reward": GOOD_COMPLETION_REWARD,
 		"dailyFreeRemaining": maxi(0, DAILY_FREE_ROUNDS - free_used)
 	}
 

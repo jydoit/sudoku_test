@@ -15,8 +15,8 @@ static func can_afford(round_quote: Dictionary, coin_balance: int) -> bool:
 
 static func schedule_with_quote(raw_schedule: Dictionary, round_quote: Dictionary) -> Dictionary:
 	var schedule := raw_schedule.duplicate(true)
-	schedule["compositeCoinBaseReward"] = int(round_quote.get("baseReward", 0))
-	schedule["compositeCoinReward"] = int(round_quote.get("reward", 0))
+	schedule["compositeCoinGoodReward"] = int(round_quote.get("goodReward", CompositeCoinPolicyScript.GOOD_COMPLETION_REWARD))
+	schedule["compositeCoinExcellentReward"] = int(round_quote.get("excellentReward", CompositeCoinPolicyScript.EXCELLENT_COMPLETION_REWARD))
 	schedule["compositeEntryCost"] = int(round_quote.get("entryCost", 0))
 	schedule["compositePaidEntry"] = bool(round_quote.get("paid", false))
 	return schedule

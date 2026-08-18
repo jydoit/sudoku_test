@@ -13,12 +13,12 @@ static func formal_completion(display_level: int, heart_limit: int, remaining_he
 	}
 
 
-static func composite_completion(active_schedule: Dictionary, round_number: int) -> Dictionary:
+
+static func composite_completion(active_schedule: Dictionary, heart_limit: int, remaining_hearts: int) -> Dictionary:
+	var excellent := CoinRewardPolicyScript.is_excellent_completion(heart_limit, remaining_hearts)
 	return {
-		"reward": int(active_schedule.get(
-			"compositeCoinReward",
-			CompositeCoinPolicyScript.base_reward_for_round(round_number)
-		)),
+		"reward": CompositeCoinPolicyScript.completion_reward(excellent),
+		"excellent": excellent,
 		"entryCost": int(active_schedule.get("compositeEntryCost", 0)),
 		"paidEntry": bool(active_schedule.get("compositePaidEntry", false))
 	}

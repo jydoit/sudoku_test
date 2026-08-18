@@ -2115,7 +2115,7 @@ func _complete_level() -> void:
 		return
 	is_completed = true
 	if home_composite_entry_active:
-		var result: Dictionary = RunResultServiceScript.composite_completion(active_schedule, home_composite_round)
+		var result: Dictionary = RunResultServiceScript.composite_completion(active_schedule, current_heart_limit, heart_count)
 		var composite_reward := int(result["reward"])
 		var composite_reward_transaction := player_wallet.grant(composite_reward, "composite_completion")
 		CompositeCoinPolicyScript.record_round_completed(composite_coin_progress, composite_reward)
@@ -2157,10 +2157,10 @@ func _complete_level() -> void:
 
 func _prepare_success_result_page(reward: int = 0, reward_transaction: Dictionary = {}) -> void:
 	_set_result_overlay_mode("success")
-	var excellent := not home_composite_entry_active and CoinRewardPolicyScript.is_excellent_completion(current_heart_limit, heart_count)
+	var excellent := CoinRewardPolicyScript.is_excellent_completion(current_heart_limit, heart_count)
 	if reward <= 0:
 		if home_composite_entry_active:
-			reward = int(active_schedule.get("compositeCoinReward", CompositeCoinPolicyScript.base_reward_for_round(home_composite_round)))
+			reward = CompositeCoinPolicyScript.completion_reward(excellent)
 		else:
 			reward = CoinRewardPolicyScript.completion_reward(player_level_number, current_heart_limit, heart_count)
 	var balance_after := maxi(0, int(reward_transaction.get("balanceAfter", coin_count)))
@@ -3079,11 +3079,12 @@ func _sync_home_composite_shared_coin_balance() -> void:
 
 func _show_home_composite_coin_shortage(quote: Dictionary) -> void:
 	var entry_cost := int(quote.get("entryCost", 0))
-	var reward := int(quote.get("reward", 0))
+	var good_reward := int(quote.get("goodReward", CompositeCoinPolicyScript.GOOD_COMPLETION_REWARD))
+	var excellent_reward := int(quote.get("excellentReward", CompositeCoinPolicyScript.EXCELLENT_COMPLETION_REWARD))
 	dialog_controller.show_dialog(
 		"home_composite_coin_shortage",
 		_t("金币不足"),
-		_t("今日免费拼块次数已用完。本局需要 %d 金币，完成后可获得 %d 金币。", [entry_cost, reward]),
+		_t("今日免费拼块次数已用完。本局需要 %d 金币。通关后 Good 奖励 %d 金币，Excellent 奖励 %d 金币。", [entry_cost, good_reward, excellent_reward]),
 		"",
 		[{"id": "confirm", "text": _t("知道了"), "variant": "primary"}],
 		UITokensScript.DIALOG_STANDARD_WIDTH,
