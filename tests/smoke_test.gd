@@ -774,6 +774,7 @@ func _run() -> void:
 		game._on_cell_double_pressed(int(coordinate[0]), int(coordinate[1]))
 	assert(game.is_completed, "A valid solution must complete the level")
 	assert(game.coin_count == completion_coins_before + expected_completion_reward, "Completion should grant the dynamic coin reward")
+	assert(game.coin_label.text == str(completion_coins_before), "The level header must keep the pre-reward balance until the result animation reveals the grant")
 	assert(int(game.economy_progress["totalCoinEarned"]) >= expected_completion_reward, "Economy progress should retain earned-coin totals")
 	assert(game.board.victory_tween != null, "Completion should start the board victory timeline")
 	assert(game.board.victory_origin.x >= 0, "The board victory wave should originate from the final lion")
@@ -782,6 +783,8 @@ func _run() -> void:
 	await create_timer(game.board.victory_result_delay() + 0.18).timeout
 	assert(game.result_page.completion_title.text == game._t("EXCELLENT"), "A no-heart-loss multi-heart completion should display Excellent")
 	assert(game.result_page.result_is_excellent, "Excellent completion should enable the dedicated celebration state")
+	assert(game.result_page.result_coin_roll_display.displayed_value() == completion_coins_before, "Excellent should show the pre-reward balance from its first visible frame")
+	assert(game.result_page.result_coin_roll_primary.text == str(completion_coins_before), "The petal phase must not expose the coin component's zero default")
 	assert(
 		game.result_page.result_petals_layer.visible
 		and game.result_page.result_petals_layer.get_child_count() == game.result_page.RESULT_PETAL_COUNT,
@@ -830,6 +833,8 @@ func _run() -> void:
 	var manual_balance_after: int = game.coin_count
 	var manual_balance_before: int = maxi(0, manual_balance_after - 5)
 	game._prepare_success_result_page(5)
+	assert(game.result_page.result_coin_roll_display.displayed_value() == manual_balance_before, "The result balance should be initialized before the first result-page frame")
+	assert(game.result_page.result_coin_roll_primary.text == str(manual_balance_before), "The first visible result frame must show the pre-reward balance instead of zero or a stale balance")
 	await process_frame
 	var expected_flight_source: Vector2 = game.result_page._control_point_in_flight_layer(
 		game.result_page.result_piece_icon,

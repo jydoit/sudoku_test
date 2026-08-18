@@ -264,6 +264,8 @@ func present_success(data: Dictionary) -> void:
 	result_is_excellent = excellent
 	var composite := bool(data.get("composite", false))
 	var reward := maxi(0, int(data.get("reward", 0)))
+	var balance_after := maxi(0, int(data.get("coinBalance", reward)))
+	var balance_before := maxi(0, int(data.get("coinBalanceBefore", balance_after - reward)))
 	completion_title.text = _t("EXCELLENT") if excellent else _t("GOOD")
 	reward_label.text = (
 		_t("拼块挑战 · 第 %d 局完成", [maxi(1, int(data.get("round", 1)))])
@@ -274,6 +276,11 @@ func present_success(data: Dictionary) -> void:
 	result_piece_icon.show()
 	stop_coin_animation()
 	result_reward_label.hide()
+	if result_coin_roll_display:
+		# The reward row becomes visible before the deferred celebration sequence.
+		# Seed it now so its first rendered frame never exposes the component's
+		# construction default or a balance left behind by the previous result.
+		result_coin_roll_display.set_value(balance_before)
 	result_coin_roll_row.visible = reward > 0
 	if composite and reward > 0:
 		var entry_cost := int(data.get("entryCost", 0))
@@ -297,7 +304,8 @@ func present_success(data: Dictionary) -> void:
 		"play_success_sequence",
 		excellent,
 		reward,
-		int(data.get("coinBalance", reward))
+		balance_before,
+		balance_after
 	)
 
 
@@ -388,14 +396,14 @@ func _t(source: String, values: Array = []) -> String:
 
 
 
-func play_coin_animation(reward: int, balance_after: int) -> void:
+func play_coin_animation(reward: int, balance_before: int, balance_after: int) -> void:
 	if not result_coin_roll_display or reward <= 0 or overlay_mode != "success":
 		return
 	stop_coin_animation()
 	result_coin_arrival_sound_values = _coin_arrival_sound_milestones(reward)
 	result_coin_roll_display.show()
+	balance_before = maxi(0, balance_before)
 	balance_after = maxi(0, balance_after)
-	var balance_before := maxi(0, balance_after - reward)
 	result_coin_roll_display.set_value(balance_before)
 	result_reward_coin_icon.scale = Vector2.ONE
 	result_reward_coin_icon.pivot_offset = result_reward_coin_icon.size * 0.5
@@ -550,7 +558,7 @@ func _on_result_balance_roll_finished(_balance: int) -> void:
 		music_stop_requested.emit()
 
 
-func play_success_sequence(excellent: bool, reward: int, balance_after: int) -> void:
+func play_success_sequence(excellent: bool, reward: int, balance_before: int, balance_after: int) -> void:
 	stop_success_sequence()
 	var sequence_generation := result_sequence_generation
 	# The result page is built from nested Containers. Let them complete two layout
@@ -571,13 +579,13 @@ func play_success_sequence(excellent: bool, reward: int, balance_after: int) -> 
 		result_success_sequence_tween.tween_callback(_finish_petals_phase)
 		if reward > 0:
 			result_success_sequence_tween.tween_callback(
-				play_coin_animation.bind(reward, balance_after)
+				play_coin_animation.bind(reward, balance_before, balance_after)
 			)
 		else:
 			result_success_sequence_tween.tween_callback(func() -> void: music_stop_requested.emit())
 		return
 	if reward > 0:
-		play_coin_animation(reward, balance_after)
+		play_coin_animation(reward, balance_before, balance_after)
 
 
 func stop_success_sequence() -> void:

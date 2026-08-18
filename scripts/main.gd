@@ -736,6 +736,7 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 	if clear_button:
 		clear_button.show()
 		clear_button.disabled = is_failed
+	_update_coin_label()
 	_update_heart_label()
 	_update_crown_find_button()
 	_update_level_picker()
@@ -2116,17 +2117,16 @@ func _complete_level() -> void:
 	if home_composite_entry_active:
 		var result: Dictionary = RunResultServiceScript.composite_completion(active_schedule, home_composite_round)
 		var composite_reward := int(result["reward"])
-		player_wallet.grant(composite_reward, "composite_completion")
+		var composite_reward_transaction := player_wallet.grant(composite_reward, "composite_completion")
 		CompositeCoinPolicyScript.record_round_completed(composite_coin_progress, composite_reward)
 		_sync_home_composite_shared_coin_balance()
 		_record_home_composite_result(true)
-		_update_coin_label()
 		_update_home()
 		board.play_victory()
 		audio_controller.play_victory()
 		_save_game()
 		await get_tree().create_timer(board.victory_result_delay()).timeout
-		_prepare_success_result_page(composite_reward)
+		_prepare_success_result_page(composite_reward, composite_reward_transaction)
 		result_page.show_animated()
 		return
 	var level_id := int(current_level["levelId"])
@@ -2134,7 +2134,7 @@ func _complete_level() -> void:
 		completed_levels.append(level_id)
 	var result: Dictionary = RunResultServiceScript.formal_completion(player_level_number, current_heart_limit, heart_count)
 	var reward := int(result["reward"])
-	player_wallet.grant(reward, "formal_completion")
+	var reward_transaction := player_wallet.grant(reward, "formal_completion")
 	CoinEconomyScript.record_completion(
 		economy_progress,
 		level_id,
@@ -2146,17 +2146,16 @@ func _complete_level() -> void:
 		run_coin_exchange_count
 	)
 	_record_level_result()
-	_update_coin_label()
 	_update_home()
 	board.play_victory()
 	audio_controller.play_victory()
 	_save_game()
 	await get_tree().create_timer(board.victory_result_delay()).timeout
-	_prepare_success_result_page(reward)
+	_prepare_success_result_page(reward, reward_transaction)
 	result_page.show_animated()
 
 
-func _prepare_success_result_page(reward: int = 0) -> void:
+func _prepare_success_result_page(reward: int = 0, reward_transaction: Dictionary = {}) -> void:
 	_set_result_overlay_mode("success")
 	var excellent := not home_composite_entry_active and CoinRewardPolicyScript.is_excellent_completion(current_heart_limit, heart_count)
 	if reward <= 0:
@@ -2164,6 +2163,8 @@ func _prepare_success_result_page(reward: int = 0) -> void:
 			reward = int(active_schedule.get("compositeCoinReward", CompositeCoinPolicyScript.base_reward_for_round(home_composite_round)))
 		else:
 			reward = CoinRewardPolicyScript.completion_reward(player_level_number, current_heart_limit, heart_count)
+	var balance_after := maxi(0, int(reward_transaction.get("balanceAfter", coin_count)))
+	var balance_before := maxi(0, int(reward_transaction.get("balanceBefore", balance_after - reward)))
 	var next_quote := _home_composite_round_quote(home_composite_round + 1) if home_composite_entry_active else {}
 	result_page.present_success({
 		"excellent": excellent,
@@ -2171,7 +2172,8 @@ func _prepare_success_result_page(reward: int = 0) -> void:
 		"round": home_composite_round,
 		"displayLevel": player_level_number,
 		"reward": reward,
-		"coinBalance": coin_count,
+		"coinBalanceBefore": balance_before,
+		"coinBalance": balance_after,
 		"entryCost": int(active_schedule.get("compositeEntryCost", 0)),
 		"paidEntry": bool(active_schedule.get("compositePaidEntry", false)),
 		"nextPaid": bool(next_quote.get("paid", false)),
