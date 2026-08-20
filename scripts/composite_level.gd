@@ -232,20 +232,6 @@ static func evaluate_placement_state(
 	var allowed := {}
 	if include_allowed_origins:
 		allowed = _allowed_origins_for_all_from_occupancy(data, owners)
-		for piece in remaining:
-			var piece_key := str(int(piece.get("pieceId", -1)))
-			if allowed.get(piece_key, []).is_empty():
-				return {"valid": true, "deadlocked": true, "layout": {}, "allowedByPiece": allowed}
-	else:
-		for piece in remaining:
-			var has_space := false
-			var piece_id := int(piece.get("pieceId", -1))
-			for origin in _piece_candidate_origins(piece, data.get("constructionCells", [])):
-				if _candidate_fits_occupancy(data, piece, origin, owners, piece_id):
-					has_space = true
-					break
-			if not has_space:
-				return {"valid": true, "deadlocked": true, "layout": {}, "allowedByPiece": {}}
 	return {"valid": true, "deadlocked": false, "layout": {}, "allowedByPiece": allowed}
 
 

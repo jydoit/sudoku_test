@@ -19,6 +19,7 @@ const FormalLevelPageScript = preload("res://scripts/pages/formal_level_page.gd"
 const CompositeLevelPageScript = preload("res://scripts/pages/composite_level_page.gd")
 const ResultPageScript = preload("res://scripts/pages/result_page.gd")
 const HelpDialogContentScript = preload("res://scripts/dialogs/help_dialog_content.gd")
+const CompositePaidEntryContentScript = preload("res://scripts/dialogs/composite_paid_entry_content.gd")
 const LEVEL_SELECT_DIALOG_PATH := "res://scripts/dialogs/level_select_dialog_content.gd"
 const SettingsDialogContentScript = preload("res://scripts/dialogs/settings_dialog_content.gd")
 const OpeningKingOverlayScript = preload("res://scripts/overlays/opening_king_overlay.gd")
@@ -358,6 +359,7 @@ var help_content: Control
 var help_tabs: TabContainer
 var level_select_content: Control
 var settings_content: Control
+var composite_paid_entry_content: Control
 var language_picker: OptionButton
 var localization
 var audio_controller
@@ -617,6 +619,9 @@ func _build_dialog_controller() -> void:
 	dialog_controller.action_selected.connect(_on_dialog_action_selected)
 	dialog_controller.cancelled.connect(_on_dialog_cancelled)
 	add_child(dialog_controller)
+	composite_paid_entry_content = CompositePaidEntryContentScript.new()
+	composite_paid_entry_content.configure(Callable(localization, "text"))
+	dialog_controller.register_content("composite_paid_entry", composite_paid_entry_content)
 
 
 func _build_help_dialog() -> void:
@@ -2249,10 +2254,10 @@ func _completion_primary_pressed() -> void:
 		_revive_composite_deadlock()
 		return
 	if home_composite_entry_active:
-		completion_overlay.hide()
 		if result_overlay_mode == "success":
-			_start_next_home_composite_round()
+			_request_next_home_composite_round()
 		else:
+			completion_overlay.hide()
 			_replay_level()
 			_show_game()
 		return
@@ -2422,6 +2427,9 @@ func _on_dialog_action_selected(dialog_id: String, action_id: String) -> void:
 		"settings":
 			if action_id == "apply":
 				_apply_selected_settings()
+		"home_composite_paid_next":
+			if action_id == "confirm":
+				_start_next_home_composite_round()
 
 
 func _on_dialog_cancelled(dialog_id: String) -> void:
@@ -3044,6 +3052,18 @@ func _start_next_home_composite_round() -> void:
 	_save_game()
 
 
+func _request_next_home_composite_round() -> void:
+	var next_round := home_composite_round + 1
+	var round_quote := _home_composite_round_quote(next_round)
+	if not bool(round_quote.get("paid", false)):
+		_start_next_home_composite_round()
+		return
+	if not CompositeEntryServiceScript.can_afford(round_quote, coin_count):
+		_show_home_composite_coin_shortage(round_quote)
+		return
+	_show_home_composite_paid_next_dialog(round_quote)
+
+
 func _home_composite_round_quote(round_number: int) -> Dictionary:
 	return CompositeEntryServiceScript.quote(round_number, composite_coin_progress, _today_string())
 
@@ -3060,16 +3080,23 @@ func _apply_home_composite_round_entry(quote: Dictionary) -> void:
 		return
 	var entry_cost := int(transaction.get("amount", 0))
 	_sync_home_composite_shared_coin_balance()
-	_update_coin_label()
 	_update_home()
 	if entry_cost > 0:
+		if game_screen:
+			game_screen.set_coin_balance(int(transaction.get("balanceBefore", coin_count)))
 		call_deferred(
-			"_play_coin_deduction_animation",
+			"_play_home_composite_entry_feedback",
 			int(transaction.get("balanceBefore", coin_count)),
 			int(transaction.get("balanceAfter", coin_count)),
 			entry_cost
 		)
-		_show_toast(_t("拼块入场 -%d 金币", [entry_cost]))
+	else:
+		_update_coin_label()
+
+
+func _play_home_composite_entry_feedback(balance_before: int, balance_after: int, amount: int) -> void:
+	_play_coin_deduction_animation(balance_before, balance_after, amount)
+	_show_toast(_t("拼块入场 -%d 金币", [amount]))
 
 
 func _sync_home_composite_shared_coin_balance() -> void:
@@ -3087,6 +3114,24 @@ func _show_home_composite_coin_shortage(quote: Dictionary) -> void:
 		_t("今日免费拼块次数已用完。本局需要 %d 金币。通关后 Good 奖励 %d 金币，Excellent 奖励 %d 金币。", [entry_cost, good_reward, excellent_reward]),
 		"",
 		[{"id": "confirm", "text": _t("知道了"), "variant": "primary"}],
+		UITokensScript.DIALOG_STANDARD_WIDTH,
+		false
+	)
+
+
+func _show_home_composite_paid_next_dialog(quote: Dictionary) -> void:
+	var next_round := maxi(1, int(quote.get("round", home_composite_round + 1)))
+	var entry_cost := maxi(0, int(quote.get("entryCost", CompositeCoinPolicyScript.PAID_ENTRY_COST)))
+	composite_paid_entry_content.present(next_round, entry_cost, coin_count)
+	dialog_controller.show_dialog(
+		"home_composite_paid_next",
+		_t("开始下一局？"),
+		_t("今日免费次数已用完"),
+		"composite_paid_entry",
+		[
+			{"id": "cancel", "text": _t("取消"), "variant": "secondary"},
+			{"id": "confirm", "text": _t("开始"), "variant": "primary"}
+		],
 		UITokensScript.DIALOG_STANDARD_WIDTH,
 		false
 	)

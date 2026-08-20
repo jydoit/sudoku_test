@@ -3,8 +3,8 @@ extends RefCounted
 
 const DAILY_FREE_ROUNDS := 3
 const PAID_ENTRY_COST := 2
-const GOOD_COMPLETION_REWARD := 1
-const EXCELLENT_COMPLETION_REWARD := 3
+const GOOD_COMPLETION_REWARD := 2
+const EXCELLENT_COMPLETION_REWARD := 4
 
 
 static func default_progress() -> Dictionary:

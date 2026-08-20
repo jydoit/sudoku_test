@@ -50,7 +50,7 @@ func _verify_current_round_trip() -> void:
 	game.sfx_enabled = false
 	game.haptics_enabled = false
 	game.composite_coin_progress["dailyDate"] = game._today_string()
-	game.composite_coin_progress["dailyFreeRoundsUsed"] = 4
+	game.composite_coin_progress["dailyFreeRoundsUsed"] = 3
 	game.composite_coin_progress["totalPaidRounds"] = 2
 	game._load_level(1)
 	var editable := _first_editable_cell(game)
@@ -67,7 +67,7 @@ func _verify_current_round_trip() -> void:
 	assert(not restored.music_enabled, "SAVE-001 should restore the music preference")
 	assert(not restored.sfx_enabled, "SAVE-001 should restore the sound-effects preference")
 	assert(not restored.haptics_enabled, "SAVE-001 should restore the haptics preference")
-	assert(int(restored.composite_coin_progress.get("dailyFreeRoundsUsed", -1)) == 4, "SAVE-001 should restore today's used free block rounds")
+	assert(int(restored.composite_coin_progress.get("dailyFreeRoundsUsed", -1)) == 3, "SAVE-001 should restore today's used free block rounds")
 	assert(int(restored.composite_coin_progress.get("totalPaidRounds", -1)) == 2, "SAVE-001 should restore cumulative paid block rounds")
 	assert(restored.resume_level_id == expected_level_id, "SAVE-001 should restore the current level id")
 	assert(restored.resume_states[editable.y][editable.x] == "blocked", "SAVE-001 should restore ordinary X marks")

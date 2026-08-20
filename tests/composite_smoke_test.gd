@@ -8,6 +8,8 @@ const CompositeLevelStoreScript = preload("res://scripts/composite_level_store.g
 const CompositeCoinPolicyScript = preload("res://scripts/composite_coin_policy.gd")
 const CompositePlacementEngineScript = preload("res://scripts/rules/composite_placement_engine.gd")
 const CompositeEntryServiceScript = preload("res://scripts/services/composite_entry_service.gd")
+const RunResultServiceScript = preload("res://scripts/services/run_result_service.gd")
+const PlayerWalletScript = preload("res://scripts/services/player_wallet.gd")
 const SAVE_PATH := "user://composite_smoke_test_save.json"
 
 
@@ -95,6 +97,7 @@ func _run() -> void:
 	_test_difficulty_region_selection()
 	_test_clue_selection()
 	_test_partial_deadlock_connectivity()
+	_test_piece_numbering_does_not_define_deadlock()
 	_test_shared_placement_evaluation()
 	_test_difficulty_builds(levels)
 	_test_reported_level_split(levels)
@@ -193,16 +196,63 @@ func _run() -> void:
 	var third_pattern := str(game.composite_data.get("difficulty", ""))
 	assert(game.home_composite_round == 3 and CompositeLevelDirectorScript.PATTERNS.has(third_pattern), "The third block round should sample a supported assembly pattern")
 	assert(int(game.composite_coin_progress.get("dailyFreeRoundsUsed", 0)) == 3, "Starting three new block rounds should consume three daily free entries")
-	assert(game.coin_count == formal_coins, "The first five daily block rounds should not deduct entry coins")
-	game._play_coin_deduction_animation(10, 8, 2)
+	assert(game.coin_count == formal_coins, "The first three daily block rounds should not deduct entry coins")
+	game._set_result_overlay_mode("success")
+	game.result_page.present_success({
+		"excellent": false,
+		"composite": true,
+		"round": 3,
+		"displayLevel": game.player_level_number,
+		"reward": CompositeCoinPolicyScript.GOOD_COMPLETION_REWARD,
+		"coinBalanceBefore": formal_coins - CompositeCoinPolicyScript.GOOD_COMPLETION_REWARD,
+		"coinBalance": formal_coins,
+		"entryCost": 0,
+		"paidEntry": false,
+		"nextPaid": true,
+		"nextEntryCost": CompositeCoinPolicyScript.PAID_ENTRY_COST
+	})
+	game.completion_overlay.show()
+	await process_frame
+	assert(game.completion_overlay == game.result_page, "Block and ordinary completions should share the same ResultPage instance")
+	assert(game.completion_next_button.text == game._t("下一局 -%d", [2]), "The shared result page should preview the paid next-round price")
+	var round_three_level_index: int = game.current_level_index
+	var round_three_schedule: Dictionary = game.active_schedule.duplicate(true)
+	var paid_progress_before: Dictionary = game.composite_coin_progress.duplicate(true)
+	game._completion_primary_pressed()
+	assert(game.dialog_controller.is_dialog_open("home_composite_paid_next"), "A paid next round should require confirmation above the shared result page")
+	assert(game.completion_overlay.visible and game.home_composite_round == 3 and game.coin_count == formal_coins, "Opening paid confirmation must keep the completed result visible and must not spend coins")
+	var paid_dialog_message := game.dialog_controller.find_child("DialogMessage", true, false) as Label
+	var paid_dialog_confirm := game.dialog_controller._primary_button as Button
+	var paid_dialog_card := game.dialog_controller.find_child("DialogCard", true, false) as PanelContainer
+	var paid_entry_content = game.composite_paid_entry_content
+	assert(paid_dialog_message != null and paid_dialog_message.get_line_count() <= 2, "Paid confirmation copy should stay within two rendered lines")
+	assert(paid_dialog_confirm != null and paid_dialog_confirm.text == game._t("开始"), "Paid confirmation should keep its primary action concise")
+	assert(paid_entry_content.round_label.text == game._t("第 %d 局", [4]), "Paid confirmation should show the next round in its dedicated bold pill")
+	assert(paid_entry_content.cost_value_label.text == "2" and paid_entry_content.balance_value_label.text == str(formal_coins), "Paid confirmation should move cost and balance out of body copy into dedicated values")
+	assert(paid_entry_content.cost_icon.texture != null and paid_entry_content.balance_icon.texture != null, "Cost and balance cards should both use the shared coin icon")
+	assert(paid_entry_content.cost_value_label.get_theme_font("font") == paid_entry_content._bold_font and paid_entry_content._bold_font.variation_embolden > 0.0, "Paid confirmation numbers should use the emboldened font variation")
+	assert(paid_dialog_card != null and paid_dialog_card.get_global_rect().end.x <= game.get_viewport_rect().size.x, "Paid confirmation should fit inside the mobile viewport")
+	game.dialog_controller._activate_action("cancel")
+	assert(not game.dialog_controller.visible and game.completion_overlay.visible and game.home_composite_round == 3, "Cancelling paid confirmation should stay on the completed result")
+	game._completion_primary_pressed()
+	assert(game.dialog_controller.is_dialog_open("home_composite_paid_next"), "Paid confirmation should be repeatable after cancellation")
+	game.dialog_controller._activate_action("confirm")
+	assert(game.home_composite_round == 4 and game.coin_count == formal_coins - 2, "Confirming paid entry should create the fourth round and deduct exactly two coins")
+	assert(not game.completion_overlay.visible and game.game_screen.visible and game.coin_label.text == str(formal_coins), "The new gameplay page should open with the pre-deduction balance still visible")
 	await process_frame
 	assert(game.coin_delta_panel != null and game.coin_delta_panel.visible, "A paid block entry should show a floating coin deduction indicator")
 	assert(game.coin_delta_label.text == "−2", "The entry animation should expose the exact deducted amount")
 	assert(game.coin_balance_roll_clip != null and game.coin_balance_roll_secondary.visible, "A paid entry should roll the clipped balance digits downward")
 	await create_timer(1.55).timeout
-	assert(game.coin_label.text == "8" and not game.coin_delta_panel.visible, "The level coin balance should roll down and finish at the deducted balance")
+	assert(game.coin_label.text == str(formal_coins - 2) and not game.coin_delta_panel.visible, "The level coin balance should roll down and finish at the deducted balance")
 	assert(game.game_screen.COIN_BALANCE_ROLL_DURATION >= 1.25, "The paid-entry balance animation should remain readable on a phone")
-	game._update_coin_label()
+	game.coin_count = formal_coins
+	game.composite_coin_progress = paid_progress_before
+	game.home_composite_progress_snapshot["coinCount"] = formal_coins
+	game.home_composite_round = 3
+	game._load_level(round_three_level_index, false, round_three_schedule)
+	game._show_game()
+	game._update_home()
 	game.localization.set_locale("en")
 	assert(game.result_page.composite_coin_text(2, 0, false) == "Daily free round · No entry coins deducted\nCompletion reward: 2 coins", "A free block result should clearly state that no entry coins were deducted")
 	assert(game.result_page.composite_coin_text(4, 2, true) == "Entry: -2 coins · Reward: +4 coins\nNet change: +2 coins", "A paid block result should clearly separate entry cost, reward, and net change")
@@ -716,6 +766,41 @@ func _test_partial_deadlock_connectivity() -> void:
 	)
 
 
+func _test_piece_numbering_does_not_define_deadlock() -> void:
+	var data := {
+		"rows": 1,
+		"cols": 4,
+		"baseRegions": [[1, 1, 1, 1]],
+		"selectedRegionIds": [1],
+		"constructionCells": [[0, 0], [0, 1], [0, 2], [0, 3]],
+		"pieces": [
+			{"pieceId": 0, "regionId": 1, "cells": [[0, 0]]},
+			{"pieceId": 1, "regionId": 1, "cells": [[0, 0], [0, 1], [0, 2]]}
+		],
+		"validLayouts": [{"placements": {"0": [0, 3], "1": [0, 0]}}]
+	}
+	CompositeLevelScript._prepare_runtime_cache(data)
+	var out_of_decomposition_order := {"0": [0, 1]}
+	var evaluation: Dictionary = CompositeLevelScript.evaluate_placement_state(
+		data,
+		out_of_decomposition_order,
+		true
+	)
+	assert(bool(evaluation.get("valid", false)), "A spatially legal placement must remain valid outside its prebuilt piece-number layout")
+	assert(
+		not bool(evaluation.get("deadlocked", true)),
+		"Piece numbering and a temporarily unplaceable remaining shape must not define a deadlock while the color graph stays connected"
+	)
+	assert(
+		evaluation.get("allowedByPiece", {}).get("1", []).is_empty(),
+		"The deadlock regression fixture must leave the numbered remaining piece without a geometric origin"
+	)
+	assert(
+		CompositeLevelScript.has_valid_completion(data, out_of_decomposition_order),
+		"The lightweight deadlock query must use the same connectivity-only rule"
+	)
+
+
 func _test_shared_placement_evaluation() -> void:
 	var data := {
 		"rows": 1,
@@ -818,20 +903,30 @@ func _test_tray_return_slot_focus(view) -> void:
 func _test_composite_coin_policy() -> void:
 	var progress := CompositeCoinPolicyScript.default_progress()
 	var today := "2026-08-06"
-	assert(CompositeCoinPolicyScript.base_reward_for_round(1) == 2, "Block rounds 1-10 should award two base coins")
-	assert(CompositeCoinPolicyScript.base_reward_for_round(10) == 2, "The first reward band should include round 10")
-	assert(CompositeCoinPolicyScript.base_reward_for_round(11) == 3, "Every ten played rounds should add one base coin")
-	assert(CompositeCoinPolicyScript.base_reward_for_round(61) == 8 and CompositeCoinPolicyScript.base_reward_for_round(100) == 8, "Block rewards should cap at eight base coins")
-	for round_number in range(1, 6):
+	assert(CompositeCoinPolicyScript.DAILY_FREE_ROUNDS == 3, "Each local day should provide three free block rounds")
+	assert(CompositeCoinPolicyScript.completion_reward(false) == 2, "A Good block completion should return two coins")
+	assert(CompositeCoinPolicyScript.completion_reward(true) == 4, "An Excellent block completion should return four coins")
+	var good_result := RunResultServiceScript.composite_completion({}, 3, 2)
+	var excellent_result := RunResultServiceScript.composite_completion({}, 3, 3)
+	assert(not bool(good_result.get("excellent", true)) and int(good_result.get("reward", 0)) == 2, "A block run with a wrong crown placement should settle as Good for two coins")
+	assert(bool(excellent_result.get("excellent", false)) and int(excellent_result.get("reward", 0)) == 4, "A mistake-free block run should settle as Excellent for four coins")
+	for round_number in range(1, 4):
 		var free_quote := CompositeCoinPolicyScript.round_quote(round_number, progress, today)
-		assert(not bool(free_quote.get("paid", true)) and int(free_quote.get("entryCost", -1)) == 0, "The first five block rounds of a day should be free")
+		assert(not bool(free_quote.get("paid", true)) and int(free_quote.get("entryCost", -1)) == 0, "The first three block rounds of a day should be free")
 		CompositeCoinPolicyScript.record_round_started(progress, today, free_quote)
-	var paid_quote := CompositeCoinPolicyScript.round_quote(6, progress, today)
-	assert(bool(paid_quote.get("paid", false)), "The sixth newly started block round of a day should require coins")
-	assert(int(paid_quote.get("entryCost", 0)) == 2, "Paid block entry should cost reward minus two with a two-coin minimum")
-	assert(int(paid_quote.get("reward", 0)) == 4, "A paid two-coin reward round should receive the minimum two-coin completion bonus")
+	var paid_quote := CompositeCoinPolicyScript.round_quote(4, progress, today)
+	assert(bool(paid_quote.get("paid", false)), "The fourth newly started block round of a day should require coins")
+	assert(int(paid_quote.get("entryCost", 0)) == 2, "Every paid block entry should cost two coins")
+	assert(int(paid_quote.get("goodReward", 0)) == 2 and int(paid_quote.get("excellentReward", 0)) == 4, "A paid quote should expose the fixed Good and Excellent returns")
+	assert(int(paid_quote.get("reward", 0)) == 2, "The legacy quote reward should retain the guaranteed Good return")
+	var wallet = PlayerWalletScript.new()
+	wallet.balance = 10
+	var paid_transaction := CompositeEntryServiceScript.apply_entry(paid_quote, wallet, progress, today)
+	assert(bool(paid_transaction.get("success", false)) and wallet.balance == 8, "Starting the fourth block round should deduct exactly two coins")
+	assert(int(progress.get("totalPaidRounds", 0)) == 1 and int(progress.get("totalEntryCoinsSpent", 0)) == 2, "Paid block entry should update its persisted economy totals")
+	CompositeCoinPolicyScript.record_round_completed(progress, int(excellent_result.get("reward", 0)))
+	assert(int(progress.get("totalRewardCoinsEarned", 0)) == 4, "Block completion should persist the actual Excellent reward")
 	var late_paid_quote := CompositeCoinPolicyScript.round_quote(61, progress, today)
-	assert(int(late_paid_quote.get("entryCost", 0)) == 6, "An eight-coin block round should cost six coins after the free quota")
-	assert(int(late_paid_quote.get("reward", 0)) == 11, "Paid reward should add fifty percent of a six-coin entry fee")
+	assert(int(late_paid_quote.get("entryCost", 0)) == 2, "Paid block entry should remain two coins regardless of round number")
 	var next_day_quote := CompositeCoinPolicyScript.round_quote(62, progress, "2026-08-07")
-	assert(not bool(next_day_quote.get("paid", true)) and int(progress.get("dailyFreeRoundsUsed", -1)) == 0, "A new local date should reset the five free block rounds")
+	assert(not bool(next_day_quote.get("paid", true)) and int(progress.get("dailyFreeRoundsUsed", -1)) == 0, "A new local date should reset the three free block rounds")
