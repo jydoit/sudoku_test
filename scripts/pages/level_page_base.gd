@@ -44,7 +44,6 @@ var progress_row: Control
 var progress_bar: ProgressBar
 var progress_label: Label
 var level_label: Label
-var assembly_stage_label: Label
 var coach_panel: PanelContainer
 var coach_label: Label
 var top_home_button: Button
@@ -449,14 +448,6 @@ func _build_level_header() -> Control:
 	level_label.clip_text = true
 	level_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	row.add_child(level_label)
-	assembly_stage_label = Label.new()
-	assembly_stage_label.text = "先拼好颜色区域"
-	assembly_stage_label.size_flags_horizontal = Control.SIZE_SHRINK_END
-	assembly_stage_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	assembly_stage_label.add_theme_color_override("font_color", Color("#536179"))
-	assembly_stage_label.add_theme_font_size_override("font_size", 15)
-	assembly_stage_label.hide()
-	row.add_child(assembly_stage_label)
 	return row
 
 

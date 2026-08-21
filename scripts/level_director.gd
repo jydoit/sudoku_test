@@ -6,7 +6,10 @@ const RECENT_WINDOW := 5
 const DEDUPE_HISTORY_WINDOW := 50
 const MILESTONE_RECENT_WINDOW := 15
 const MAX_RUN_HISTORY := 40
+const CHALLENGE_INTERVAL := 5
 const MILESTONE_INTERVAL := 10
+const OPTIONAL_CHALLENGE_START_DISPLAY := 31
+const OPTIONAL_CHALLENGE_PROBABILITY := 0.5
 const MAX_REWARD_ELAPSED_SECONDS := 15.0 * 60.0
 const RETENTION_WINDOW_SECONDS := 24 * 60 * 60
 const NEXT_LEVEL_WINDOW_SECONDS := 30 * 60
@@ -73,7 +76,7 @@ static func schedule_for_display_level(levels: Array, display_level: int, progre
 		return _fixed_opening_schedule(levels, level_index, display)
 
 	var allowed_sizes := unlocked_sizes(display)
-	var is_milestone := display % MILESTONE_INTERVAL == 0
+	var is_milestone := is_challenge_display(display, progress)
 	var rng := _make_rng(display, "schedule:%d" % _progress_signature(progress))
 	var completed_ids := _completed_ids(progress)
 	var recent_ids := _recent_level_ids(progress, DEDUPE_HISTORY_WINDOW)
@@ -183,7 +186,7 @@ static func manual_schedule_for_level(levels: Array, index: int, display_level: 
 		safe_index,
 		display,
 		mode,
-		display % MILESTONE_INTERVAL == 0,
+		is_challenge_display(display),
 		[size],
 		size,
 		difficulty
@@ -206,7 +209,7 @@ static func _fixed_opening_schedule(levels: Array, level_index: Dictionary, disp
 		index,
 		display,
 		"fixed",
-		display % MILESTONE_INTERVAL == 0,
+		is_challenge_display(display),
 		[selected_size],
 		int(level.get("rows", selected_size)),
 		str(level.get("difficulty", selected_difficulty))
@@ -227,6 +230,18 @@ static func minimum_display_for_size(size: int) -> int:
 
 static func is_size_unlocked(size: int, display_level: int) -> bool:
 	return maxi(1, display_level) >= minimum_display_for_size(size)
+
+
+static func is_challenge_display(display_level: int, progress: Dictionary = {}) -> bool:
+	var display := maxi(1, display_level)
+	if display % MILESTONE_INTERVAL == 0:
+		return true
+	if display < OPTIONAL_CHALLENGE_START_DISPLAY:
+		return false
+	if display % CHALLENGE_INTERVAL != 0:
+		return false
+	var rng := _make_rng(display, "optional_challenge:%d" % _progress_signature(progress))
+	return rng.randf() < OPTIONAL_CHALLENGE_PROBABILITY
 
 
 static func unlocked_sizes(display_level: int) -> Array:
@@ -372,7 +387,7 @@ static func record_retention_if_needed(progress: Dictionary, today: String, now_
 
 
 static func _make_schedule(level: Dictionary, index: int, display: int, mode: String, is_milestone: bool, allowed_sizes: Array, selected_size: int, selected_difficulty: String) -> Dictionary:
-	var assembly_enabled := is_milestone and selected_size >= 6
+	var assembly_enabled := is_milestone and display % MILESTONE_INTERVAL == 0 and selected_size >= 6
 	return {
 		"displayLevel": display,
 		"levelIndex": index,
@@ -383,7 +398,7 @@ static func _make_schedule(level: Dictionary, index: int, display: int, mode: St
 		"allowedSizes": allowed_sizes.duplicate(),
 		"selectedSize": selected_size,
 		"selectedDifficulty": selected_difficulty,
-		"kingPositions": [] if assembly_enabled else _opening_king_positions(level, display, index, mode == "fixed")
+		"kingPositions": [] if is_milestone else _opening_king_positions(level, display, index, mode == "fixed")
 	}
 
 
@@ -444,9 +459,7 @@ static func _opening_king_count_for_size(size: int, rng: RandomNumberGenerator) 
 static func _should_reveal_dynamic_kings(display: int) -> bool:
 	if display <= FIXED_OPENING_COUNT:
 		return false
-	if display <= 50:
-		return true
-	return display % 5 != 0
+	return true
 
 
 static func _first_solution_position(level: Dictionary) -> Array:
@@ -707,7 +720,10 @@ static func _previous_run_is_challenge(progress: Dictionary) -> bool:
 	if runs.is_empty():
 		return false
 	var run: Dictionary = runs[0]
-	return bool(run.get("isMilestoneChallenge", false)) or int(run.get("displayLevel", 0)) % MILESTONE_INTERVAL == 0
+	if run.has("isMilestoneChallenge"):
+		return bool(run.get("isMilestoneChallenge", false))
+	var display := int(run.get("displayLevel", 0))
+	return display > 0 and display % MILESTONE_INTERVAL == 0
 
 
 static func _post_challenge_arm(progress: Dictionary, allowed_sizes: Array) -> Dictionary:

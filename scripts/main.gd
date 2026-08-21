@@ -292,8 +292,6 @@ var assembly_tray_target: Control:
 	get: return game_screen.assembly_tray_target if game_screen else null
 var action_bar: Control:
 	get: return game_screen.action_bar if game_screen else null
-var assembly_stage_label: Label:
-	get: return game_screen.assembly_stage_label if game_screen else null
 var assembly_view:
 	get: return game_screen.assembly_view if game_screen else null
 var coach_panel: PanelContainer:
@@ -958,9 +956,6 @@ func _apply_composite_phase_ui() -> void:
 	if _is_assembly_phase():
 		progress_row.hide()
 		assembly_tray_target.show()
-		if assembly_stage_label:
-			assembly_stage_label.text = str(composite_data.get("difficulty", "medium")).to_upper()
-			assembly_stage_label.show()
 		board.modulate.a = 0.0
 		board.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		game_screen.set_all_tools_visible(true)
@@ -978,8 +973,6 @@ func _apply_composite_phase_ui() -> void:
 	else:
 		progress_row.show()
 		assembly_tray_target.hide()
-		if assembly_stage_label:
-			assembly_stage_label.hide()
 		board.modulate.a = 1.0
 		board.mouse_filter = Control.MOUSE_FILTER_STOP
 		assembly_view.deactivate()
@@ -2502,8 +2495,6 @@ func _refresh_localized_ui() -> void:
 	elif not current_level.is_empty():
 		level_label.text = _display_level_title()
 		coach_label.text = _level_coach_text()
-		if _is_assembly_phase() and assembly_stage_label:
-			assembly_stage_label.text = str(composite_data.get("difficulty", "medium")).to_upper()
 	if completion_overlay and completion_overlay.visible:
 		if result_overlay_mode == "success":
 			_prepare_success_result_page()

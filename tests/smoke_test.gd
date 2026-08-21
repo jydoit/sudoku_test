@@ -408,11 +408,11 @@ func _run() -> void:
 		assert(int(fixed_schedule["levelIndex"]) == int(repeated_schedule["levelIndex"]), "Fixed opening schedule should be deterministic")
 		assert(int(scheduled_level.get("rows", 0)) == 5 and int(scheduled_level.get("cols", 0)) == 5, "First ten display levels should use 5x5 boards")
 		assert(str(scheduled_level.get("difficulty", "")) == expected_opening_difficulties[display_level - 1], "First ten display levels should follow the requested difficulty plan")
-		if display_level <= 9:
-			assert(fixed_schedule.get("kingPositions", []).size() == 1, "First nine display levels should reveal one opening king")
+		if LevelDirectorScript.is_challenge_display(display_level):
+			assert(fixed_schedule.get("kingPositions", []).is_empty(), "Scheduled challenge display levels should not start with a king")
+			assert(bool(fixed_schedule["isMilestoneChallenge"]), "Scheduled challenge display levels should be marked as challenges")
 		else:
-			assert(fixed_schedule.get("kingPositions", []).is_empty(), "Display level 10 should not start with a king")
-			assert(bool(fixed_schedule["isMilestoneChallenge"]), "Display level 10 should be marked as a challenge")
+			assert(fixed_schedule.get("kingPositions", []).size() == 1, "Fixed non-challenge opening levels should reveal one opening king")
 	assert(scheduled_opening_ids.slice(0, 5) == [1, 2, 3, 11, 12], "Display levels 1-5 should use the first five 5x5 simple boards")
 	assert(scheduled_opening_ids.slice(5, 8) == [4, 5, 6], "Display levels 6-8 should use the first three 5x5 medium boards")
 	assert(scheduled_opening_ids[8] == 13, "Display level 9 should return to a 5x5 simple board")
@@ -495,7 +495,11 @@ func _run() -> void:
 		"statsByArm": {}
 	}
 	var no_king_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 55, no_king_progress)
-	assert(no_king_schedule.get("kingPositions", []).is_empty(), "After level 50 every fifth level should hide opening kings")
+	assert(bool(no_king_schedule["isMilestoneChallenge"]) == LevelDirectorScript.is_challenge_display(55, no_king_progress), "Optional challenge schedules should reuse the stable challenge roll")
+	if bool(no_king_schedule["isMilestoneChallenge"]):
+		assert(no_king_schedule.get("kingPositions", []).is_empty(), "Optional challenge display levels should hide opening kings")
+	else:
+		assert(no_king_schedule.get("kingPositions", []).size() >= 1, "Optional non-challenge display levels should keep opening kings")
 	var challenge_progress := {
 		"completedLevelIds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
 		"recentRuns": [
@@ -507,6 +511,35 @@ func _run() -> void:
 	var challenge_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 20, challenge_progress)
 	assert(bool(challenge_schedule["isMilestoneChallenge"]), "Every tenth display level should be marked as a challenge")
 	assert(str(challenge_schedule["mode"]) == "challenge", "Milestone levels should use the challenge branch")
+	assert(challenge_schedule.get("kingPositions", []).is_empty(), "Challenge levels should not reveal opening kings")
+	var pre_optional_five_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 15, challenge_progress)
+	assert(not bool(pre_optional_five_schedule["isMilestoneChallenge"]), "Five-step challenge candidates should not start before display level 31")
+	assert(pre_optional_five_schedule.get("kingPositions", []).size() >= 1, "Pre-31 five-step display levels should keep opening kings")
+	var optional_challenge_seen := false
+	var optional_regular_seen := false
+	for salt in range(0, 60):
+		var optional_progress := {
+			"completedLevelIds": [],
+			"recentRuns": [
+				{"levelId": 200 + salt, "moves": salt, "hints": salt % 3, "isMilestoneChallenge": false}
+			],
+			"statsByArm": {}
+		}
+		var optional_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 35, optional_progress)
+		assert(bool(optional_schedule["isMilestoneChallenge"]) == LevelDirectorScript.is_challenge_display(35, optional_progress), "Optional challenge decisions should be stable for the same progress")
+		if bool(optional_schedule["isMilestoneChallenge"]):
+			optional_challenge_seen = true
+			assert(str(optional_schedule["mode"]) == "challenge", "Optional five-step challenges should use the challenge branch")
+			assert(optional_schedule.get("kingPositions", []).is_empty(), "Optional five-step challenges should not reveal opening kings")
+			assert(not bool(optional_schedule.get("assemblyEnabled", false)), "Optional five-step challenges should not enable assembly")
+		else:
+			optional_regular_seen = true
+			assert(str(optional_schedule["mode"]) != "challenge", "Optional five-step misses should stay on the regular branch")
+			assert(optional_schedule.get("kingPositions", []).size() >= 1, "Optional five-step misses should keep opening kings")
+		if optional_challenge_seen and optional_regular_seen:
+			break
+	assert(optional_challenge_seen, "The optional five-step challenge roll should be able to produce a challenge")
+	assert(optional_regular_seen, "The optional five-step challenge roll should be able to produce a regular level")
 	var challenge_arm := "%d|%s" % [int(challenge_schedule["selectedSize"]), str(challenge_schedule["selectedDifficulty"])]
 	assert(["5|challenge", "5|hard", "6|challenge", "6|hard"].has(challenge_arm), "Milestone should choose a supported hard or challenge arm from the currently unlocked sizes")
 	var reward_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": {}}
@@ -541,6 +574,9 @@ func _run() -> void:
 	game._load_level(int(display_four_schedule["levelIndex"]), false, display_four_schedule)
 	assert(not game.coach_panel.visible, "Opening-king levels should not show a coach text card")
 	assert(game.active_king_positions.size() == 1, "Display level 4 should reveal one fixed opening king")
+	var display_five_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 5, {})
+	game._load_level(int(display_five_schedule["levelIndex"]), false, display_five_schedule)
+	assert(game.active_king_positions.size() == 1, "Display level 5 should reveal one fixed opening king")
 	var display_ten_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 10, {})
 	game._load_level(int(display_ten_schedule["levelIndex"]), false, display_ten_schedule)
 	assert(game.active_king_positions.is_empty(), "Display level 10 should not reveal an opening king")

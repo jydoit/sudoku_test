@@ -181,7 +181,6 @@ func _run() -> void:
 	assert(game.composite_data.get("validLayouts", []).size() == 1, "The debug flow should stop after its first legal layout")
 	assert(not game.active_schedule.has("assemblyPrebuiltData"), "Transient prebuilt assembly data must be consumed before the schedule is saved")
 	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [1]), "The isolated entry should display its round number")
-	assert(game.assembly_stage_label.text == first_pattern.to_upper(), "The compact stage badge should display the sampled pattern")
 	assert(game.level_label.get_parent().get_combined_minimum_size().x <= 527.0, "The assembly header must fit the 539px viewport after safe margins")
 	assert(not game.level_select_button.visible, "The isolated block challenge should hide formal level selection")
 	var first_home_seed := int(game.composite_data.get("seed", 0))
@@ -189,7 +188,7 @@ func _run() -> void:
 	await process_frame
 	var second_pattern := str(game.composite_data.get("difficulty", ""))
 	assert(game.home_composite_round == 2 and CompositeLevelDirectorScript.PATTERNS.has(second_pattern), "The second block round should sample a supported assembly pattern")
-	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [2]) and game.assembly_stage_label.text == second_pattern.to_upper(), "The second round should display its sampled pattern")
+	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [2]), "The second round should display its round number")
 	assert(game._is_assembly_phase() and int(game.composite_data.get("seed", 0)) > 0 and first_home_seed > 0, "Every recommended round should load an offline assembly seed")
 	game._start_next_home_composite_round()
 	await process_frame
@@ -257,7 +256,7 @@ func _run() -> void:
 	assert(game.result_page.composite_coin_text(2, 0, false) == "Daily free round · No entry coins deducted\nCompletion reward: 2 coins", "A free block result should clearly state that no entry coins were deducted")
 	assert(game.result_page.composite_coin_text(4, 2, true) == "Entry: -2 coins · Reward: +4 coins\nNet change: +2 coins", "A paid block result should clearly separate entry cost, reward, and net change")
 	assert(game.composite_data.get("validLayouts", []).size() == 1, "Recommended offline data should contain one approved layout")
-	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [3]) and game.assembly_stage_label.text == third_pattern.to_upper(), "The third round should display its sampled pattern")
+	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [3]), "The third round should display its round number")
 	if game.composite_data.get("pieces", []).size() < 2:
 		_load_multi_piece_home_fixture(game)
 	_test_tray_horizontal_scroll(game.assembly_view)
