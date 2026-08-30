@@ -27,9 +27,9 @@ static func normalize_loaded(data: Dictionary, defaults: Dictionary, today: Stri
 	return {
 		"currentLevelIndex": level_index,
 		"playerLevelNumber": maxi(1, int(data.get("playerLevelNumber", level_index + 1))),
-		"coinCount": int(data.get("coinCount", defaults.get("coinCount", 10))),
-		"hintCount": maxi(0, int(data.get("hintCount", defaults.get("hintCount", 5)))) if save_version >= 2 else int(defaults.get("hintCount", 5)),
-		"crownFindCount": clampi(int(data.get("crownFindCount", defaults.get("crownFindCount", 3))), 0, int(defaults.get("crownFindCount", 3))),
+		"coinCount": int(data.get("coinCount", defaults.get("coinCount", 2))),
+		"hintCount": maxi(0, int(data.get("hintCount", defaults.get("hintCount", 2)))) if save_version >= 2 else int(defaults.get("hintCount", 2)),
+		"crownFindCount": maxi(0, int(data.get("crownFindCount", defaults.get("crownFindCount", 1)))),
 		"completedLevels": completed_levels,
 		"heartCount": maxi(0, int(data.get("heartCount", defaults.get("heartCount", 3)))),
 		"currentLevelId": int(data.get("currentLevelId", -1)),

@@ -6,6 +6,7 @@ signal tutorial_requested
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const LION_KING_ICON = preload("res://assets/ui/lion_king.svg")
+const COLOR_KING_TITLE = preload("res://assets/ui/splash/color_king_title.svg")
 
 var start_button: Button
 var composite_button: Button
@@ -80,14 +81,16 @@ func _build_hero() -> Control:
 	hero.set_anchor(SIDE_BOTTOM, 0.56)
 	hero.add_theme_constant_override("separation", 10)
 
-	var title := Label.new()
-	title.text = "color king"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_color_override("font_color", Color("#FFE06F"))
-	title.add_theme_color_override("font_shadow_color", Color(0.10, 0.23, 0.45, 0.30))
-	title.add_theme_constant_override("shadow_offset_x", 0)
-	title.add_theme_constant_override("shadow_offset_y", 4)
-	title.add_theme_font_size_override("font_size", 48)
+	var title := TextureRect.new()
+	title.name = "HomeBrandTitle"
+	title.texture = COLOR_KING_TITLE
+	title.custom_minimum_size = Vector2(0, 112)
+	title.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	title.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	title.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	hero.add_child(title)
 
 	var lion := TextureRect.new()

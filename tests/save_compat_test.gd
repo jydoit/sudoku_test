@@ -31,7 +31,9 @@ func _verify_new_user_defaults() -> void:
 	_remove_save()
 	var game = await _new_game()
 	assert(game.coin_count == game.INITIAL_COIN_COUNT, "SAVE-003 should grant the configured initial coins")
-	assert(game.coin_count == 10, "SAVE-003 new users should start with 10 coins")
+	assert(game.coin_count == 2, "SAVE-003 new users should start with 2 coins")
+	assert(game.hint_count == 2, "SAVE-003 new users should start with 2 hints")
+	assert(game.crown_find_count == 1, "SAVE-003 new users should start with 1 crown find")
 	game.queue_free()
 	await process_frame
 

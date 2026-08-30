@@ -23,6 +23,7 @@ const CompositePaidEntryContentScript = preload("res://scripts/dialogs/composite
 const LEVEL_SELECT_DIALOG_PATH := "res://scripts/dialogs/level_select_dialog_content.gd"
 const SettingsDialogContentScript = preload("res://scripts/dialogs/settings_dialog_content.gd")
 const OpeningKingOverlayScript = preload("res://scripts/overlays/opening_king_overlay.gd")
+const SplashOverlayScript = preload("res://scripts/overlays/splash_overlay.gd")
 const TutorialOverlayScript = preload("res://scripts/overlays/tutorial_overlay.gd")
 const FeedbackLayerScript = preload("res://scripts/overlays/feedback_layer.gd")
 const TutorialControllerScript = preload("res://scripts/controllers/tutorial_controller.gd")
@@ -41,10 +42,10 @@ const ARABIC_FONT: Font = preload("res://assets/fonts/NotoSansArabic-Regular.ttf
 const SAVE_PATH := "user://color_queens_save.json"
 const SAVE_PATH_OVERRIDE_SETTING := "color_king/testing/save_path"
 const SAVE_VERSION := 16
-const INITIAL_COIN_COUNT := 10
-const INITIAL_HINT_COUNT := 5
+const INITIAL_COIN_COUNT := 2
+const INITIAL_HINT_COUNT := 2
 const INITIAL_HEART_COUNT := 3
-const INITIAL_CROWN_FIND_COUNT := 3
+const INITIAL_CROWN_FIND_COUNT := 1
 const INK := UITokensScript.INK
 const MUTED := UITokensScript.MUTED
 const CREAM := UITokensScript.SURFACE_CREAM
@@ -101,7 +102,7 @@ var completed_levels: Array = []
 var director_progress: Dictionary = {}
 var composite_director_progress: Dictionary = {}
 var composite_coin_progress: Dictionary = CompositeCoinPolicyScript.default_progress()
-var player_wallet = PlayerWalletScript.new()
+var player_wallet = PlayerWalletScript.new(INITIAL_COIN_COUNT)
 var economy_progress: Dictionary:
 	get: return player_wallet.economy_progress
 	set(value): player_wallet.economy_progress = value
@@ -353,6 +354,7 @@ var opening_king_reveal_pending := false
 var result_overlay_mode := "success"
 var save_game_after_frame_pending := false
 var save_repository
+var splash_overlay
 
 
 
@@ -385,6 +387,13 @@ func _ready() -> void:
 	var resume_schedule := _schedule_for_current_level()
 	current_level_index = int(resume_schedule.get("levelIndex", current_level_index))
 	_load_level(current_level_index, true, resume_schedule, home_composite_entry_active)
+	if _should_play_startup_splash():
+		_begin_startup_splash()
+	else:
+		_complete_initial_route()
+
+
+func _complete_initial_route() -> void:
 	if tutorial_started:
 		_show_home()
 		_show_tutorial_resume_dialog()
@@ -392,6 +401,46 @@ func _ready() -> void:
 		_show_home()
 	else:
 		_start_tutorial_step(0)
+
+
+func _should_play_startup_splash() -> bool:
+	if bool(ProjectSettings.get_setting("color_king/splash/disabled", false)):
+		return false
+	return (
+		DisplayServer.get_name() != "headless"
+		or bool(ProjectSettings.get_setting("color_king/splash/force_in_headless", false))
+	)
+
+
+func _begin_startup_splash() -> void:
+	splash_overlay = SplashOverlayScript.new()
+	add_child(splash_overlay)
+	splash_overlay.configure()
+	splash_overlay.sound_requested.connect(_on_splash_sound_requested)
+	splash_overlay.splash_finished.connect(_on_startup_splash_finished, CONNECT_ONE_SHOT)
+	splash_overlay.begin(bool(ProjectSettings.get_setting("color_king/splash/reduced_motion", false)))
+	# All synchronous boot data and the initial level are ready before the reveal
+	# starts. The explicit readiness API keeps the overlay safe if boot loading is
+	# moved off-thread later: it can hold on its final stable frame without looping.
+	splash_overlay.mark_ready_to_enter()
+
+
+func _on_splash_sound_requested(kind: String) -> void:
+	if not audio_controller:
+		return
+	match kind:
+		"snap": audio_controller.play_block_place(3)
+		"snap_final": audio_controller.play_block_place(5)
+		"assembly_complete": audio_controller.play_assembly_complete()
+		"crown": audio_controller.play_crown_reveal()
+
+
+func _on_startup_splash_finished() -> void:
+	var finished_overlay = splash_overlay
+	splash_overlay = null
+	if finished_overlay:
+		finished_overlay.queue_free()
+	_complete_initial_route()
 
 
 func _exit_tree() -> void:
@@ -2563,7 +2612,7 @@ func _load_save() -> void:
 	player_level_number = maxi(1, int(data.get("playerLevelNumber", current_level_index + 1)))
 	coin_count = int(data.get("coinCount", INITIAL_COIN_COUNT))
 	hint_count = maxi(0, int(data.get("hintCount", INITIAL_HINT_COUNT)))
-	crown_find_count = clampi(int(data.get("crownFindCount", INITIAL_CROWN_FIND_COUNT)), 0, INITIAL_CROWN_FIND_COUNT)
+	crown_find_count = maxi(0, int(data.get("crownFindCount", INITIAL_CROWN_FIND_COUNT)))
 	completed_levels.assign(data.get("completedLevels", []))
 	heart_count = maxi(0, int(data.get("heartCount", INITIAL_HEART_COUNT)))
 	resume_level_id = int(data.get("currentLevelId", -1))
@@ -2652,7 +2701,7 @@ func _restore_formal_progress_snapshot() -> bool:
 	coin_count = int(snapshot.get("coinCount", coin_count))
 	heart_count = maxi(0, int(snapshot.get("heartCount", INITIAL_HEART_COUNT)))
 	hint_count = maxi(0, int(snapshot.get("hintCount", hint_count)))
-	crown_find_count = clampi(int(snapshot.get("crownFindCount", crown_find_count)), 0, INITIAL_CROWN_FIND_COUNT)
+	crown_find_count = maxi(0, int(snapshot.get("crownFindCount", crown_find_count)))
 	run_started_unix = int(snapshot.get("runStartedUnix", 0))
 	run_move_count = maxi(0, int(snapshot.get("runMoveCount", 0)))
 	run_hint_count = maxi(0, int(snapshot.get("runHintCount", 0)))
@@ -2958,7 +3007,7 @@ func _start_home_composite_flow() -> void:
 		resume_failed = bool(history.get("isFailed", false))
 		heart_count = maxi(0, int(history.get("heartCount", INITIAL_HEART_COUNT)))
 		hint_count = maxi(0, int(history.get("hintCount", hint_count)))
-		crown_find_count = clampi(int(history.get("crownFindCount", crown_find_count)), 0, INITIAL_CROWN_FIND_COUNT)
+		crown_find_count = maxi(0, int(history.get("crownFindCount", crown_find_count)))
 		run_started_unix = int(history.get("runStartedUnix", 0))
 		run_move_count = maxi(0, int(history.get("runMoveCount", 0)))
 		run_hint_count = maxi(0, int(history.get("runHintCount", 0)))

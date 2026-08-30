@@ -2,9 +2,13 @@ extends RefCounted
 
 const CoinEconomyScript = preload("res://scripts/coin_economy.gd")
 
-var balance := 10
+var balance: int
 var economy_progress: Dictionary = CoinEconomyScript.default_progress()
 var run_exchange_count := 0
+
+
+func _init(initial_balance: int = 0) -> void:
+	balance = maxi(0, initial_balance)
 
 
 func tool_price(tool: String, display_level: int) -> int:
