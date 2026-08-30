@@ -80,6 +80,7 @@ var _hint_piece_id := -1
 var _hint_origin := Vector2i(-99, -99)
 var _intro_tween: Tween
 var _tray_focus_tween: Tween
+var _flatten_tween: Tween
 
 
 func _ready() -> void:
@@ -115,6 +116,7 @@ func configure(
 	allowed: Dictionary,
 	tray_slots: Array = []
 ) -> void:
+	_cancel_flatten_transition()
 	assembly_data = data
 	placements = current_placements.duplicate(true)
 	region_colors = colors.duplicate()
@@ -140,6 +142,7 @@ func update_state(current_placements: Dictionary, allowed: Dictionary, tray_slot
 
 
 func deactivate() -> void:
+	_cancel_flatten_transition()
 	cancel_intro()
 	if _tray_focus_tween and _tray_focus_tween.is_valid():
 		_tray_focus_tween.kill()
@@ -223,13 +226,26 @@ func intro_wrong_origin() -> Vector2i:
 	return Vector2i(int(raw[1]), int(raw[0])) if raw is Array and raw.size() >= 2 else Vector2i(-99, -99)
 
 
-func play_flatten_transition() -> void:
+func play_flatten_transition() -> bool:
+	_cancel_flatten_transition()
 	input_locked = true
 	flatten_amount = 0.0
-	var tween := create_tween()
-	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
-	tween.tween_method(_set_flatten_amount, 0.0, 1.0, 0.88)
-	await tween.finished
+	_flatten_tween = create_tween()
+	var active_tween := _flatten_tween
+	active_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+	active_tween.tween_method(_set_flatten_amount, 0.0, 1.0, 0.88)
+	await active_tween.finished
+	if _flatten_tween != active_tween or not active:
+		return false
+	_flatten_tween = null
+	return true
+
+
+func _cancel_flatten_transition() -> void:
+	if _flatten_tween and _flatten_tween.is_valid():
+		_flatten_tween.kill()
+	_flatten_tween = null
+	flatten_amount = 0.0
 
 
 func play_placement_feedback(piece_id: int, origin: Array) -> void:

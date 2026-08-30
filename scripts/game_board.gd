@@ -41,6 +41,13 @@ const VICTORY_STAR_POINTS := [
 	Vector2(0.14, 0.88),
 	Vector2(0.05, 0.58),
 ]
+const CORRECT_REACTION_ACCENT_OFFSETS := [
+	Vector2(-0.34, -0.27),
+	Vector2(0.34, -0.24),
+	Vector2(-0.29, 0.25),
+	Vector2(0.31, 0.21),
+]
+const VICTORY_LION_ACCENT_OFFSETS := [Vector2(-0.34, -0.25), Vector2(0.35, -0.18)]
 
 var rows := 6
 var cols := 6
@@ -52,11 +59,14 @@ var guide_mask_enabled := true
 var region_colors: Array = []
 var pulse_cell := Vector2i(-1, -1)
 var pulse_strength := 0.0
+var pulse_tween: Tween
 var shake_cell := Vector2i(-1, -1)
 var shake_strength := 0.0
+var shake_tween: Tween
 var reaction_cell := Vector2i(-1, -1)
 var reaction_kind := ""
 var reaction_progress := 0.0
+var reaction_variant := 0
 var reaction_tween: Tween
 var guide_pulse_cell := Vector2i(-1, -1)
 var guide_pulse_cells: Dictionary = {}
@@ -65,12 +75,12 @@ var guide_pulse_tween: Tween
 var king_reveal_cells: Dictionary = {}
 var hidden_king_cells: Dictionary = {}
 var king_reveal_strength := 0.0
+var king_reveal_tween: Tween
 var victory_strength := 0.0
 var victory_progress := 0.0
 var victory_origin := Vector2i(-1, -1)
 var victory_tween: Tween
 var victory_finish_haptic_played := false
-var waiting_wiggle_strength := 0.0
 var tutorial_mask_enabled := false
 var tutorial_focus_cell := Vector2i(-1, -1)
 var press_cell := Vector2i(-1, -1)
@@ -105,6 +115,9 @@ func set_level(level: Dictionary, states: Array, colors: Array) -> void:
 	king_reveal_cells.clear()
 	hidden_king_cells.clear()
 	king_reveal_strength = 0.0
+	_reset_pulse_feedback()
+	_reset_shake_feedback()
+	_reset_king_reveal_feedback()
 	_reset_cell_reaction()
 	tutorial_mask_enabled = false
 	tutorial_focus_cell = Vector2i(-1, -1)
@@ -141,17 +154,25 @@ func set_tutorial_focus(cell: Vector2i, enabled: bool) -> void:
 
 
 func play_cell_feedback(row: int, col: int) -> void:
+	_reset_pulse_feedback()
 	pulse_cell = Vector2i(col, row)
-	var tween := create_tween()
-	tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tween.tween_method(_set_pulse, 0.0, 1.0, 0.09)
-	tween.tween_method(_set_pulse, 1.0, 0.0, 0.18)
+	pulse_tween = create_tween()
+	pulse_tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	pulse_tween.tween_method(_set_pulse, 0.0, 1.0, 0.09)
+	pulse_tween.tween_method(_set_pulse, 1.0, 0.0, 0.18)
+	pulse_tween.finished.connect(func() -> void:
+		pulse_tween = null
+		pulse_cell = Vector2i(-1, -1)
+		pulse_strength = 0.0
+		queue_redraw()
+	)
 
 
 func play_correct_feedback(row: int, col: int) -> void:
 	_reset_cell_reaction()
 	reaction_cell = Vector2i(col, row)
 	reaction_kind = "correct"
+	reaction_variant = randi_range(0, 1)
 	play_cell_feedback(row, col)
 	reaction_tween = create_tween()
 	reaction_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
@@ -163,18 +184,21 @@ func play_wrong_feedback(row: int, col: int) -> void:
 	_reset_cell_reaction()
 	reaction_cell = Vector2i(col, row)
 	reaction_kind = "wrong"
+	reaction_variant = 0
 	reaction_tween = create_tween()
 	reaction_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	reaction_tween.tween_method(_set_reaction_progress, 0.0, 1.0, WRONG_REACTION_DURATION)
 	reaction_tween.finished.connect(_finish_cell_reaction)
+	_reset_shake_feedback()
 	shake_cell = Vector2i(col, row)
-	var tween := create_tween()
-	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tween.tween_method(_set_shake, 0.0, 1.0, 0.08)
-	tween.tween_method(_set_shake, 1.0, -1.0, 0.08)
-	tween.tween_method(_set_shake, -1.0, 0.65, 0.07)
-	tween.tween_method(_set_shake, 0.65, 0.0, 0.10)
-	tween.finished.connect(func() -> void:
+	shake_tween = create_tween()
+	shake_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	shake_tween.tween_method(_set_shake, 0.0, 1.0, 0.08)
+	shake_tween.tween_method(_set_shake, 1.0, -1.0, 0.08)
+	shake_tween.tween_method(_set_shake, -1.0, 0.65, 0.07)
+	shake_tween.tween_method(_set_shake, 0.65, 0.0, 0.10)
+	shake_tween.finished.connect(func() -> void:
+		shake_tween = null
 		shake_cell = Vector2i(-1, -1)
 		shake_strength = 0.0
 		queue_redraw()
@@ -197,36 +221,28 @@ func play_guide_feedback_for_cells(cells: Array) -> void:
 
 
 func play_king_reveal(cells: Array) -> void:
-	king_reveal_cells.clear()
-	king_reveal_strength = 0.0
+	_reset_king_reveal_feedback()
 	if cells.is_empty():
 		return
 	for cell in cells:
 		if cell is Vector2i:
 			king_reveal_cells[cell] = true
-	var tween := create_tween()
-	tween.tween_interval(0.16)
-	tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tween.tween_method(_set_king_reveal, 0.0, 1.0, 0.18)
-	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tween.tween_method(_set_king_reveal, 1.0, 0.18, 0.16)
-	tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tween.tween_method(_set_king_reveal, 0.18, 1.0, 0.16)
-	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tween.tween_method(_set_king_reveal, 1.0, 0.0, 0.28)
-	tween.finished.connect(func() -> void:
+	king_reveal_tween = create_tween()
+	king_reveal_tween.tween_interval(0.16)
+	king_reveal_tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	king_reveal_tween.tween_method(_set_king_reveal, 0.0, 1.0, 0.18)
+	king_reveal_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	king_reveal_tween.tween_method(_set_king_reveal, 1.0, 0.18, 0.16)
+	king_reveal_tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	king_reveal_tween.tween_method(_set_king_reveal, 0.18, 1.0, 0.16)
+	king_reveal_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	king_reveal_tween.tween_method(_set_king_reveal, 1.0, 0.0, 0.28)
+	king_reveal_tween.finished.connect(func() -> void:
+		king_reveal_tween = null
 		king_reveal_cells.clear()
 		king_reveal_strength = 0.0
 		queue_redraw()
 	)
-
-
-func play_waiting_lion_wiggle() -> void:
-	var tween := create_tween()
-	tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	tween.tween_method(_set_waiting_wiggle, 0.0, 1.0, 0.62)
-	tween.tween_method(_set_waiting_wiggle, 1.0, 0.0, 0.12)
-
 
 func prepare_king_reveal(cells: Array) -> void:
 	hidden_king_cells.clear()
@@ -284,8 +300,10 @@ func _reset_guide_feedback() -> void:
 
 
 func play_victory() -> void:
+	var resolved_origin := _resolve_victory_origin()
 	_reset_victory_animation()
-	victory_origin = _resolve_victory_origin()
+	_reset_transient_feedback_for_victory()
+	victory_origin = resolved_origin
 	if haptics_enabled:
 		Input.vibrate_handheld(24)
 	victory_tween = create_tween()
@@ -312,6 +330,37 @@ func _reset_victory_animation() -> void:
 	victory_strength = 0.0
 	victory_origin = Vector2i(-1, -1)
 	victory_finish_haptic_played = false
+
+
+func _reset_transient_feedback_for_victory() -> void:
+	_reset_cell_reaction()
+	_reset_pulse_feedback()
+	_reset_shake_feedback()
+	_reset_king_reveal_feedback()
+
+
+func _reset_pulse_feedback() -> void:
+	if pulse_tween and pulse_tween.is_valid():
+		pulse_tween.kill()
+	pulse_tween = null
+	pulse_cell = Vector2i(-1, -1)
+	pulse_strength = 0.0
+
+
+func _reset_shake_feedback() -> void:
+	if shake_tween and shake_tween.is_valid():
+		shake_tween.kill()
+	shake_tween = null
+	shake_cell = Vector2i(-1, -1)
+	shake_strength = 0.0
+
+
+func _reset_king_reveal_feedback() -> void:
+	if king_reveal_tween and king_reveal_tween.is_valid():
+		king_reveal_tween.kill()
+	king_reveal_tween = null
+	king_reveal_cells.clear()
+	king_reveal_strength = 0.0
 
 
 func _resolve_victory_origin() -> Vector2i:
@@ -347,6 +396,7 @@ func _reset_cell_reaction() -> void:
 	reaction_cell = Vector2i(-1, -1)
 	reaction_kind = ""
 	reaction_progress = 0.0
+	reaction_variant = 0
 	queue_redraw()
 
 
@@ -355,6 +405,7 @@ func _finish_cell_reaction() -> void:
 	reaction_cell = Vector2i(-1, -1)
 	reaction_kind = ""
 	reaction_progress = 0.0
+	reaction_variant = 0
 	queue_redraw()
 
 
@@ -365,11 +416,6 @@ func _set_guide_pulse(value: float) -> void:
 
 func _set_king_reveal(value: float) -> void:
 	king_reveal_strength = value
-	queue_redraw()
-
-
-func _set_waiting_wiggle(value: float) -> void:
-	waiting_wiggle_strength = value
 	queue_redraw()
 
 
@@ -590,6 +636,7 @@ func _draw_cell(row: int, col: int, origin: Vector2, cell_size: float) -> void:
 		_draw_piece(
 			rect,
 			cell_size,
+			cell_key,
 			state == HINT_MARK,
 			state == KING_MARK,
 			king_reveal_scale,
@@ -721,15 +768,10 @@ func _victory_sweep_for_cell(cell: Vector2i) -> float:
 
 
 func _victory_lion_pop(cell: Vector2i) -> float:
-	if victory_progress <= 0.0 or victory_origin.x < 0:
-		return 0.0
-	var timeline_time := victory_progress * VICTORY_TIMELINE_DURATION
-	var is_origin := cell == victory_origin
-	var delay := 0.0 if is_origin else 0.30 + _victory_distance_ratio(cell) * 0.62
-	var duration := 0.96 if is_origin else 0.82
-	var local_progress := (timeline_time - delay) / duration
+	var local_progress := _victory_lion_local_progress(cell)
 	if local_progress <= 0.0 or local_progress >= 1.0:
 		return 0.0
+	var is_origin := cell == victory_origin
 	var rise_end := 0.30 if is_origin else 0.34
 	var hold_end := 0.64 if is_origin else 0.62
 	var response := 0.0
@@ -740,6 +782,16 @@ func _victory_lion_pop(cell: Vector2i) -> float:
 	else:
 		response = 1.0 - smoothstep(hold_end, 1.0, local_progress)
 	return response if is_origin else response * 0.88
+
+
+func _victory_lion_local_progress(cell: Vector2i) -> float:
+	if victory_progress <= 0.0 or victory_origin.x < 0:
+		return 0.0
+	var timeline_time := victory_progress * VICTORY_TIMELINE_DURATION
+	var is_origin := cell == victory_origin
+	var delay := 0.0 if is_origin else 0.30 + _victory_distance_ratio(cell) * 0.62
+	var duration := 0.96 if is_origin else 0.82
+	return clampf((timeline_time - delay) / duration, 0.0, 1.0)
 
 
 func _victory_warm_hold() -> float:
@@ -868,6 +920,7 @@ func _guide_kind_is_primary(kind: String) -> bool:
 func _draw_piece(
 	rect: Rect2,
 	cell_size: float,
+	cell: Vector2i,
 	is_hint: bool,
 	_is_king: bool = false,
 	king_reveal_scale: float = 0.0,
@@ -885,15 +938,19 @@ func _draw_piece(
 	var texture_size := cell_size * texture_ratio
 	var texture_rect := Rect2(rect.get_center() - Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size)
 	if cell_reaction_kind == "correct":
-		var rise_phase := clampf(cell_reaction_progress / 0.42, 0.0, 1.0)
-		var settle_phase := clampf((cell_reaction_progress - 0.42) / 0.58, 0.0, 1.0)
-		var cheerful_pop := sin(rise_phase * PI) * 0.20 + sin(settle_phase * PI) * 0.055
-		var cheerful_lift := -cell_size * (0.07 * sin(rise_phase * PI) + 0.025 * sin(settle_phase * PI))
-		var happy_blend_in := smoothstep(0.10, 0.24, cell_reaction_progress)
-		var happy_blend_out := 1.0 - smoothstep(0.78, 0.96, cell_reaction_progress)
+		var rise_phase := clampf(cell_reaction_progress / 0.40, 0.0, 1.0)
+		var settle_phase := clampf((cell_reaction_progress - 0.40) / 0.60, 0.0, 1.0)
+		var cheerful_pop := sin(rise_phase * PI) * 0.22 + sin(settle_phase * PI) * 0.065
+		var cheerful_lift := -cell_size * (0.085 * sin(rise_phase * PI) + 0.030 * sin(settle_phase * PI))
+		var cheerful_angle := 0.0
+		if reaction_variant == 1:
+			cheerful_angle = sin(cell_reaction_progress * TAU * 1.5) * 0.105 * sin(cell_reaction_progress * PI)
+			cheerful_pop += 0.035 * sin(cell_reaction_progress * TAU * 2.0) * sin(cell_reaction_progress * PI)
+		var happy_blend_in := smoothstep(0.08, 0.22, cell_reaction_progress)
+		var happy_blend_out := 1.0 - smoothstep(0.82, 0.98, cell_reaction_progress)
 		var happy_alpha := happy_blend_in * happy_blend_out
 		var reaction_rect := Rect2(-Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size)
-		draw_set_transform(rect.get_center() + Vector2(0.0, cheerful_lift), 0.0, Vector2.ONE * (1.0 + cheerful_pop))
+		draw_set_transform(rect.get_center() + Vector2(0.0, cheerful_lift), cheerful_angle, Vector2.ONE * (1.0 + cheerful_pop))
 		if happy_alpha < 0.995:
 			draw_texture_rect(PIECE_TEXTURE, reaction_rect, false, Color(1.0, 1.0, 1.0, 1.0 - happy_alpha))
 		if happy_alpha > 0.005:
@@ -901,16 +958,20 @@ func _draw_piece(
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		_draw_correct_reaction_accents(rect, cell_size, cell_reaction_progress)
 	elif victory_lion_strength > 0.0:
-		var victory_scale := 1.0 + victory_lion_strength * 0.24
-		var victory_lift := -cell_size * 0.11 * victory_lion_strength
-		draw_set_transform(rect.get_center() + Vector2(0.0, victory_lift), 0.0, Vector2.ONE * victory_scale)
-		draw_texture_rect(PIECE_TEXTURE, Rect2(-Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size), false)
+		var local_progress := _victory_lion_local_progress(cell)
+		var victory_scale := 1.0 + victory_lion_strength * (0.25 + 0.035 * sin(local_progress * TAU * 2.0))
+		var victory_lift := -cell_size * (0.12 * victory_lion_strength + 0.018 * sin(local_progress * TAU * 2.0))
+		var direction := -1.0 if (cell.x + cell.y) % 2 == 0 else 1.0
+		var victory_angle := direction * sin(local_progress * TAU * 1.5) * 0.095 * victory_lion_strength
+		var happy_alpha := smoothstep(0.04, 0.22, local_progress) * (1.0 - smoothstep(0.84, 0.99, local_progress))
+		var local_rect := Rect2(-Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size)
+		draw_set_transform(rect.get_center() + Vector2(0.0, victory_lift), victory_angle, Vector2.ONE * victory_scale)
+		if happy_alpha < 0.995:
+			draw_texture_rect(PIECE_TEXTURE, local_rect, false, Color(1.0, 1.0, 1.0, 1.0 - happy_alpha))
+		if happy_alpha > 0.005:
+			draw_texture_rect(HAPPY_PIECE_TEXTURE, local_rect, false, Color(1.0, 1.0, 1.0, happy_alpha))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	elif waiting_wiggle_strength > 0.0:
-		var angle := sin(waiting_wiggle_strength * TAU * 2.0) * 0.08 * sin(waiting_wiggle_strength * PI)
-		draw_set_transform(rect.get_center(), angle, Vector2.ONE)
-		draw_texture_rect(PIECE_TEXTURE, Rect2(-Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size), false)
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		_draw_victory_lion_accents(rect, cell_size, local_progress, victory_lion_strength)
 	else:
 		draw_texture_rect(PIECE_TEXTURE, texture_rect, false)
 
@@ -922,24 +983,40 @@ func _draw_correct_reaction_accents(rect: Rect2, cell_size: float, progress: flo
 		return
 	var center := rect.get_center()
 	var accent_color := Color(UITokensScript.CROWN_GOLD, alpha * 0.92)
-	var offsets := [Vector2(-0.34, -0.27), Vector2(0.34, -0.24), Vector2(-0.29, 0.25), Vector2(0.31, 0.21)]
-	for index in range(offsets.size()):
+	for index in range(CORRECT_REACTION_ACCENT_OFFSETS.size()):
 		var travel := cell_size * (0.86 + 0.20 * accent_phase)
-		var point: Vector2 = center + offsets[index] * travel
+		var point: Vector2 = center + CORRECT_REACTION_ACCENT_OFFSETS[index] * travel
 		var radius := cell_size * (0.027 + 0.012 * sin((accent_phase + float(index) * 0.13) * PI))
 		draw_circle(point, radius, accent_color, true, -1.0, true)
 
 
+func _draw_victory_lion_accents(rect: Rect2, cell_size: float, progress: float, strength: float) -> void:
+	var sparkle := sin(clampf(progress, 0.0, 1.0) * PI) * strength
+	if sparkle <= 0.04:
+		return
+	var center := rect.get_center()
+	var direction := -1.0 if int(round(progress * 8.0)) % 2 == 0 else 1.0
+	for index in range(VICTORY_LION_ACCENT_OFFSETS.size()):
+		var point: Vector2 = center + VICTORY_LION_ACCENT_OFFSETS[index] * cell_size
+		point.y += direction * float(index * 2 - 1) * cell_size * 0.025
+		var radius := cell_size * (0.035 + 0.018 * sparkle)
+		var color := Color(1.0, 0.84, 0.24, 0.88 * sparkle)
+		draw_line(point - Vector2(radius, 0.0), point + Vector2(radius, 0.0), color, maxf(1.2, cell_size * 0.014), true)
+		draw_line(point - Vector2(0.0, radius), point + Vector2(0.0, radius), color, maxf(1.2, cell_size * 0.014), true)
+
+
 func _draw_wrong_lion_reaction(rect: Rect2, cell_size: float, progress: float) -> void:
-	var enter := clampf(progress / 0.22, 0.0, 1.0)
-	var exit := clampf((progress - 0.62) / 0.38, 0.0, 1.0)
+	var enter := clampf(progress / 0.18, 0.0, 1.0)
+	var exit := clampf((progress - 0.68) / 0.32, 0.0, 1.0)
 	var alpha := enter * (1.0 - exit)
 	if alpha <= 0.01:
 		return
 	var texture_size := cell_size * UITokensScript.CROWN_MAX_FONT_RATIO
-	var scale_value := lerpf(0.82, 1.04, sin(enter * PI * 0.5)) * lerpf(1.0, 0.94, exit)
-	var drop := cell_size * 0.035 * clampf((progress - 0.25) / 0.50, 0.0, 1.0)
-	draw_set_transform(rect.get_center() + Vector2(0.0, drop), 0.0, Vector2.ONE * scale_value)
+	var scale_value := lerpf(0.82, 1.04, sin(enter * PI * 0.5)) * lerpf(1.0, 0.92, exit)
+	var slump := smoothstep(0.20, 0.66, progress) * (1.0 - exit)
+	var drop := cell_size * 0.060 * slump
+	var sad_tilt := -0.045 * sin(slump * PI * 0.5)
+	draw_set_transform(rect.get_center() + Vector2(0.0, drop), sad_tilt, Vector2.ONE * scale_value)
 	draw_texture_rect(
 		WRONG_PIECE_TEXTURE,
 		Rect2(-Vector2.ONE * texture_size * 0.5, Vector2.ONE * texture_size),

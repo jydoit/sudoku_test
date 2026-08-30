@@ -38,28 +38,6 @@ const GameSaveServiceScript = preload("res://scripts/storage/game_save_service.g
 const RunResultServiceScript = preload("res://scripts/services/run_result_service.gd")
 const UI_FONT: Font = preload("res://assets/fonts/NotoSansSC-Regular.ttf")
 const ARABIC_FONT: Font = preload("res://assets/fonts/NotoSansArabic-Regular.ttf")
-const LION_KING_ICON = preload("res://assets/ui/lion_king.svg")
-const LION_KING_WRONG_ICON = preload("res://assets/ui/lion_king_wrong.svg")
-const LION_KING_VICTORY_ICON = preload("res://assets/ui/lion_king_victory.svg")
-const LION_KING_VICTORY_OUT_ICON = preload("res://assets/ui/lion_king_victory_out.svg")
-const LION_KING_VICTORY_IN_ICON = preload("res://assets/ui/lion_king_victory_in.svg")
-const LION_KING_VICTORY_WAVE_OUT_MID_ICON = preload("res://assets/ui/lion_king_victory_wave_out_mid.svg")
-const LION_KING_VICTORY_WAVE_IN_MID_ICON = preload("res://assets/ui/lion_king_victory_wave_in_mid.svg")
-const LION_KING_VICTORY_TONGUE_PEEK_ICON = preload("res://assets/ui/lion_king_victory_tongue_peek.svg")
-const LION_KING_VICTORY_TONGUE_OUT_ICON = preload("res://assets/ui/lion_king_victory_tongue_out.svg")
-const LION_KING_VICTORY_WINK_ICON = preload("res://assets/ui/lion_king_victory_wink.svg")
-const LION_KING_VICTORY_FUNNY_ICON = preload("res://assets/ui/lion_king_victory_funny.svg")
-const LION_KING_VICTORY_FRAMES = [
-	LION_KING_VICTORY_ICON,
-	LION_KING_VICTORY_OUT_ICON,
-	LION_KING_VICTORY_IN_ICON,
-	LION_KING_VICTORY_WAVE_OUT_MID_ICON,
-	LION_KING_VICTORY_WAVE_IN_MID_ICON,
-	LION_KING_VICTORY_TONGUE_PEEK_ICON,
-	LION_KING_VICTORY_TONGUE_OUT_ICON,
-	LION_KING_VICTORY_WINK_ICON,
-	LION_KING_VICTORY_FUNNY_ICON
-]
 const SAVE_PATH := "user://color_queens_save.json"
 const SAVE_PATH_OVERRIDE_SETTING := "color_king/testing/save_path"
 const SAVE_VERSION := 16
@@ -280,8 +258,6 @@ var level_heart_label: Control:
 	get: return game_screen.level_heart_label if game_screen else null
 var level_heart_slots: Array[Label]:
 	get: return game_screen.level_heart_slots if game_screen else []
-var level_heart_tweens: Array:
-	get: return game_screen.heart_tweens if game_screen else []
 var progress_bar: ProgressBar:
 	get: return game_screen.progress_bar if game_screen else null
 var progress_label: Label:
@@ -1073,8 +1049,13 @@ func _complete_composite_assembly(layout: Dictionary) -> void:
 	composite_phase = "transition"
 	audio_controller.play_assembly_complete()
 	_save_game()
-	await assembly_view.play_flatten_transition()
-	if composite_final_layout.is_empty():
+	var flatten_completed: bool = await assembly_view.play_flatten_transition()
+	if (
+		not flatten_completed
+		or not composite_mode
+		or composite_phase != "transition"
+		or composite_final_layout.is_empty()
+	):
 		return
 	current_level["regions"] = composite_final_layout["regions"].duplicate(true)
 	current_level["solution"] = composite_final_layout["solution"].duplicate(true)
@@ -2812,13 +2793,6 @@ func _update_heart_label() -> void:
 		game_screen.set_hearts(heart_count, current_heart_limit)
 
 
-func _stop_heart_tweens() -> void:
-	if formal_level_page:
-		formal_level_page.stop_heart_animation()
-	if composite_level_page:
-		composite_level_page.stop_heart_animation()
-
-
 func _heart_limit_for_display_level(display_level: int) -> int:
 	if display_level <= 10:
 		return 3
@@ -2922,7 +2896,6 @@ func _show_home() -> void:
 		assembly_view.cancel_intro()
 	result_page.stop_lion_animation()
 	result_page.stop_petals()
-	_stop_heart_tweens()
 	if home_composite_entry_active:
 		_update_home_composite_history()
 		_restore_home_composite_progress()
@@ -3210,9 +3183,7 @@ func _update_tutorial_button() -> void:
 		help_button.show()
 	if level_heart_label:
 		level_heart_label.show()
-	if in_tutorial:
-		_stop_heart_tweens()
-	else:
+	if not in_tutorial:
 		_update_heart_label()
 	if crown_find_button:
 		crown_find_button.visible = not _is_assembly_phase()

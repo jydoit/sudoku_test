@@ -17,6 +17,8 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	root.size = Vector2i(540, 960)
+	await process_frame
 	var previous_save := ""
 	var had_save := FileAccess.file_exists(SAVE_PATH)
 	if had_save:
@@ -51,6 +53,68 @@ func _run() -> void:
 	assert(game.levels.size() >= 50, "MVP should include 50 default levels")
 	assert(game.home_screen != null, "Home screen should exist")
 	assert(game.home_screen.get_script() == load("res://scripts/pages/home_page.gd"), "Home UI should be owned by the independent home page")
+	assert(str(ProjectSettings.get_setting("display/window/stretch/aspect")) == "expand", "Tall mobile screens must expand the canvas instead of adding letterbox bars")
+	var export_config := FileAccess.get_file_as_string("res://export_presets.cfg")
+	assert(export_config.count("screen/edge_to_edge=true") == 2, "Every Android export preset should draw behind system bars")
+	assert(export_config.find("screen/edge_to_edge=false") < 0, "Android exports must not restore black system edges")
+	assert(export_config.count("tests/*,tools/*") == 2, "Android packages should exclude test and asset-generation sources")
+	assert("export_path=\"./builds/color king.apk\"" in export_config, "Release APKs should be written to the ignored builds directory")
+	var royal_android_background := "Color(0.176471, 0.490196, 0.733333, 1)"
+	assert(export_config.count("\nscreen/background_color=%s" % royal_android_background) == 2, "Android window fallbacks should match the clear-sky screen edge")
+	assert(export_config.count("\nsplash_screen/background_color=%s" % royal_android_background) == 2, "Android startup should not flash a black screen before the gradient appears")
+	var home_background := game.home_screen.get_node_or_null("RoyalScreenBackground") as TextureRect
+	assert(home_background != null, "Home should own the shared full-screen gradient background")
+	var result_background := game.result_page.get_node_or_null("RoyalScreenBackground") as TextureRect
+	assert(result_background != null, "Every result mode should share the full-screen gradient background")
+	for screen_background in [home_background, result_background]:
+		assert(
+			is_zero_approx(screen_background.anchor_left)
+			and is_zero_approx(screen_background.anchor_top)
+			and is_equal_approx(screen_background.anchor_right, 1.0)
+			and is_equal_approx(screen_background.anchor_bottom, 1.0),
+			"Decorative gradients should bleed to every physical screen edge"
+		)
+		var gradient_texture := screen_background.texture as GradientTexture2D
+		assert(gradient_texture != null and gradient_texture.gradient.colors.size() >= 4, "Royal screens should use one continuous vertical gradient")
+		assert(gradient_texture.gradient.colors[0].get_luminance() < gradient_texture.gradient.colors[1].get_luminance(), "The top screen edge should be darker than the blue sky below it")
+		assert(gradient_texture.gradient.colors[-2].is_equal_approx(UITokensScript.ROYAL_FLOOR), "The sky gradient should settle into the shared cream content floor")
+		assert(gradient_texture.gradient.colors[-1].is_equal_approx(UITokensScript.ROYAL_EDGE_BOTTOM), "The bottom system edge should finish on the shared soft sky blue")
+		assert(gradient_texture.gradient.colors[-1].get_luminance() < gradient_texture.gradient.colors[-2].get_luminance(), "The bottom sky edge should retain contrast against the cream content floor")
+	for level_page in [game.formal_level_page, game.composite_level_page]:
+		var edge_shade := level_page.get_node_or_null("ScreenEdgeShade") as TextureRect
+		assert(edge_shade != null, "Light gameplay pages should shade both system edges")
+		assert(
+			is_zero_approx(edge_shade.anchor_left)
+			and is_zero_approx(edge_shade.anchor_top)
+			and is_equal_approx(edge_shade.anchor_right, 1.0)
+			and is_equal_approx(edge_shade.anchor_bottom, 1.0),
+			"System-edge shading should resize with the full gameplay viewport"
+		)
+		var edge_gradient := (edge_shade.texture as GradientTexture2D).gradient
+		assert(edge_gradient.colors[0].a >= 0.90 and edge_gradient.colors[-1].a >= 0.80, "Gameplay system edges should remain opaque enough for phone chrome contrast")
+		var status_overlay: Color = edge_gradient.colors[0]
+		var status_bar_composite := Color(
+			lerpf(UITokensScript.SURFACE_CREAM.r, status_overlay.r, status_overlay.a),
+			lerpf(UITokensScript.SURFACE_CREAM.g, status_overlay.g, status_overlay.a),
+			lerpf(UITokensScript.SURFACE_CREAM.b, status_overlay.b, status_overlay.a),
+			1.0
+		)
+		assert(
+			status_bar_composite.get_luminance() < UITokensScript.SURFACE_CREAM.get_luminance() * 0.55,
+			"The top gameplay edge should be substantially darker than the cream content for the white system clock"
+		)
+	var mapped_safe_insets := UITokensScript.scaled_safe_insets(Rect2i(0, 90, 1080, 2244), Vector2i(1080, 2424), Vector2(540, 1212))
+	assert(mapped_safe_insets.is_equal_approx(Vector4(0, 45, 0, 45)), "Physical status and gesture insets should map into expanded canvas coordinates")
+	var original_window_size := root.size
+	root.size = Vector2i(540, 1212)
+	await process_frame
+	await process_frame
+	assert(game.size.y > 960.0, "A Pixel-like tall viewport should expose extra vertical canvas instead of black letterboxing")
+	assert(home_background.size.is_equal_approx(game.home_screen.size), "Home gradient should resize with a tall viewport")
+	assert(result_background.size.is_equal_approx(game.result_page.size), "Result gradient should resize with a tall viewport")
+	root.size = original_window_size
+	await process_frame
+	await process_frame
 	assert(game.game_screen != null, "Game screen should exist")
 	assert(game.formal_level_page != null and game.composite_level_page != null, "Formal and composite gameplay should use independent page instances")
 	assert(game.game_screen == game.formal_level_page and not game.composite_level_page.visible, "Ordinary levels should bind main flow to the formal level page")
@@ -77,12 +141,8 @@ func _run() -> void:
 	assert(game.result_page.result_coin_roll_display.get_script() == CoinRollDisplayScript, "The result page should use the shared coin roller")
 	assert(game.progress_bar != null and game.progress_label != null, "Level screen should show crown progress")
 	assert(CoinIconResourceScript.texture() != null, "Coin balance should generate its texture from the SVG coin source")
-	assert(game.LION_KING_ICON != null, "Core game pieces should use the lion king texture")
-	assert(game.LION_KING_WRONG_ICON != null, "Wrong placements should use the worried lion texture")
-	assert(game.LION_KING_VICTORY_ICON != null, "Completion should use the standing lion texture")
-	assert(game.LION_KING_VICTORY_FRAMES.size() == 9, "Completion lion should provide wave and expression animation frames")
-	assert(game.board.PIECE_TEXTURE == game.LION_KING_ICON, "Board pieces and UI should share the same lion king texture")
-	assert(game.board.WRONG_PIECE_TEXTURE == game.LION_KING_WRONG_ICON, "Wrong board pieces and UI should share the worried lion texture")
+	assert(game.board.PIECE_TEXTURE.resource_path == "res://assets/ui/lion_king.svg", "Core board pieces should use the lion king texture")
+	assert(game.board.WRONG_PIECE_TEXTURE.resource_path == "res://assets/ui/lion_king_wrong.svg", "Wrong placements should use the worried lion texture")
 	assert(game.board.HAPPY_PIECE_TEXTURE.resource_path == "res://assets/ui/lion_king_happy.svg", "Correct crown feedback should preload the dedicated happy lion expression")
 	var ui_asset_directory := DirAccess.open("res://assets/ui")
 	assert(ui_asset_directory != null, "Runtime UI asset directory should be readable")
@@ -295,7 +355,6 @@ func _run() -> void:
 	game._update_crown_find_button()
 	game._update_hint_button()
 	assert(game.level_heart_slots.size() == game.INITIAL_HEART_COUNT, "The top heart badge should keep independent heart slots")
-	assert(game.level_heart_tweens.is_empty(), "In-level hearts should remain static without background pulse tweens")
 	for heart_index in range(game.level_heart_slots.size()):
 		var heart_slot: Label = game.level_heart_slots[heart_index]
 		assert(heart_slot.custom_minimum_size.x >= 32.0 and heart_slot.custom_minimum_size.y >= 38.0, "Heart slots should not be compressed")
@@ -619,7 +678,6 @@ func _run() -> void:
 	assert(game.crown_find_count == crown_find_count_before_wrong, "Wrong crown attempts must not consume crown-find uses")
 	assert(game.level_heart_slots[game.heart_count].get_theme_color("font_color") == game.HEART_EMPTY_COLOR, "A lost heart should turn gray")
 	assert(game.level_heart_slots[game.heart_count].scale.is_equal_approx(Vector2.ONE), "A lost heart should remain at its normal scale")
-	assert(game.level_heart_tweens.is_empty(), "Heart loss should not start or retain any in-level pulse tween")
 	assert(not game.board.error_cells.has(wrong_cell), "Wrong crown attempts should not be treated as rule-conflict crowns")
 	assert(not game.is_failed, "A single wrong crown attempt should not fail the level while hearts remain")
 	game._on_cell_pressed(wrong_cell.y, wrong_cell.x)
@@ -814,6 +872,8 @@ func _run() -> void:
 	assert(int(game.economy_progress["totalCoinEarned"]) >= expected_completion_reward, "Economy progress should retain earned-coin totals")
 	assert(game.board.victory_tween != null, "Completion should start the board victory timeline")
 	assert(game.board.victory_origin.x >= 0, "The board victory wave should originate from the final lion")
+	assert(game.board.reaction_tween == null and game.board.reaction_kind.is_empty(), "Board victory should replace the final placement reaction instead of stacking over it")
+	assert(game.board.pulse_tween == null and is_zero_approx(game.board.pulse_strength), "Board victory should cancel the final cell pulse before its own timeline")
 	assert(game.board.victory_result_delay() >= game.board.VICTORY_TIMELINE_DURATION, "The result page should wait for the in-board celebration")
 
 	await create_timer(game.board.victory_result_delay() + 0.18).timeout
@@ -821,11 +881,219 @@ func _run() -> void:
 	assert(game.result_page.result_is_excellent, "Excellent completion should enable the dedicated celebration state")
 	assert(game.result_page.result_coin_roll_display.displayed_value() == completion_coins_before, "Excellent should show the pre-reward balance from its first visible frame")
 	assert(game.result_page.result_coin_roll_primary.text == str(completion_coins_before), "The petal phase must not expose the coin component's zero default")
+	assert(game.result_page.result_lion_entry_active, "Success result should begin with the playful lion edge entrance")
+	assert(game.result_page.result_lion_entry_name in game.result_page.RESULT_LION_ENTRY_VARIANTS, "Success result should randomly choose a supported peek edge")
+	assert(game.result_page.RESULT_LION_ENTRY_VARIANTS.size() == 3, "The result lion should tease from the left, right, or bottom edge")
+	assert(
+		["peek_left", "peek_right", "peek_bottom"].all(
+			func(edge: String) -> bool: return edge in game.result_page.RESULT_LION_ENTRY_VARIANTS
+		),
+		"The playful entrance should cover both sides and the bottom edge"
+	)
+	assert(game.result_page.result_lion_entry_layer.get_child_count() == 1, "The peek entrance should use one lightweight overlay lion")
+	assert(game.result_page.result_lion_tween != null, "The peek and jump sequence should be driven by one continuous tween")
+	assert(game.result_page.result_lion_runner is TextureRect, "The entrance should use one frame-swapped TextureRect")
+	assert(
+		game.result_page.result_lion_runner.texture in game.result_page._result_lion_entry_frames(
+			game.result_page.result_lion_entry_name,
+			"peek"
+		),
+		"Every entry direction should begin on a generated full-pose SVG frame"
+	)
+	assert(game.result_page.result_lion_runner.material == null, "No generated entry direction should use the old head shader")
+	assert(game.result_page.result_lion_runner.get_node_or_null("ResultLionPeekBlink") is TextureRect, "Every entry direction should own an eye-only blink overlay")
+	assert(game.result_page.RESULT_LION_BOTTOM_PEEK_FRAMES.size() + game.result_page.RESULT_LION_BOTTOM_BRACE_FRAMES.size() == 11, "The bottom entrance should use eleven edge-contact poses")
+	assert(game.result_page.RESULT_LION_BOTTOM_JUMP_FRAMES.size() == 9, "The bottom jump should replace the old five-frame crouch-repeat sequence")
+	assert(game.result_page.RESULT_LION_WAVE_ARM_FRAMES.size() == 25, "The centered result wave should use thirteen outward arm poses and twelve mirrored return poses")
+	assert(game.result_page.RESULT_LION_WAVE_DURATIONS.size() == game.result_page.RESULT_LION_WAVE_ARM_FRAMES.size(), "Every result wave arm frame should own an explicit duration")
+	assert(game.result_page.RESULT_LION_WAVE_ARM_FRAMES[12] == game.result_page.LION_KING_CENTER_ARM_12, "The centered wave should reach its full outward arm pose at the midpoint")
+	assert(game.result_page.RESULT_LION_WAVE_ARM_FRAMES[0] == game.result_page.RESULT_LION_WAVE_ARM_FRAMES[-1], "The wave loop should start and end on the same raised-paw pose")
+	for result_wave_frame_index in range(12):
+		assert(game.result_page.RESULT_LION_WAVE_ARM_FRAMES[result_wave_frame_index] == game.result_page.RESULT_LION_WAVE_ARM_FRAMES[-1 - result_wave_frame_index], "The centered wave should return through the exact reverse keyframe order")
+	for result_wave_frame_index in range(12):
+		assert(game.result_page.RESULT_LION_WAVE_ARM_FRAMES[result_wave_frame_index] != game.result_page.RESULT_LION_WAVE_ARM_FRAMES[result_wave_frame_index + 1], "Every outward wave step should advance to a distinct authored arm pose")
+	assert(game.result_page.LION_KING_CENTER_BODY.get_size() == Vector2(400, 400), "The centered wave should own one fixed 400px body layer")
+	var result_wave_body_source := FileAccess.get_file_as_string("res://assets/ui/lion_king_center_body.svg")
+	assert("<path" in result_wave_body_source and "<image" not in result_wave_body_source, "The fixed centered-wave body must remain a pure-path SVG")
+	assert(game.result_page.LION_KING_CENTER_LANDING.get_size() == Vector2(400, 400), "The landing handoff pose should share the centered lion's registration canvas")
+	var result_landing_source := FileAccess.get_file_as_string("res://assets/ui/lion_king_center_landing.svg")
+	assert("<path" in result_landing_source and "<image" not in result_landing_source, "The landing handoff pose must remain a pure-path SVG")
+	for result_wave_frame_index in range(13):
+		var result_wave_arm_texture: Texture2D = game.result_page.RESULT_LION_WAVE_ARM_FRAMES[result_wave_frame_index]
+		var result_wave_arm_image := result_wave_arm_texture.get_image()
+		assert(not result_wave_arm_image.is_empty() and result_wave_arm_image.get_size() == Vector2i(400, 400), "Every centered-wave arm keyframe should keep the fixed 400px registration canvas")
+		assert(result_wave_arm_image.get_used_rect().size.x < 180, "Arm-only wave frames must not redraw the lion's face or body")
+		var result_wave_arm_source := FileAccess.get_file_as_string("res://assets/ui/lion_king_center_arm_%02d.svg" % result_wave_frame_index)
+		assert("<path" in result_wave_arm_source and "<image" not in result_wave_arm_source, "Every centered-wave arm keyframe must remain a pure-path SVG")
+	assert(game.result_page.result_lion_arm_icon.get_parent() == game.result_page.result_piece_icon, "The wave arm should remain registered to the centered lion body")
+	assert(game.result_page.result_lion_arm_icon.show_behind_parent, "The waving arm should render behind the fixed mane and shoulder")
+	game.result_page._set_result_lion_arm_frame(game.result_page.LION_KING_CENTER_ARM_00)
+	var result_wave_fixed_body: Texture2D = game.result_page.result_piece_icon.texture
+	game.result_page._set_result_lion_arm_frame(game.result_page.LION_KING_CENTER_ARM_12)
+	assert(result_wave_fixed_body == game.result_page.LION_KING_CENTER_BODY and game.result_page.result_piece_icon.texture == result_wave_fixed_body, "Changing wave keyframes must never replace or redraw the body texture")
+	assert(game.result_page.result_lion_arm_icon.texture == game.result_page.LION_KING_CENTER_ARM_12, "Wave callbacks should change only the arm texture")
+	game.result_page._show_center_result_lion_idle()
+	assert(game.result_page.result_lion_arm_icon.visible, "Centered celebrations should always keep the independent arm layer visible")
+	assert(not FileAccess.file_exists("res://assets/ui/lion_king_victory.svg"), "Legacy full-body result expressions should not remain in the runtime asset pack")
+	assert(game.result_page.RESULT_LION_PEEK_DURATION >= 1.50, "The playful edge tease should remain on screen long enough to read")
+	assert(
+		float(game.result_page.RESULT_LION_BOTTOM_PEEK_FRAMES.size())
+		/ (game.result_page.RESULT_LION_PEEK_DURATION * game.result_page.RESULT_LION_PEEK_REVEAL_FRACTION)
+		>= 9.0,
+		"The authored tease should play at a readable high frame cadence"
+	)
+	assert(
+		float(game.result_page.RESULT_LION_BOTTOM_JUMP_FRAMES.size()) / game.result_page.RESULT_LION_JUMP_DURATION >= 10.0,
+		"The airborne pose sequence should not fall back to a low-frame jump"
+	)
+	for entry_direction in ["left", "right"]:
+		for entry_frame_index in range(16):
+			var entry_frame_source := FileAccess.get_file_as_string(
+				"res://assets/ui/lion_%s_entry_%02d.svg" % [entry_direction, entry_frame_index]
+			)
+			assert("<path" in entry_frame_source, "Every directional entrance frame should contain traced SVG paths")
+			assert("<image" not in entry_frame_source and "data:image" not in entry_frame_source, "Runtime lion frames must not embed raster images")
+	for bottom_entry_frame_index in range(11):
+		var bottom_entry_source := FileAccess.get_file_as_string("res://assets/ui/lion_bottom_entry_%02d.svg" % bottom_entry_frame_index)
+		assert("<path" in bottom_entry_source, "Every bottom edge-contact frame should contain traced SVG paths")
+		assert("<image" not in bottom_entry_source and "data:image" not in bottom_entry_source, "Bottom edge-contact frames must not embed raster images")
+	for bottom_jump_frame_index in range(9):
+		var bottom_jump_source := FileAccess.get_file_as_string("res://assets/ui/lion_bottom_jump_%02d.svg" % bottom_jump_frame_index)
+		assert("<path" in bottom_jump_source, "Every replacement bottom-jump frame should contain traced SVG paths")
+		assert("<image" not in bottom_jump_source and "data:image" not in bottom_jump_source, "Replacement bottom-jump frames must not embed raster images")
+	for peek_direction in ["bottom", "left", "right"]:
+		var peek_variant := "peek_%s" % peek_direction
+		var blink_texture: Texture2D = game.result_page._result_lion_peek_blink_texture(peek_variant)
+		assert(blink_texture.get_size() == Vector2(400, 400), "Every eye-only blink overlay should keep the 400px body registration canvas")
+		var blink_source := FileAccess.get_file_as_string("res://assets/ui/lion_%s_peek_blink.svg" % peek_direction)
+		assert("<path" in blink_source and "<image" not in blink_source, "Peek blink overlays must remain pure-path eye patches")
+	assert(game.result_page._result_lion_peek_frame_index(0.0, 8) == 0, "The tease should begin on its first authored pose")
+	assert(game.result_page._result_lion_peek_frame_index(0.51, 8) == 6, "The bottom reveal should settle on its fixed open-eye body")
+	assert(game.result_page._result_lion_peek_frame_index(0.52, 8) == 6, "The bottom hold should keep that same fixed open-eye body")
+	assert(game.result_page._result_lion_peek_frame_index(1.0, 8) == 6, "The bottom tease should finish on the same body before bracing")
+	for entry_variant in ["peek_left", "peek_right", "peek_bottom"]:
+		var open_frame_index: int = game.result_page._result_lion_peek_open_frame_index(entry_variant, 8)
+		var blink_sample_count := 0
+		var blink_transition_count := 0
+		var was_blinking := false
+		for tease_step in range(game.result_page.RESULT_LION_PEEK_TEASE_STEPS):
+			var tease_sample := lerpf(
+				game.result_page.RESULT_LION_PEEK_REVEAL_FRACTION,
+				game.result_page.RESULT_LION_PEEK_TEASE_END_FRACTION,
+				(float(tease_step) + 0.5) / float(game.result_page.RESULT_LION_PEEK_TEASE_STEPS)
+			)
+			assert(game.result_page._result_lion_peek_frame_index(tease_sample, 8, entry_variant) == open_frame_index, "Blinking must never replace the fixed open-eye body frame")
+			var is_blinking: bool = game.result_page._result_lion_peek_is_blinking(tease_sample)
+			if is_blinking:
+				blink_sample_count += 1
+			if is_blinking != was_blinking:
+				blink_transition_count += 1
+			was_blinking = is_blinking
+		if was_blinking:
+			blink_transition_count += 1
+		assert(blink_sample_count == 2 and blink_transition_count == 2, "Every direction should play one readable two-sample blink instead of repeated blinking")
+		assert(not game.result_page._result_lion_peek_is_blinking(1.0), "Every direction should reopen its eye before bracing")
+	var lion_motion_probe := TextureRect.new()
+	lion_motion_probe.size = Vector2(210, 210)
+	lion_motion_probe.pivot_offset = lion_motion_probe.size * 0.5
+	var lion_motion_probe_arm := TextureRect.new()
+	lion_motion_probe_arm.name = "ResultLionRunnerArm"
+	lion_motion_probe_arm.texture = game.result_page.LION_KING_CENTER_ARM_00
+	lion_motion_probe.add_child(lion_motion_probe_arm)
+	lion_motion_probe_arm.hide()
+	var lion_motion_probe_blink := TextureRect.new()
+	lion_motion_probe_blink.name = "ResultLionPeekBlink"
+	lion_motion_probe.add_child(lion_motion_probe_blink)
+	lion_motion_probe_blink.hide()
+	var entry_motion_specs := [
+		{"variant": "peek_left", "support": Vector2(0, 480)},
+		{"variant": "peek_right", "support": Vector2(540, 480)},
+		{"variant": "peek_bottom", "support": Vector2(270, 960)},
+	]
+	for entry_motion_spec in entry_motion_specs:
+		var entry_variant := str(entry_motion_spec["variant"])
+		var entry_support: Vector2 = entry_motion_spec["support"]
+		var entry_peek_frames: Array = game.result_page._result_lion_entry_frames(entry_variant, "peek")
+		var entry_brace_frames: Array = game.result_page._result_lion_entry_frames(entry_variant, "brace")
+		var entry_jump_frames: Array = game.result_page._result_lion_entry_frames(entry_variant, "jump")
+		var expected_jump_frame_count := 9 if entry_variant == "peek_bottom" else 5
+		assert(entry_peek_frames.size() == 8 and entry_brace_frames.size() == 3 and entry_jump_frames.size() == expected_jump_frame_count, "Every edge should provide its complete authored peek, brace, and jump sequence")
+		game.result_page._set_result_lion_entry_peek_progress(0.0, lion_motion_probe, entry_support, entry_variant)
+		assert(lion_motion_probe.texture == entry_peek_frames[0], "Every edge tease should begin on its first authored pose")
+		game.result_page._set_result_lion_entry_peek_progress(0.55, lion_motion_probe, entry_support, entry_variant)
+		var fixed_peek_position := lion_motion_probe.position
+		var fixed_peek_texture: Texture2D = lion_motion_probe.texture
+		assert(not lion_motion_probe_blink.visible, "The observation hold should start with an open eye")
+		game.result_page._set_result_lion_entry_peek_progress(0.70, lion_motion_probe, entry_support, entry_variant)
+		assert(lion_motion_probe_blink.visible, "The middle of the observation hold should show the eye-only blink")
+		assert(lion_motion_probe.position.is_equal_approx(fixed_peek_position) and lion_motion_probe.texture == fixed_peek_texture, "Blinking must keep the exact same body texture and edge position")
+		game.result_page._set_result_lion_entry_peek_progress(1.0, lion_motion_probe, entry_support, entry_variant)
+		var expected_tease_end: Texture2D = entry_peek_frames[game.result_page._result_lion_peek_open_frame_index(entry_variant, entry_peek_frames.size())]
+		assert(lion_motion_probe.texture == expected_tease_end, "Every edge tease should finish on its authored open-eye pose")
+		assert(not lion_motion_probe_blink.visible, "The blink overlay should be hidden before the crouch phase starts")
+		match entry_variant:
+			"peek_left":
+				assert(is_equal_approx(lion_motion_probe.position.x + lion_motion_probe.size.x * game.result_page.RESULT_LION_LEFT_SUPPORT_RATIO, entry_support.x), "Left frames should stay locked to the physical left edge")
+			"peek_right":
+				assert(is_equal_approx(lion_motion_probe.position.x + lion_motion_probe.size.x * game.result_page.RESULT_LION_RIGHT_SUPPORT_RATIO, entry_support.x), "Right frames should stay locked to the physical right edge")
+			_:
+				assert(is_equal_approx(lion_motion_probe.position.y + lion_motion_probe.size.y * game.result_page.RESULT_LION_BOTTOM_SUPPORT_RATIO, entry_support.y), "Bottom frames should stay locked to the physical bottom edge")
+		game.result_page._set_result_lion_entry_brace_progress(1.0, lion_motion_probe, entry_support, entry_variant)
+		assert(lion_motion_probe.texture == entry_brace_frames[-1], "Every edge brace should end on its authored anticipation pose")
+		assert(lion_motion_probe.scale == Vector2.ONE, "Authored anticipation must not be replaced by control squash")
+		var jump_start := Vector2(92, 480)
+		game.result_page._set_result_lion_entry_jump_progress(0.0, lion_motion_probe, jump_start, Vector2(220, 320), Vector2(270, 430), entry_variant)
+		assert(lion_motion_probe.texture == entry_jump_frames[0], "Every push-off should begin on its first airborne frame")
+		var expected_registration_ratio: Vector2 = game.result_page.RESULT_LION_JUMP_REGISTRATION_OFFSETS[entry_variant]
+		var expected_registered_position := jump_start - lion_motion_probe.size * 0.5 + expected_registration_ratio * lion_motion_probe.size
+		assert(lion_motion_probe.position.is_equal_approx(expected_registered_position), "Every push-off should compensate the authored edge-to-center registration change")
+		game.result_page._set_result_lion_entry_jump_progress(1.0, lion_motion_probe, Vector2(92, 480), Vector2(220, 320), Vector2(270, 430), entry_variant)
+		assert(lion_motion_probe.texture == entry_jump_frames[-1], "Every jump should end on its landing-ready pose")
+		assert(lion_motion_probe.position.is_equal_approx(Vector2(270, 430) - lion_motion_probe.size * 0.5), "Every frame-driven jump should finish at the showcase center")
+	var lion_showcase_scale: float = game.result_page.result_piece_icon.size.y / lion_motion_probe.size.y
+	game.result_page._set_result_lion_land_progress(0.34, lion_motion_probe, Vector2(270, 430), "peek_bottom")
+	assert(lion_motion_probe.scale.x < 1.0 and lion_motion_probe.scale.x > lion_showcase_scale, "Landing should continuously shrink the edge runner toward the showcase size")
+	assert(lion_motion_probe.material == null, "Frame-driven landing must not reintroduce the old shader")
+	assert(lion_motion_probe.texture == game.result_page.LION_KING_CENTER_LANDING, "Landing should use one opaque registered pose instead of morphing two full lions")
+	game.result_page._set_result_lion_land_progress(1.0, lion_motion_probe, Vector2(270, 430), "peek_bottom")
+	assert(lion_motion_probe.texture == game.result_page.LION_KING_CENTER_LANDING, "Landing should finish on the exact flattened arm-extended handoff pose")
+	assert(lion_motion_probe.self_modulate == Color.WHITE, "Landing bridge frames should remain opaque without double-image crossfades")
+	assert(is_equal_approx(lion_motion_probe.scale.x, lion_showcase_scale), "Landing should reach the exact showcase scale before ownership handoff")
+	var arrival_locked_position := Vector2(270, 430) - lion_motion_probe.size * 0.5
+	for arrival_variant in range(3):
+		assert(game.result_page._result_lion_arrival_arm_frame_index(0.0, arrival_variant) == 12, "Every arrival gesture should begin on the arm-extended landing pose")
+		assert(game.result_page._result_lion_arrival_arm_frame_index(0.5, arrival_variant) > 0, "Every arrival gesture should celebrate through authored arm keyframes")
+		assert(game.result_page._result_lion_arrival_arm_frame_index(1.0, arrival_variant) == 0, "Every arrival gesture should return to the idle arm before handoff")
+		game.result_page._set_result_lion_arrival_progress(0.5, lion_motion_probe, Vector2(270, 430), arrival_variant)
+		assert(lion_motion_probe.position.is_equal_approx(arrival_locked_position), "Arrival celebration must lock the lion to the showcase center")
+		assert(lion_motion_probe.scale.is_equal_approx(Vector2.ONE * lion_showcase_scale), "Arrival celebration must not pulse the lion scale")
+		assert(is_zero_approx(lion_motion_probe.rotation), "Arrival celebration must not rotate the fixed lion body")
+		assert(lion_motion_probe_arm.visible and lion_motion_probe_arm.texture != game.result_page.LION_KING_CENTER_ARM_00, "Arrival celebration should animate only the independent arm layer")
+	game.result_page._set_result_lion_arrival_progress(1.0, lion_motion_probe, Vector2(270, 430), 0)
+	assert(lion_motion_probe.texture == game.result_page.LION_KING_CENTER_BODY and is_equal_approx(lion_motion_probe.scale.x, lion_showcase_scale), "Arrival handoff should keep one body and one size through its final frame")
+	assert(lion_motion_probe.position.is_equal_approx(arrival_locked_position) and is_zero_approx(lion_motion_probe.rotation), "Arrival handoff should keep the exact locked center transform")
+	assert(lion_motion_probe_arm.texture == game.result_page.LION_KING_CENTER_ARM_00, "Arrival handoff should return the runner arm to the same idle keyframe as the centered lion")
+	var center_transform_position: Vector2 = game.result_page.result_piece_icon.position
+	game.result_page._set_result_lion_cheer_progress(0.5)
+	assert(game.result_page.result_piece_icon.position == center_transform_position and game.result_page.result_piece_icon.scale == Vector2.ONE and is_zero_approx(game.result_page.result_piece_icon.rotation), "Centered cheer should animate only hand keyframes")
+	game.result_page._set_result_lion_playful_progress(0.5)
+	assert(game.result_page.result_piece_icon.position == center_transform_position and game.result_page.result_piece_icon.scale == Vector2.ONE and is_zero_approx(game.result_page.result_piece_icon.rotation), "Centered playful motion should keep the body transform locked")
+	game.result_page._set_result_lion_coin_arm_progress(0.5)
+	assert(game.result_page.result_lion_arm_icon.texture == game.result_page.LION_KING_CENTER_ARM_12, "Coin toss should reach the full authored arm extension even for small rewards")
+	game.result_page._set_result_lion_coin_arm_progress(1.0)
+	assert(game.result_page.result_lion_arm_icon.texture == game.result_page.LION_KING_CENTER_ARM_00, "Coin toss should return through its keyframes to the idle arm")
+	lion_motion_probe.free()
 	assert(
 		game.result_page.result_petals_layer.visible
 		and game.result_page.result_petals_layer.get_child_count() == game.result_page.RESULT_PETAL_COUNT,
 		"Excellent should play the complete falling-petal celebration"
 	)
+	var result_petal_colors := {}
+	for result_petal in game.result_page.result_petals_layer.get_children():
+		assert(result_petal is Sprite2D, "Excellent petals should use the tintable neutral vector texture instead of a flat polygon")
+		assert(result_petal.texture == game.result_page.RESULT_PETAL_TEXTURE, "Every falling petal should share the neutral SVG texture")
+		result_petal_colors[result_petal.modulate.to_html(false)] = true
+	assert(result_petal_colors.size() == game.result_page.RESULT_PETAL_COLORS.size(), "Each celebration should randomize and display the complete petal color palette")
 	assert(game.result_page.result_success_sequence_tween != null, "Excellent should own one serial celebration timeline")
 	assert("celebration" in result_music_events, "Excellent should start the warm celebration cue with the petals")
 	assert("coin_arrive" not in result_sound_events and "coin_reel" not in result_sound_events, "Coin sounds must not overlap the opening petal phase")
@@ -859,11 +1127,13 @@ func _run() -> void:
 	assert(is_zero_approx(game.result_page.RESULT_COIN_START_DELAY), "Coin flight should begin immediately when the final petal phase ends")
 	assert(result_sound_events.find("coin_arrive") < result_sound_events.find("coin_reel"), "Coin arrivals should complete before the reel sound begins")
 	assert(result_sound_events.count("coin_reel") >= 1, "The result reel should emit tactile notch sounds from its real visual steps")
-	assert(game.result_page.result_piece_icon.texture in game.LION_KING_VICTORY_FRAMES, "Success result should animate with the lion wave frames")
-	assert(game.result_page.result_lion_wave_tween != null, "Success result should run the lion wave animation")
-	assert(game.result_page.result_lion_animation_name in ["wave", "tongue", "funny"], "Success result should randomly choose a supported lion animation")
-	assert(game.result_page.result_piece_icon.scale.is_equal_approx(Vector2.ONE), "Success lion should keep a fixed visual size without front-back pulsing")
-	assert(is_zero_approx(game.result_page.result_piece_icon.rotation), "Success lion should keep a fixed body axis without rocking")
+	assert(game.result_page.result_piece_icon.texture == game.result_page.LION_KING_CENTER_BODY, "Every centered celebration should keep one fixed body texture")
+	assert(game.result_page.result_lion_arm_icon.visible, "Every centered celebration should animate only its independent arm layer")
+	assert(game.result_page.result_lion_wave_tween != null, "Success result should keep one scheduled lion action or idle pause")
+	assert(game.result_page.result_lion_animation_name in ["wave", "cheer", "playful", "idle"], "Success result should choose only fixed-body actions and their natural idle pause")
+	assert(game.result_page.result_piece_icon.scale == Vector2.ONE, "Centered actions should keep the body at the exact showcase scale")
+	assert(is_zero_approx(game.result_page.result_piece_icon.rotation), "Centered actions should keep the body rotation locked")
+	assert(not game.result_page.result_lion_entry_active and game.result_page.result_lion_entry_layer.get_child_count() == 0, "The running lion should hand off to the stationary centered showcase cleanly")
 	game.current_heart_limit = 1
 	game.heart_count = 1
 	var manual_balance_after: int = game.coin_count
@@ -872,6 +1142,7 @@ func _run() -> void:
 	assert(game.result_page.result_coin_roll_display.displayed_value() == manual_balance_before, "The result balance should be initialized before the first result-page frame")
 	assert(game.result_page.result_coin_roll_primary.text == str(manual_balance_before), "The first visible result frame must show the pre-reward balance instead of zero or a stale balance")
 	await process_frame
+	await create_timer(game.result_page.result_lion_entry_duration() + 0.12).timeout
 	var expected_flight_source: Vector2 = game.result_page._control_point_in_flight_layer(
 		game.result_page.result_piece_icon,
 		Vector2(

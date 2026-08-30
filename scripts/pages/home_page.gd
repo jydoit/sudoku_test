@@ -54,33 +54,19 @@ func refresh_localized_text() -> void:
 
 func _build_page() -> void:
 	var base := ColorRect.new()
-	base.color = Color("#DDF5FF")
+	base.color = UITokensScript.ROYAL_FLOOR
 	base.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	base.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(base)
 
-	var sky := ColorRect.new()
-	sky.color = Color("#248DFF")
-	sky.set_anchor(SIDE_RIGHT, 1.0)
-	sky.set_anchor(SIDE_BOTTOM, 0.58)
-	sky.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(sky)
-
-	var glow := ColorRect.new()
-	glow.color = Color("#8BD0FF")
-	glow.set_anchor(SIDE_TOP, 0.42)
-	glow.set_anchor(SIDE_RIGHT, 1.0)
-	glow.set_anchor(SIDE_BOTTOM, 0.78)
-	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(glow)
-
-	var floor := ColorRect.new()
-	floor.color = Color("#DDF5FF")
-	floor.set_anchor(SIDE_TOP, 0.72)
-	floor.set_anchor(SIDE_RIGHT, 1.0)
-	floor.set_anchor(SIDE_BOTTOM, 1.0)
-	floor.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(floor)
+	var background := TextureRect.new()
+	background.name = "RoyalScreenBackground"
+	background.texture = UITokensScript.royal_screen_gradient_texture()
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	background.stretch_mode = TextureRect.STRETCH_SCALE
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(background)
 
 	add_child(_build_hero())
 	add_child(_build_primary_buttons())

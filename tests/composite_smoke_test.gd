@@ -21,6 +21,8 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	root.size = Vector2i(540, 960)
+	await process_frame
 	var previous_save := ""
 	var had_save := FileAccess.file_exists(SAVE_PATH)
 	if had_save:
@@ -845,7 +847,8 @@ func _test_tray_horizontal_scroll(view) -> void:
 	view.visible = true
 	view.input_locked = false
 	view.tray_scroll = 0.0
-	assert(view._tray_max_scroll() > 0.0, "The tray scroll regression fixture must overflow horizontally")
+	var max_scroll: float = view._tray_max_scroll()
+	assert(max_scroll > 0.0, "The tray scroll regression fixture must overflow horizontally (tray=%s, view=%s, viewport=%s)" % [view._tray_rect().size, view.size, view.get_viewport_rect().size])
 
 	var tray_center: Vector2 = view._tray_rect().get_center()
 	view._pointer_pressed(tray_center, 7)

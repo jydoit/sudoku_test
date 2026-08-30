@@ -4,6 +4,7 @@ export/
 builds/
 build/*.apk
 build/*.apk.idsig
+docs/animation_sources/*.import
 *.tmp
 .DS_Store
 .idea/workspace.xml

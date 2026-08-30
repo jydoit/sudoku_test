@@ -10,6 +10,11 @@ const SURFACE_CREAM := Color("#FFF8ED")
 const SURFACE_CARD := Color("#FFFFFF")
 const PRIMARY_BLUE := Color("#3E8DFF")
 const SOFT_BLUE := Color("#E7F1FF")
+const ROYAL_SKY_TOP := Color("#2D7DBB")
+const ROYAL_SKY := Color("#52A8E8")
+const ROYAL_GLOW := Color("#B5DFF3")
+const ROYAL_FLOOR := SURFACE_CREAM
+const ROYAL_EDGE_BOTTOM := Color("#8CC8E5")
 const SUCCESS_GREEN := Color("#48B985")
 const WARNING_YELLOW := Color("#FFF1BD")
 const DANGER_RED := Color("#F25D72")
@@ -106,3 +111,78 @@ static func board_border_width(board_size: int) -> float:
 
 static func same_region_gap_color(_base_color: Color) -> Color:
 	return BOARD_GAP
+
+
+static func royal_screen_gradient_texture() -> GradientTexture2D:
+	var gradient := Gradient.new()
+	gradient.offsets = PackedFloat32Array([0.0, 0.18, 0.52, 0.76, 0.90, 1.0])
+	gradient.colors = PackedColorArray([
+		ROYAL_SKY_TOP,
+		ROYAL_SKY,
+		ROYAL_GLOW,
+		ROYAL_FLOOR,
+		ROYAL_FLOOR,
+		ROYAL_EDGE_BOTTOM,
+	])
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.width = 1
+	texture.height = 256
+	texture.fill_from = Vector2(0.5, 0.0)
+	texture.fill_to = Vector2(0.5, 1.0)
+	return texture
+
+
+static func light_screen_edge_gradient_texture() -> GradientTexture2D:
+	var top_edge := ROYAL_SKY_TOP
+	top_edge.a = 0.94
+	var top_haze := ROYAL_GLOW
+	top_haze.a = 0.30
+	var top_clear := ROYAL_GLOW
+	top_clear.a = 0.0
+	var bottom_clear := ROYAL_EDGE_BOTTOM
+	bottom_clear.a = 0.0
+	var bottom_haze := ROYAL_EDGE_BOTTOM
+	bottom_haze.a = 0.26
+	var bottom_edge := ROYAL_EDGE_BOTTOM
+	bottom_edge.a = 0.88
+	var gradient := Gradient.new()
+	gradient.offsets = PackedFloat32Array([0.0, 0.035, 0.085, 0.88, 0.94, 1.0])
+	gradient.colors = PackedColorArray([
+		top_edge,
+		top_haze,
+		top_clear,
+		bottom_clear,
+		bottom_haze,
+		bottom_edge,
+	])
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.width = 1
+	texture.height = 256
+	texture.fill_from = Vector2(0.5, 0.0)
+	texture.fill_to = Vector2(0.5, 1.0)
+	return texture
+
+
+static func scaled_safe_insets(safe_rect: Rect2i, window_size: Vector2i, viewport_size: Vector2) -> Vector4:
+	if window_size.x <= 0 or window_size.y <= 0 or viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+		return Vector4.ZERO
+	var scale_x := viewport_size.x / float(window_size.x)
+	var scale_y := viewport_size.y / float(window_size.y)
+	return Vector4(
+		maxf(0.0, safe_rect.position.x * scale_x),
+		maxf(0.0, safe_rect.position.y * scale_y),
+		maxf(0.0, (window_size.x - safe_rect.end.x) * scale_x),
+		maxf(0.0, (window_size.y - safe_rect.end.y) * scale_y)
+	)
+
+
+static func display_safe_insets(viewport_size: Vector2) -> Vector4:
+	if not OS.has_feature("mobile"):
+		return Vector4.ZERO
+	return scaled_safe_insets(
+		DisplayServer.get_display_safe_area(),
+		DisplayServer.window_get_size(),
+		viewport_size
+	)

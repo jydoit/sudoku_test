@@ -75,9 +75,9 @@ var hint_status_label: Label
 var coin_delta_panel: PanelContainer
 var coin_delta_label: Label
 var coin_delta_tween: Tween
-var heart_tweens: Array = []
 var _localizer: Callable
 var _level_select_enabled := true
+var _safe_margin: MarginContainer
 
 
 func setup(initial_coins: int, include_assembly: bool, localizer: Callable = Callable(), enable_level_select: bool = true) -> void:
@@ -85,16 +85,29 @@ func setup(initial_coins: int, include_assembly: bool, localizer: Callable = Cal
 	_level_select_enabled = enable_level_select
 	name = "CompositeLevelPage" if include_assembly else "FormalLevelPage"
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var safe_margin := MarginContainer.new()
-	safe_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	safe_margin.add_theme_constant_override("margin_left", 6)
-	safe_margin.add_theme_constant_override("margin_right", 6)
-	safe_margin.add_theme_constant_override("margin_top", 16)
-	safe_margin.add_theme_constant_override("margin_bottom", 12)
+	var screen_edge_shade := TextureRect.new()
+	screen_edge_shade.name = "ScreenEdgeShade"
+	screen_edge_shade.texture = UITokensScript.light_screen_edge_gradient_texture()
+	screen_edge_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	screen_edge_shade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	screen_edge_shade.stretch_mode = TextureRect.STRETCH_SCALE
+	screen_edge_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(screen_edge_shade)
+	_safe_margin = MarginContainer.new()
+	_safe_margin.name = "LevelSafeArea"
+	_safe_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_safe_margin.add_theme_constant_override("margin_left", 6)
+	_safe_margin.add_theme_constant_override("margin_top", 16)
+	_safe_margin.add_theme_constant_override("margin_right", 6)
+	_safe_margin.add_theme_constant_override("margin_bottom", 12)
+	if is_inside_tree():
+		_start_safe_area_tracking()
+	else:
+		tree_entered.connect(_start_safe_area_tracking, CONNECT_ONE_SHOT)
 
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 8)
-	safe_margin.add_child(content)
+	_safe_margin.add_child(content)
 	content.add_child(_build_top_bar(initial_coins))
 	content.add_child(_build_level_header())
 	progress_row = _build_progress_row()
@@ -121,7 +134,7 @@ func setup(initial_coins: int, include_assembly: bool, localizer: Callable = Cal
 
 	action_bar = _build_action_bar()
 	content.add_child(action_bar)
-	add_child(safe_margin)
+	add_child(_safe_margin)
 	_build_coin_delta_feedback()
 
 	if include_assembly:
@@ -139,6 +152,23 @@ func setup(initial_coins: int, include_assembly: bool, localizer: Callable = Cal
 		assembly_view.intro_cancelled.connect(func() -> void: assembly_intro_cancelled.emit())
 		add_child(assembly_view)
 		assembly_view.bind_targets(board, assembly_tray_target)
+
+
+func _apply_safe_area_margins() -> void:
+	if not is_instance_valid(_safe_margin):
+		return
+	var insets := UITokensScript.display_safe_insets(get_viewport_rect().size)
+	_safe_margin.add_theme_constant_override("margin_left", maxi(6, int(ceil(insets.x + 6.0))))
+	_safe_margin.add_theme_constant_override("margin_top", maxi(16, int(ceil(insets.y + 8.0))))
+	_safe_margin.add_theme_constant_override("margin_right", maxi(6, int(ceil(insets.z + 6.0))))
+	_safe_margin.add_theme_constant_override("margin_bottom", maxi(12, int(ceil(insets.w + 8.0))))
+
+
+func _start_safe_area_tracking() -> void:
+	_apply_safe_area_margins()
+	var viewport := get_viewport()
+	if viewport and not viewport.size_changed.is_connected(_apply_safe_area_margins):
+		viewport.size_changed.connect(_apply_safe_area_margins)
 
 
 func set_coin_balance(value: int) -> void:
@@ -164,7 +194,6 @@ func set_level_copy(title_text: String, coach_text: String, coach_color: Color, 
 
 
 func set_hearts(current: int, limit: int) -> void:
-	stop_heart_animation()
 	for index in range(level_heart_slots.size()):
 		var heart := level_heart_slots[index]
 		heart.visible = index < limit
@@ -174,17 +203,6 @@ func set_hearts(current: int, limit: int) -> void:
 		heart.add_theme_font_size_override("font_size", 30)
 		heart.scale = Vector2.ONE
 		heart.pivot_offset = heart.custom_minimum_size * 0.5
-
-
-func stop_heart_animation() -> void:
-	for tween in heart_tweens:
-		if tween and tween.is_valid():
-			tween.kill()
-	heart_tweens.clear()
-	for heart in level_heart_slots:
-		if heart:
-			heart.scale = Vector2.ONE
-
 
 func present_tool(kind: String, data: Dictionary) -> void:
 	var parts := _tool_parts(kind)

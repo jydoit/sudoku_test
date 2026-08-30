@@ -220,18 +220,6 @@ def warm_nature_pad(freqs: list[float], duration: float) -> list[float]:
     return result
 
 
-def leaf_shaker(duration: float, seed: int) -> list[float]:
-    """Sparse high-frequency texture resembling a small natural shaker."""
-    rng = random.Random(seed)
-    noise = band_limited_noise(duration, 1_400.0, 5_200.0, rng)
-    result: list[float] = []
-    for index, value in enumerate(noise):
-        time = index / SAMPLE_RATE
-        pulse = math.exp(-22.0 * time) + 0.38 * math.exp(-24.0 * abs(time - 0.15))
-        result.append(value * pulse)
-    return apply_fades(result, 0.008, 0.08)
-
-
 def paper_rub(duration: float, seed: int) -> list[float]:
     """A low, uneven back-and-forth eraser rub."""
     rng = random.Random(seed)
@@ -285,26 +273,6 @@ def make_final_correct(seed: int) -> list[float]:
         [
             (0.000, wood_tone(392.00, 0.210, seed, 0.72), 0.55),
             (0.045, metal_tap(784.00, 0.150, seed + 1), 0.12),
-        ],
-    )
-
-
-def make_wrong(seed: int) -> list[float]:
-    return mix(
-        0.430,
-        [
-            (0.000, wood_tone(220.00, 0.300, seed, 0.82), 0.66),
-            (0.125, wood_tone(185.00, 0.300, seed + 1, 0.78), 0.62),
-        ],
-    )
-
-
-def make_heart_lost(seed: int) -> list[float]:
-    return mix(
-        0.500,
-        [
-            (0.000, wood_tone(164.81, 0.360, seed, 0.95), 0.72),
-            (0.155, wood_tone(146.83, 0.320, seed + 1, 0.72), 0.48),
         ],
     )
 
@@ -482,7 +450,8 @@ def make_result_cheerful(seed: int) -> list[float]:
     """
     duration = 9.00
     layers: list[tuple[float, list[float], float]] = [
-        (0.0, warm_nature_pad([130.81, 164.81, 196.00], duration), 0.52),
+        # Keep the bed slightly lighter so the rhythmic melody feels buoyant.
+        (0.0, warm_nature_pad([130.81, 164.81, 196.00], duration), 0.46),
     ]
 
     melody = [
@@ -493,40 +462,59 @@ def make_result_cheerful(seed: int) -> list[float]:
     ]
     for note_index, (offset, frequency) in enumerate(melody):
         phrase_progress = offset / 4.6
-        gain = 0.25 if phrase_progress < 0.72 else 0.21
+        gain = 0.29 if phrase_progress < 0.72 else 0.25
         layers.append(
             (
                 offset,
                 kalimba_tone(
                     frequency,
-                    0.72,
+                    0.58,
                     seed + note_index,
-                    brightness=0.48,
+                    brightness=0.44,
                 ),
                 gain,
             )
         )
 
-    # Low wooden beats add cheerful motion without the brittle high-frequency
-    # sparkle that made the previous result cue harsh on phone speakers.
-    for beat_index, (offset, frequency) in enumerate(
-        [
-            (0.16, 196.00), (0.84, 220.00), (1.52, 261.63),
-            (2.20, 196.00), (2.88, 220.00), (3.56, 261.63),
-            (4.24, 220.00),
-        ]
-    ):
+    # Quiet major-third answers make the phrase read as celebratory without
+    # introducing a bright cymbal, shaker, or noise-based percussion layer.
+    harmony = [
+        (0.80, 659.25), (1.48, 659.25), (2.86, 659.25),
+        (3.20, 783.99), (3.88, 659.25), (4.48, 659.25),
+    ]
+    for harmony_index, (offset, frequency) in enumerate(harmony):
         layers.append(
             (
                 offset,
-                wood_tone(frequency, 0.46, seed + 100 + beat_index, 0.62),
-                0.16,
+                kalimba_tone(
+                    frequency,
+                    0.40,
+                    seed + 60 + harmony_index,
+                    brightness=0.30,
+                ),
+                0.075,
             )
         )
 
-    for shaker_index, offset in enumerate([0.10, 0.78, 1.46, 2.14, 2.82, 3.50, 4.18]):
+    # Alternating low wooden main beats and softer offbeats create a playful
+    # bounce. Both voices stay below the scratchy frequency range removed from
+    # the previous version.
+    beat_offsets = [0.16, 0.84, 1.52, 2.20, 2.88, 3.56, 4.24]
+    beat_frequencies = [196.00, 220.00, 261.63, 196.00, 220.00, 261.63, 220.00]
+    for beat_index, (offset, frequency) in enumerate(zip(beat_offsets, beat_frequencies)):
         layers.append(
-            (offset, leaf_shaker(0.30, seed + 200 + shaker_index), 0.055)
+            (
+                offset,
+                wood_tone(frequency, 0.36, seed + 100 + beat_index, 0.62),
+                0.17,
+            )
+        )
+        layers.append(
+            (
+                offset + 0.34,
+                wood_tone(frequency * 1.12246, 0.24, seed + 140 + beat_index, 0.44),
+                0.070,
+            )
         )
 
     # The final two low notes bridge into the coin phase; the long source fade
@@ -538,7 +526,7 @@ def make_result_cheerful(seed: int) -> list[float]:
         ]
     )
     cue = soft_compress(mix(duration, layers), 1.65)
-    return apply_fades(cue, 0.12, 1.10)
+    return apply_fades(cue, 0.08, 1.10)
 
 
 def make_coin_arrive(seed: int) -> list[float]:
@@ -593,8 +581,6 @@ def build_pack(output_dir: Path) -> None:
         "paper_erase.wav": (make_erase(310), -16.5),
         "wood_correct.wav": (make_correct(410), -11.0),
         "wood_correct_final.wav": (make_final_correct(420), -14.0),
-        "wood_wrong.wav": (make_wrong(510), -13.0),
-        "wood_heart_lost.wav": (make_heart_lost(610), -12.5),
         "wood_hint.wav": (make_hint(710), -12.0),
         "paper_clear.wav": (make_clear(810), -15.0),
         "wood_victory_v2.wav": (make_victory(910), -9.5),
