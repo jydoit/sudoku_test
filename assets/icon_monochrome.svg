@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="432" height="432" viewBox="0 0 1254 1254">
+  <title>color king adaptive monochrome icon</title>
+  <g transform="translate(333 221) scale(0.546)" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="42" d="M318 287L522 421L646 274L769 421L974 287L886 786H398L318 287Z"/>
+    <circle stroke-width="36" cx="318" cy="287" r="57"/>
+    <circle stroke-width="36" cx="646" cy="252" r="57"/>
+    <circle stroke-width="36" cx="974" cy="287" r="57"/>
+    <path stroke-width="25" d="M354 542H637V649H526V704H402M648 542H916M648 542V649H762V704H886M402 704H526V658H762V704H886"/>
+  </g>
+  <g transform="translate(261 169) scale(0.7)">
+    <g fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="43" d="M35 1254C26 1178 31 1090 70 1008C107 932 173 875 243 861C253 821 290 796 330 804C363 777 414 795 434 831C478 815 529 844 541 890C568 901 584 919 593 943"/>
+    <path stroke-width="38" d="M83 1117C83 997 172 909 301 909C429 909 523 1004 523 1128C523 1181 505 1224 480 1254"/>
+    <path stroke-width="44" d="M590 1184C631 1104 650 1024 658 938C662 892 682 849 714 845C754 841 778 881 769 925C749 1021 708 1133 650 1218"/>
+    <path stroke-width="26" d="M690 874C708 858 735 861 750 878"/>
+    <path stroke-width="27" d="M284 1093C319 1080 354 1084 381 1104"/>
+    <path stroke-width="23" d="M329 1140C327 1185 387 1197 416 1161"/>
+    </g>
+    <g fill="#000">
+    <ellipse cx="274" cy="1048" rx="33" ry="42"/>
+    <ellipse cx="462" cy="1008" rx="34" ry="43"/>
+    <path d="M341 1106C362 1087 395 1085 420 1103C407 1127 367 1130 341 1106Z"/>
+    <ellipse cx="697" cy="883" rx="17" ry="20"/>
+    <ellipse cx="731" cy="879" rx="12" ry="17"/>
+    <ellipse cx="748" cy="908" rx="12" ry="17" transform="rotate(20 748 908)"/>
+    <ellipse cx="677" cy="908" rx="12" ry="17" transform="rotate(-20 677 908)"/>
+    </g>
+  </g>
+</svg>

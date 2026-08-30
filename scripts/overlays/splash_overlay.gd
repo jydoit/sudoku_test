@@ -46,15 +46,15 @@ const SPLASH_FRAMES := [
 	SPLASH_FRAME_15,
 ]
 const SPLASH_FRAME_TIMES := [
-	0.00, 0.20, 0.40, 0.60,
-	0.80, 1.00, 1.20, 1.40,
-	1.60, 1.80, 2.00, 2.20,
-	2.45, 2.70, 2.95, 3.15,
+	0.00, 0.28, 0.56, 0.84,
+	1.12, 1.40, 1.68, 1.96,
+	2.24, 2.52, 2.80, 3.08,
+	3.42, 3.76, 4.10, 4.38,
 ]
-const SPLASH_REVEAL_DURATION := 3.75
+const SPLASH_REVEAL_DURATION := 5.55
 const SPLASH_REDUCED_DURATION := 1.65
-const SPLASH_FINISH_DURATION := 0.35
-const SPLASH_SKIP_UNLOCK_TIME := 2.45
+const SPLASH_FINISH_DURATION := 0.45
+const SPLASH_SKIP_UNLOCK_TIME := 3.42
 const FRAME_SIZE := Vector2(440, 440)
 const LION_FINAL_TOP := -218.0
 const LION_FINAL_BOTTOM := -68.0
@@ -213,21 +213,21 @@ func _brand_reveal_animation() -> Animation:
 	animation.loop_mode = Animation.LOOP_NONE
 	_add_frame_track(animation, SPLASH_FRAME_TIMES, range(SPLASH_FRAMES.size()))
 	_add_root_fade_in_track(animation, 0.24)
-	_add_title_track(animation, 2.85, 3.15)
-	_add_lion_track(animation, 2.85, 3.15)
+	_add_title_track(animation, 4.08, 4.58)
+	_add_lion_track(animation, 4.08, 4.58)
 	var scale_track := animation.add_track(Animation.TYPE_VALUE)
 	animation.track_set_path(scale_track, NodePath("SplashRoot/SplashFrame:scale"))
 	animation.track_set_interpolation_type(scale_track, Animation.INTERPOLATION_CUBIC)
 	animation.track_insert_key(scale_track, 0.00, Vector2.ONE)
-	animation.track_insert_key(scale_track, 2.20, Vector2.ONE)
-	animation.track_insert_key(scale_track, 2.36, Vector2.ONE * 1.025)
-	animation.track_insert_key(scale_track, 2.53, Vector2.ONE * 0.992)
-	animation.track_insert_key(scale_track, 2.70, Vector2.ONE)
-	_add_method_key(animation, 0.60, &"_animation_sound", ["snap"])
-	_add_method_key(animation, 1.20, &"_animation_sound", ["snap"])
-	_add_method_key(animation, 2.20, &"_animation_sound", ["snap_final"])
-	_add_method_key(animation, 2.45, &"_animation_sound", ["assembly_complete"])
-	_add_method_key(animation, 3.15, &"_animation_sound", ["crown"])
+	animation.track_insert_key(scale_track, 3.08, Vector2.ONE)
+	animation.track_insert_key(scale_track, 3.30, Vector2.ONE * 1.025)
+	animation.track_insert_key(scale_track, 3.52, Vector2.ONE * 0.992)
+	animation.track_insert_key(scale_track, 3.76, Vector2.ONE)
+	_add_method_key(animation, 0.84, &"_animation_sound", ["snap"])
+	_add_method_key(animation, 1.68, &"_animation_sound", ["snap"])
+	_add_method_key(animation, 3.08, &"_animation_sound", ["snap_final"])
+	_add_method_key(animation, 3.42, &"_animation_sound", ["assembly_complete"])
+	_add_method_key(animation, 4.38, &"_animation_sound", ["crown"])
 	_add_method_key(animation, SPLASH_SKIP_UNLOCK_TIME, &"_unlock_skip")
 	return animation
 

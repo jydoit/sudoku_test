@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="432" height="432" viewBox="0 0 1254 1254">
+  <title>color king adaptive icon background</title>
+  <defs>
+    <linearGradient id="sky" x1="90" y1="0" x2="1164" y2="1254" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0667D9"/>
+      <stop offset="0.22" stop-color="#1398EF"/>
+      <stop offset="0.52" stop-color="#39B0EE"/>
+      <stop offset="0.78" stop-color="#168EEA"/>
+      <stop offset="1" stop-color="#0758CA"/>
+    </linearGradient>
+    <radialGradient id="warmHalo" cx="0" cy="0" r="1" gradientTransform="translate(627 418) rotate(90) scale(720 720)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF2C5" stop-opacity="0.98"/>
+      <stop offset="0.25" stop-color="#FFE9AA" stop-opacity="0.84"/>
+      <stop offset="0.48" stop-color="#E9E6C4" stop-opacity="0.54"/>
+      <stop offset="0.73" stop-color="#B9E1F1" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#B9E1F1" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="centerBloom" cx="0" cy="0" r="1" gradientTransform="translate(627 396) rotate(90) scale(365 430)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7D9" stop-opacity="0.76"/>
+      <stop offset="0.58" stop-color="#FFF0BF" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#FFF0BF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sparkleGlow">
+      <stop stop-color="#FFF5C9" stop-opacity="0.62"/>
+      <stop offset="0.45" stop-color="#FFF3C2" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#FFF3C2" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1254" height="1254" fill="url(#sky)"/>
+  <rect width="1254" height="1254" fill="url(#warmHalo)"/>
+  <g fill="#FFF4C8" opacity="0.045">
+    <path d="M617 420L570-650H684L637 420Z"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(20 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(40 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(60 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(80 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(100 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(120 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(140 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(160 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(180 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(200 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(220 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(240 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(260 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(280 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(300 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(320 627 420)"/>
+    <path d="M617 420L570-650H684L637 420Z" transform="rotate(340 627 420)"/>
+  </g>
+  <rect width="1254" height="1254" fill="url(#centerBloom)"/>
+  <g fill="url(#sparkleGlow)">
+    <circle cx="1000" cy="152" r="58"/>
+    <circle cx="137" cy="683" r="58"/>
+    <circle cx="869" cy="971" r="58"/>
+  </g>
+  <g fill="#FFF9E7" stroke="#FFE6A7" stroke-width="3">
+    <path d="M1000 110C1007 137 1015 145 1042 152C1015 159 1007 167 1000 194C993 167 985 159 958 152C985 145 993 137 1000 110Z"/>
+    <path d="M137 641C144 668 152 676 179 683C152 690 144 698 137 725C130 698 122 690 95 683C122 676 130 668 137 641Z"/>
+    <path d="M869 929C876 956 884 964 911 971C884 978 876 986 869 1013C862 986 854 978 827 971C854 964 862 956 869 929Z"/>
+  </g>
+</svg>

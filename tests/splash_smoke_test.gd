@@ -13,9 +13,11 @@ func _run() -> void:
 	splash.configure()
 	assert(splash.SPLASH_FRAMES.size() == 16, "Splash should expose all sixteen ImageGen keyframes")
 	assert(splash.SPLASH_FRAME_TIMES.size() == splash.SPLASH_FRAMES.size(), "Every splash frame should own one timeline key")
-	assert(splash.SPLASH_REVEAL_DURATION >= 3.5, "Normal splash should leave enough time to read every assembly stage")
+	var normal_total: float = splash.SPLASH_REVEAL_DURATION + splash.SPLASH_FINISH_DURATION
+	var reduced_total: float = splash.SPLASH_REDUCED_DURATION + splash.SPLASH_FINISH_DURATION
+	assert(is_equal_approx(normal_total, 6.0), "Normal splash should keep the approved six-second pacing")
 	assert(splash.SPLASH_REVEAL_DURATION - splash.SPLASH_FRAME_TIMES[-1] >= 0.5, "Final brand composition should hold before fading")
-	assert(splash.SPLASH_REDUCED_DURATION >= 1.5, "Reduced-motion splash should remain readable")
+	assert(is_equal_approx(reduced_total, 2.1), "Reduced-motion splash should remain readable without inheriting the long motion timeline")
 	for frame_index in range(splash.SPLASH_FRAMES.size()):
 		var image: Image = splash.SPLASH_FRAMES[frame_index].get_image()
 		assert(not image.is_empty() and image.get_size() == Vector2i(320, 320), "Every splash keyframe should keep the registered 320px canvas")
