@@ -867,6 +867,14 @@ Splash 验收标准：
 | 教程完成反馈 | 找完教学地图全部皇冠后显示开始挑战或返回关卡 | `_show_tutorial_challenge_ready()` | 有正式快照时恢复原关卡，否则进入第 1 关 |
 | 全局 UI 字体 | Noto Sans SC + Noto Sans Arabic | `assets/fonts/`、`project.godot` | 字体随项目打包，中文和阿拉伯语不依赖系统字体回退 |
 
+### 7.1 iPhone 导出基线
+
+- iOS 导出统一使用与编辑器一致的 Godot `4.7.1.stable` 官方 `ios.zip` 模板；模板安装在开发机的 Godot 用户目录，不提交到仓库。
+- 仓库提供 `iOS` 和 `iOS Release` 两个导出预设：仅面向 iPhone、只包含 `arm64`、最低系统为 iOS 15.0，Bundle ID 为 `com.shingosuper.colorking`，由 Godot 生成 Xcode 工程后交给 Xcode 自动管理签名。
+- `iOS` 保留 Debug 选关能力并作为真机运行预设；`iOS Release` 排除 Debug 专用选关脚本，正式发布不得使用 Debug 预设。
+- iOS 导出机必须安装完整 Xcode 和 iOS Platform；仅安装 Xcode Command Line Tools 不满足导出要求。Apple Team ID、证书和描述文件属于本机签名配置，不得提交到仓库。
+- 当前版本不声明相机、麦克风、相册、追踪、推送、Game Center 或 Wi-Fi 特殊能力；后续接入广告、统计或原生 SDK 时，必须同步更新隐私清单、权限说明和本节。
+
 ## 8. 发布前回归测试清单
 
 每次正式发布前必须完成：
@@ -889,6 +897,7 @@ Splash 验收标准：
 16. 同一本地日期连续新开 4 个首页拼块局：前 3 局免费；第 3 局共享结算页的“下一局”按钮显示 2 金币价格，点击后在该结算页上方弹出消费确认，取消仍停留结算页，确认后才进入第 4 局并在新关卡页播放从扣除前余额到扣除后余额的动画。中途退出恢复不重复收费。分别验证 Good 结算返还 2 金币、Excellent 结算返还 4 金币；修改为下一本地日期后再次获得 3 个免费局。
 17. 更新本文档对应模块。
 18. Splash 接入后，分别验证新用户进入教程、已有存档恢复原流程、资源慢加载时不会空白或无限循环、静音/减少动画/跳过入口生效，并确认 Splash 不修改任何正式游戏存档。
+19. iOS 发布前使用 `iOS Release` 重新生成 Xcode 工程，确认 Bundle ID、版本号、iPhone-only、最低 iOS 15.0、自动签名和 App 图标均正确；至少在一个 iPhone 模拟器尺寸和一台认可真机上验证启动、触控、安全区、存档和完整通关流程。
 
 ## 9. 自动测试命令
 
