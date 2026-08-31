@@ -37,6 +37,7 @@ const PlayerWalletScript = preload("res://scripts/services/player_wallet.gd")
 const CompositeEntryServiceScript = preload("res://scripts/services/composite_entry_service.gd")
 const GameSaveServiceScript = preload("res://scripts/storage/game_save_service.gd")
 const RunResultServiceScript = preload("res://scripts/services/run_result_service.gd")
+const ARROW_RIGHT_ICON: Texture2D = preload("res://assets/ui/arrow_right.svg")
 const UI_FONT: Font = preload("res://assets/fonts/NotoSansSC-Regular.ttf")
 const ARABIC_FONT: Font = preload("res://assets/fonts/NotoSansArabic-Regular.ttf")
 const SAVE_PATH := "user://color_queens_save.json"
@@ -257,7 +258,7 @@ var coin_balance_roll_secondary: Label:
 	get: return game_screen.coin_balance_roll_secondary if game_screen else null
 var level_heart_label: Control:
 	get: return game_screen.level_heart_label if game_screen else null
-var level_heart_slots: Array[Label]:
+var level_heart_slots: Array[TextureRect]:
 	get: return game_screen.level_heart_slots if game_screen else []
 var progress_bar: ProgressBar:
 	get: return game_screen.progress_bar if game_screen else null
@@ -324,7 +325,7 @@ var completion_replay_button: Button:
 	get: return result_page.completion_replay_button if result_page else null
 var toast_label: Label
 var tutorial_center_popup: Label
-var tutorial_hand_label: Label
+var tutorial_hand_label: TextureRect
 var tutorial_hand_control: Control:
 	get: return tutorial_overlay.focused_control if tutorial_overlay else null
 var tutorial_overlay
@@ -752,6 +753,7 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 		help_button.show()
 	if completion_next_button:
 		completion_next_button.text = _t("下一关")
+		completion_next_button.icon = null
 	if completion_replay_button:
 		completion_replay_button.text = _t("主菜单")
 		completion_replay_button.show()
@@ -1672,8 +1674,10 @@ func _start_tutorial_step(index: int) -> void:
 	if tutorial_skip_button:
 		_update_tutorial_button()
 	if completion_next_button:
-		var final_action := "%s  →" % (_t("返回关卡") if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else _t("进入第 1 关，开始真正的挑战"))
-		completion_next_button.text = _t("下一步  →") if tutorial_step_index < TUTORIAL_LEVELS.size() - 1 else final_action
+		var final_action := _t("返回关卡") if _formal_progress_snapshot_is_valid(formal_progress_snapshot) else _t("进入第 1 关，开始真正的挑战")
+		completion_next_button.text = _t("下一步") if tutorial_step_index < TUTORIAL_LEVELS.size() - 1 else final_action
+		completion_next_button.icon = ARROW_RIGHT_ICON
+		completion_next_button.icon_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	if completion_replay_button:
 		completion_replay_button.text = _t("重来本步")
 		completion_replay_button.show()

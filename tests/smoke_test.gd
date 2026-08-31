@@ -29,6 +29,20 @@ func _run() -> void:
 	var custom_font: Font = load(custom_font_path)
 	assert(custom_font != null, "Bundled UI font must load successfully")
 	assert(custom_font.has_char("中".unicode_at(0)), "Bundled UI font must contain Chinese glyphs")
+	var icon_audit_paths := [
+		"res://scripts/pages/level_page_base.gd",
+		"res://scripts/pages/result_page.gd",
+		"res://scripts/overlays/tutorial_overlay.gd",
+		"res://scripts/dialogs/level_select_dialog_content.gd",
+		"res://scripts/assembly_view.gd",
+		"res://scripts/level_editor.gd",
+		"res://scripts/main.gd",
+		"res://scripts/localization_controller.gd",
+	]
+	for audit_path in icon_audit_paths:
+		var audit_source := FileAccess.get_file_as_string(audit_path)
+		for forbidden_glyph in ["⌂", "♥", "♛", "✓", "👆", "■", "→", "‹", "›", "⚙"]:
+			assert(forbidden_glyph not in audit_source, "%s must use SVG assets instead of graphical Unicode %s" % [audit_path, forbidden_glyph])
 
 	var packed: PackedScene = load("res://scenes/main.tscn")
 	assert(packed != null, "Main scene must load")
@@ -60,6 +74,9 @@ func _run() -> void:
 	var export_config := FileAccess.get_file_as_string("res://export_presets.cfg")
 	assert(export_config.count("screen/edge_to_edge=true") == 2, "Every Android export preset should draw behind system bars")
 	assert(export_config.find("screen/edge_to_edge=false") < 0, "Android exports must not restore black system edges")
+	assert(export_config.count("platform=\"Android\"") == 2, "Debug and release Android export presets should both exist")
+	assert(export_config.count("splash_screen/disable_godot_boot_splash=true") == 2, "Both Android presets must suppress the Godot template splash")
+	assert(export_config.count("exclude_filter=\"scripts/dialogs/level_select_dialog_content.gd,") == 2, "Both mobile release presets must exclude the Debug level selector")
 	assert(export_config.count("tests/*,tools/*") == 4, "Every mobile export preset should exclude test and asset-generation sources")
 	assert("export_path=\"./builds/color king.apk\"" in export_config, "Release APKs should be written to the ignored builds directory")
 	assert(export_config.count("platform=\"iOS\"") == 2, "Debug and release iOS export presets should both exist")
@@ -299,6 +316,8 @@ func _run() -> void:
 	assert(game.help_button != null and game.help_button.get_parent() == game.top_home_button.get_parent(), "Help should share the level top navigation row")
 	assert(game.help_button.custom_minimum_size.x >= 46.0, "Help should use a mobile-friendly touch target")
 	assert(game.settings_button != null and game.settings_button.get_parent() == game.top_home_button.get_parent(), "Settings should share the level top navigation row")
+	assert(game.settings_button.text.is_empty(), "Settings should not depend on a Unicode gear glyph")
+	assert(game.settings_button.icon != null and game.settings_button.icon.resource_path == "res://assets/ui/settings.svg", "Settings should render the bundled SVG gear on every platform")
 	assert(game.dialog_controller != null, "All modal dialogs should use the shared dialog controller")
 	var dialog_card: PanelContainer = game.dialog_controller.find_child("DialogCard", true, false)
 	var dialog_style := dialog_card.get_theme_stylebox("panel") as StyleBoxFlat
@@ -365,8 +384,9 @@ func _run() -> void:
 	game._update_hint_button()
 	assert(game.level_heart_slots.size() == game.INITIAL_HEART_COUNT, "The top heart badge should keep independent heart slots")
 	for heart_index in range(game.level_heart_slots.size()):
-		var heart_slot: Label = game.level_heart_slots[heart_index]
+		var heart_slot: TextureRect = game.level_heart_slots[heart_index]
 		assert(heart_slot.custom_minimum_size.x >= 32.0 and heart_slot.custom_minimum_size.y >= 38.0, "Heart slots should not be compressed")
+		assert(heart_slot.texture.resource_path == "res://assets/ui/heart.svg", "Heart slots should use the bundled SVG heart")
 		assert(heart_slot.scale.is_equal_approx(Vector2.ONE), "Every in-level heart should stay at its normal scale")
 	for tool_button in [game.clear_button, game.crown_find_button, game.hint_button]:
 		var tool_icon: Control = tool_button.find_child("ToolIcon", true, false)
@@ -685,7 +705,7 @@ func _run() -> void:
 	assert(game.board.reaction_kind == "wrong" and game.board.reaction_cell == wrong_cell, "Wrong crown attempts should temporarily show the worried lion reaction")
 	assert(game.heart_count == hearts_before_wrong - 1, "Wrong crown attempts should consume one heart")
 	assert(game.crown_find_count == crown_find_count_before_wrong, "Wrong crown attempts must not consume crown-find uses")
-	assert(game.level_heart_slots[game.heart_count].get_theme_color("font_color") == game.HEART_EMPTY_COLOR, "A lost heart should turn gray")
+	assert(game.level_heart_slots[game.heart_count].modulate == game.HEART_EMPTY_COLOR, "A lost SVG heart should turn gray")
 	assert(game.level_heart_slots[game.heart_count].scale.is_equal_approx(Vector2.ONE), "A lost heart should remain at its normal scale")
 	assert(not game.board.error_cells.has(wrong_cell), "Wrong crown attempts should not be treated as rule-conflict crowns")
 	assert(not game.is_failed, "A single wrong crown attempt should not fail the level while hearts remain")

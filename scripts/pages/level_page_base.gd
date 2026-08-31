@@ -28,6 +28,9 @@ const CoinRollDisplayScript = preload("res://scripts/components/coin_roll_displa
 const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resource.gd")
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const LION_KING_ICON = preload("res://assets/ui/lion_king.svg")
+const SETTINGS_ICON = preload("res://assets/ui/settings.svg")
+const HOME_ICON = preload("res://assets/ui/home.svg")
+const HEART_ICON = preload("res://assets/ui/heart.svg")
 const INITIAL_HEART_COUNT := 3
 const COIN_BALANCE_ROLL_DURATION := 1.35
 const COIN_FEEDBACK_FADE_IN := 0.18
@@ -56,7 +59,7 @@ var coin_roll_display: HBoxContainer
 var coin_balance_roll_clip: Control
 var coin_balance_roll_secondary: Label
 var level_heart_label: Control
-var level_heart_slots: Array[Label] = []
+var level_heart_slots: Array[TextureRect] = []
 var clear_button: Button
 var clear_button_label: Label
 var clear_status_panel: PanelContainer
@@ -198,9 +201,7 @@ func set_hearts(current: int, limit: int) -> void:
 		var heart := level_heart_slots[index]
 		heart.visible = index < limit
 		var is_full := index < current
-		heart.text = "♥"
-		heart.add_theme_color_override("font_color", Color("#F25D72") if is_full else Color("#C8CDD5"))
-		heart.add_theme_font_size_override("font_size", 30)
+		heart.modulate = Color("#F25D72") if is_full else Color("#C8CDD5")
 		heart.scale = Vector2.ONE
 		heart.pivot_offset = heart.custom_minimum_size * 0.5
 
@@ -406,7 +407,8 @@ func _build_top_bar(initial_coins: int) -> Control:
 	row.add_theme_constant_override("separation", 5)
 	margin.add_child(row)
 
-	top_home_button = _small_button("⌂", Vector2(52, 52), 28)
+	top_home_button = _small_button("", Vector2(52, 52), 28)
+	top_home_button.icon = HOME_ICON
 	top_home_button.tooltip_text = "返回首页"
 	top_home_button.pressed.connect(func() -> void: home_requested.emit())
 	row.add_child(top_home_button)
@@ -443,7 +445,8 @@ func _build_top_bar(initial_coins: int) -> Control:
 	help_button.tooltip_text = "查看消除规则"
 	help_button.pressed.connect(func() -> void: help_requested.emit())
 	row.add_child(help_button)
-	settings_button = _small_button("⚙", Vector2(46, 46), 22)
+	settings_button = _small_button("", Vector2(46, 46), 22)
+	settings_button.icon = SETTINGS_ICON
 	settings_button.tooltip_text = "设置"
 	settings_button.pressed.connect(func() -> void: settings_requested.emit())
 	row.add_child(settings_button)
@@ -551,12 +554,13 @@ func _build_heart_display() -> Control:
 	hearts.add_theme_constant_override("separation", 2)
 	panel.add_child(hearts)
 	for index in range(INITIAL_HEART_COUNT):
-		var heart := Label.new()
+		var heart := TextureRect.new()
 		heart.name = "Heart%d" % (index + 1)
 		heart.custom_minimum_size = Vector2(32, 38)
-		heart.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		heart.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		heart.add_theme_font_size_override("font_size", 30)
+		heart.texture = HEART_ICON
+		heart.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		heart.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		heart.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		heart.pivot_offset = Vector2(16, 19)
 		hearts.add_child(heart)
 		level_heart_slots.append(heart)

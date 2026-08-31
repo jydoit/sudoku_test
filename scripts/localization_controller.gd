@@ -199,7 +199,7 @@ const MESSAGE_ROWS := [
 	["排行榜", "Leaderboard", "لوحة الصدارة", "Classement", "Ordo"],
 	["商店", "Shop", "المتجر", "Boutique", "Taberna"],
 	["继续前进，收集更多皇冠", "Keep going and collect more crowns", "واصل التقدم واجمع المزيد من التيجان", "Continuez et collectez plus de couronnes", "Perge et plures coronas collige"],
-	["下一步  →", "Next  →", "التالي  →", "Suivant  →", "Proximus  →"],
+	["下一步", "Next", "التالي", "Suivant", "Proximus"],
 	["重来本步", "Restart step", "إعادة الخطوة", "Recommencer l’étape", "Gradum reincipe"],
 	["返回关卡", "Return to level", "العودة إلى المرحلة", "Retour au niveau", "Ad gradum redi"],
 	["返回进入教程前的关卡现场", "Return to the saved level", "العودة إلى المرحلة المحفوظة", "Retourner au niveau sauvegardé", "Ad gradum servatum redi"],

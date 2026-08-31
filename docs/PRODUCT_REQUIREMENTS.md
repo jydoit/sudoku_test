@@ -130,6 +130,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 统一约束：
 
 - Android 12 及以上保留系统强制启动页，使用 `color king` 自适应图标和现有蓝色背景，并只停留到 Godot 主循环可用；Debug 与 Release 导出预设都必须设置 `splash_screen/disable_godot_boot_splash=true`，项目同时设置 `application/boot_splash/show_image=false` 和 `minimum_display_time=0`，禁止在系统启动页和游戏内品牌动画之间插入默认 Godot 引擎 Logo 页面。系统页结束后必须直接衔接游戏内“拼块成盘”Splash。
+- iOS 保留系统要求的原生 Launch Screen，但 Debug 与 Release 导出预设必须显式使用透明占位图和现有蓝色背景；不得留空回退到 iOS 导出模板自带的 Godot Logo。原生 Launch Screen 结束后直接衔接游戏内“拼块成盘”Splash。
 - 仅在应用冷启动或重新启动应用时播放；首页、关卡、结果页之间的普通路由切换不重复播放。
 - 正常模式总时长控制在 `5.80-6.20s`，减少动画模式控制在 `2.00-2.20s`；资源已经准备好时仍完整展示各阶段，资源加载较慢时停留在最后一个稳定画面，不循环抖动或制造假的百分比进度。
 - 使用首页和结果页共用的蓝色主色系、明亮经典 10 色棋盘色板和戴皇冠的小狮子贴图；不得使用 Unicode 皇冠字符，不得引入与核心玩法无关的装饰角色。
@@ -764,6 +765,8 @@ Splash 验收标准：
 - 新存档默认读取设备系统 locale；中文、阿拉伯语、法语和拉丁语分别映射为 `zh`、`ar`、`fr`、`la`，其它系统语言回退为英语 `en`。
 - 当前支持 English、中文、العربية、Français、Latina 五种语言。
 - 关卡页顶部齿轮按钮打开统一风格的游戏设置弹窗；用户可选择语言并调整音乐、音效和震动反馈，点击“应用”后立即刷新界面。
+- 顶部设置入口使用 `assets/ui/settings.svg` 纯路径齿轮图标，不依赖 Unicode `⚙` 字形，必须在 iOS、Android 和编辑器中保持可见。
+- 所有承担图形含义的功能图标必须使用独立图标资源或 Godot 绘制控件，不得用 Unicode/Emoji 字符代替；当前主页、红心、设置、教程手指、皇冠、完成勾、左右翻页、颜色方块和下一步箭头由 `assets/ui/*.svg` 提供。棋盘、角色、背景和逐帧动画等贴图/纹理可继续使用适合的现有格式，不因本规则强制转换为 SVG；普通文字、数字、标点和数学符号也不受此限制。
 - 用户主动选择的语言保存到存档，后续启动优先使用已保存语言，不再覆盖为系统语言。
 - 所有运行时界面文案由 `scripts/localization_controller.gd` 注册、格式化并统一刷新控件树；页面脚本不得通过硬编码中文绕过本地化控制器。工具栏、状态胶囊、Tooltip、帮助页 Tab 和统一弹窗都必须随当前语言即时更新。
 - 阿拉伯语启用 RTL 页面方向，并使用随包发布的 Noto Sans Arabic fallback；中文继续使用 Noto Sans SC，英语、法语和拉丁语使用同一字体的拉丁字符。
@@ -773,7 +776,7 @@ Splash 验收标准：
 
 - `LocalizationController` 负责系统语言识别、五语言翻译资源注册、动态文案格式化和 RTL 判断。
 - `scripts/dialogs/settings_dialog_content.gd` 统一承载语言、音乐、音效和震动反馈设置。三项开关均使用“左侧本地化标签＋右侧 On/Off 状态按钮”的独立行，按钮高度不得小于 `44px`，开启和关闭状态必须同时通过文字、颜色和边框表达，不能依赖 Android 下会丢失轨道或 pressed 字体颜色的默认 `CheckButton` 主题。`main.gd` 负责设置入口、布局方向切换以及 `selectedLanguage / musicEnabled / sfxEnabled / hapticsEnabled` 的存取；旧存档缺失任一音频或震动字段时默认开启。音乐开关当前控制 EXCELLENT 结算的欢快庆祝音乐，音效开关独立控制飞币、数字滚轮及其它操作反馈。
-- `assets/ui/` 中由游戏运行时加载的金币、拼块底砖、小狮子头像和结算逐帧动画统一使用真实 SVG 路径素材；不得保留 PNG 运行时副本，也不得在 SVG 中嵌入 base64 位图。Godot 代码和场景只能引用 `.svg` 源文件，确保不同 DPI 和缩放比例下边缘稳定。`docs/prd_screenshots/` 中用于产品验收的运行截图不属于游戏素材，可以继续保留 PNG。
+- `assets/ui/` 中承担按钮或状态含义的图标使用独立资源，避免字体缺字导致空白；金币、拼块底砖、小狮子头像、背景及结算逐帧动画属于贴图/纹理，可按画质、包体和性能需要使用 SVG、PNG、WebP 等合适格式。`docs/prd_screenshots/` 中用于产品验收的运行截图不属于游戏运行素材。
 
 回归测试重点：
 
@@ -871,7 +874,7 @@ Splash 验收标准：
 
 - iOS 导出统一使用与编辑器一致的 Godot `4.7.1.stable` 官方 `ios.zip` 模板；模板安装在开发机的 Godot 用户目录，不提交到仓库。
 - 仓库提供 `iOS` 和 `iOS Release` 两个导出预设：仅面向 iPhone、只包含 `arm64`、最低系统为 iOS 15.0，Bundle ID 为 `com.shingosuper.colorking`，由 Godot 生成 Xcode 工程后交给 Xcode 自动管理签名。
-- `iOS` 保留 Debug 选关能力并作为真机运行预设；`iOS Release` 排除 Debug 专用选关脚本，正式发布不得使用 Debug 预设。
+- `iOS` 保留 Debug 选关能力，仅用于内部调试；iPhone 验收测试和正式发布统一使用 `iOS Release`，排除 Debug 专用选关脚本。验收测试可以使用 Apple Development 证书签名 Release 构建。
 - iOS 导出机必须安装完整 Xcode 和 iOS Platform；仅安装 Xcode Command Line Tools 不满足导出要求。Apple Team ID、证书和描述文件属于本机签名配置，不得提交到仓库。
 - 当前版本不声明相机、麦克风、相册、追踪、推送、Game Center 或 Wi-Fi 特殊能力；后续接入广告、统计或原生 SDK 时，必须同步更新隐私清单、权限说明和本节。
 

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 64 64">
+  <title>Touch pointer</title>
+  <path d="M26 34V11a5 5 0 0 1 10 0v17l3-4.5a5 5 0 0 1 8.8 4.7l-6.6 17A14 14 0 0 1 28.1 54h-4.2a14 14 0 0 1-11-5.3L6.8 41a5 5 0 0 1 7.7-6.4l4.5 4.8V34a3.5 3.5 0 0 1 7 0Z" fill="#FFD28A" stroke="#2F3B50" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M19 8 14 3M43 8l5-5M12 20H5M48 20h7" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+</svg>

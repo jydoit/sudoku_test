@@ -1,7 +1,9 @@
 extends Control
 
+const HAND_POINTER_TEXTURE: Texture2D = preload("res://assets/ui/hand_pointer.svg")
+
 var center_popup: Label
-var hand_label: Label
+var hand_label: TextureRect
 
 var _board
 var _hand_cell := Vector2i(-1, -1)
@@ -107,17 +109,13 @@ func _build_center_popup() -> void:
 
 
 func _build_hand_pointer() -> void:
-	hand_label = Label.new()
-	hand_label.text = "👆"
+	hand_label = TextureRect.new()
+	hand_label.name = "TutorialHandPointer"
+	hand_label.texture = HAND_POINTER_TEXTURE
 	hand_label.size = Vector2(96, 96)
 	hand_label.pivot_offset = Vector2(48, 48)
-	hand_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hand_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	hand_label.add_theme_color_override("font_color", Color("#2F3B50"))
-	hand_label.add_theme_color_override("font_shadow_color", Color(1.0, 1.0, 1.0, 0.86))
-	hand_label.add_theme_constant_override("shadow_offset_x", 0)
-	hand_label.add_theme_constant_override("shadow_offset_y", 3)
-	hand_label.add_theme_font_size_override("font_size", 66)
+	hand_label.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	hand_label.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	hand_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hand_label.z_index = 1
 	hand_label.hide()
