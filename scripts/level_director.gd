@@ -1,6 +1,8 @@
 class_name LevelDirector
 extends RefCounted
 
+const OpeningKingHintControllerScript = preload("res://scripts/controllers/opening_king_hint_controller.gd")
+
 const FIXED_OPENING_COUNT := 10
 const RECENT_WINDOW := 5
 const DEDUPE_HISTORY_WINDOW := 50
@@ -30,6 +32,10 @@ const TOOL_HINT_PROBABILITY := 0.25
 const TOOL_REWARD_BASE_WEIGHT := 0.08
 const TOOL_REWARD_MAX_WEIGHT := 0.28
 const NO_TOOL_DIFFICULTY_STREAK := 3
+const NO_TOOL_HARD_FLOOR_STREAK := 6
+const NO_TOOL_CHALLENGE_PRESSURE_STREAK := 10
+const PRE_SIZE_SIX_HARD_MULTIPLIER := 1.75
+const PRE_SIZE_SIX_CHALLENGE_MULTIPLIER := 2.25
 const KING_SOLUTION_ORDINALS := [2, 4, 6, 8]
 const DIFFICULTY_ORDER := ["simple", "medium", "hard", "challenge"]
 const SIZE_UNLOCK_DISPLAY_LEVELS := {
@@ -116,6 +122,10 @@ static func schedule_for_display_level(levels: Array, display_level: int, progre
 	schedule["toolFindProbability"] = TOOL_FIND_PROBABILITY
 	schedule["toolHintProbability"] = TOOL_HINT_PROBABILITY
 	schedule["toolRewardWeight"] = float(arm.get("toolRewardWeight", TOOL_REWARD_BASE_WEIGHT))
+	schedule["noToolStreak"] = int(arm.get("noToolStreak", _no_tool_streak(progress)))
+	schedule["difficultyFloor"] = str(arm.get("difficultyFloor", ""))
+	schedule["preSizeSixDifficultyPressure"] = bool(arm.get("preSizeSixDifficultyPressure", false))
+	_apply_opening_king_hint_policy(schedule, level, progress)
 	return schedule
 
 
@@ -402,6 +412,36 @@ static func _make_schedule(level: Dictionary, index: int, display: int, mode: St
 	}
 
 
+static func _apply_opening_king_hint_policy(schedule: Dictionary, level: Dictionary, progress: Dictionary) -> void:
+	var decided_positions: Array = schedule.get("kingPositions", [])
+	var decided_count := decided_positions.size()
+	schedule["openingKingDecidedCount"] = decided_count
+	schedule["openingKingDisplayedCount"] = decided_count
+	if bool(schedule.get("isMilestoneChallenge", false)):
+		schedule["openingKingPolicy"] = "milestone_preserved"
+		return
+	if str(schedule.get("mode", "")) == "post_challenge":
+		schedule["openingKingPolicy"] = "post_challenge_preserved"
+		return
+	if decided_count == 0:
+		schedule["openingKingPolicy"] = "no_decided_hint"
+		return
+
+	var display := int(schedule.get("displayLevel", 1))
+	var level_id := int(level.get("levelId", schedule.get("levelId", -1)))
+	var rng := _make_rng(display, "opening_hint_policy:%d:%d" % [level_id, _progress_signature(progress)])
+	var displayed_count := OpeningKingHintControllerScript.adjusted_hint_count(
+		decided_count,
+		int(level.get("rows", schedule.get("selectedSize", 0))),
+		progress,
+		rng.randf()
+	)
+	schedule["openingKingDisplayedCount"] = displayed_count
+	schedule["openingKingPolicy"] = "three_no_tool_adjustment" if displayed_count != decided_count else "decided_count_preserved"
+	if displayed_count < decided_count:
+		schedule["kingPositions"] = decided_positions.slice(0, displayed_count)
+
+
 static func _opening_king_positions(level: Dictionary, display: int, level_index: int, is_fixed: bool) -> Array:
 	if is_fixed:
 		if display <= 9 and level.has("kingPosition"):
@@ -507,39 +547,57 @@ static func _recommended_arm(levels: Array, level_index: Dictionary, allowed_siz
 	_ensure_bandit_state(progress, level_index)
 	_apply_size_release_policy(progress, allowed_sizes)
 	var arms := _available_arms(level_index, allowed_sizes)
+	var no_tool_streak := _no_tool_streak(progress)
+	var difficulty_floor := _difficulty_floor_for_no_tool_streak(no_tool_streak)
 	if arms.is_empty():
-		return {"size": int(allowed_sizes[0]), "difficulty": "simple", "mode": "bayes", "reason": "fallback"}
+		return _decorate_recommended_arm(
+			{"size": int(allowed_sizes[0]), "difficulty": "simple", "mode": "bayes", "reason": "fallback"},
+			allowed_sizes,
+			no_tool_streak,
+			difficulty_floor
+		)
+	arms = _arms_at_or_above_difficulty(arms, difficulty_floor)
 
 	var recent := _last_runs(progress, RECENT_WINDOW)
 	var recent_mode_size := _most_common_recent_size(recent, int(allowed_sizes[0]))
 	var new_size_arm := _new_size_medium_probe(arms, progress, recent_mode_size)
 	if not new_size_arm.is_empty():
-		return {
+		return _decorate_recommended_arm({
 			"size": int(new_size_arm["size"]),
 			"difficulty": str(new_size_arm["difficulty"]),
 			"mode": "new_size_probe",
 			"reason": "higher_than_recent_mode",
 			"toolRewardWeight": TOOL_REWARD_BASE_WEIGHT
-		}
+		}, allowed_sizes, no_tool_streak, difficulty_floor)
 
 	var recent_max_arm := _recent_max_size_probe(arms, progress, recent)
 	if not recent_max_arm.is_empty():
-		var recent_max_tool_weight := TOOL_REWARD_MAX_WEIGHT if _no_tool_streak(progress) >= NO_TOOL_DIFFICULTY_STREAK else TOOL_REWARD_BASE_WEIGHT
-		return {
+		var recent_max_tool_weight := TOOL_REWARD_MAX_WEIGHT if no_tool_streak >= NO_TOOL_DIFFICULTY_STREAK else TOOL_REWARD_BASE_WEIGHT
+		return _decorate_recommended_arm({
 			"size": int(recent_max_arm["size"]),
 			"difficulty": str(recent_max_arm["difficulty"]),
 			"mode": "recent_size_probe",
 			"reason": "recent_max_size",
 			"toolRewardWeight": recent_max_tool_weight
-		}
+		}, allowed_sizes, no_tool_streak, difficulty_floor)
 
 	var unseen := _arms_with_max_plays(arms, progress, 0)
 	if not unseen.is_empty():
-		return _weighted_arm_choice(unseen, progress, rng, "unseen_combo_probe", TOOL_REWARD_BASE_WEIGHT)
+		return _decorate_recommended_arm(
+			_weighted_arm_choice(unseen, progress, rng, "unseen_combo_probe", TOOL_REWARD_BASE_WEIGHT, allowed_sizes, no_tool_streak),
+			allowed_sizes,
+			no_tool_streak,
+			difficulty_floor
+		)
 
 	var under_size_quota := _arms_for_size_quota(arms, progress)
 	if not under_size_quota.is_empty():
-		return _weighted_arm_choice(under_size_quota, progress, rng, "size_quota_probe", TOOL_REWARD_MAX_WEIGHT)
+		return _decorate_recommended_arm(
+			_weighted_arm_choice(under_size_quota, progress, rng, "size_quota_probe", TOOL_REWARD_MAX_WEIGHT, allowed_sizes, no_tool_streak),
+			allowed_sizes,
+			no_tool_streak,
+			difficulty_floor
+		)
 
 	var under_quota: Array = []
 	for arm in arms:
@@ -547,18 +605,76 @@ static func _recommended_arm(levels: Array, level_index: Dictionary, allowed_siz
 		if plays < MIN_COMBO_EXPOSURE:
 			under_quota.append(arm)
 	if not under_quota.is_empty():
-		return _weighted_arm_choice(under_quota, progress, rng, "combo_quota_probe", TOOL_REWARD_MAX_WEIGHT)
+		return _decorate_recommended_arm(
+			_weighted_arm_choice(under_quota, progress, rng, "combo_quota_probe", TOOL_REWARD_MAX_WEIGHT, allowed_sizes, no_tool_streak),
+			allowed_sizes,
+			no_tool_streak,
+			difficulty_floor
+		)
 
 	var tool_weight := TOOL_REWARD_MAX_WEIGHT
-	var sampled_arm := _thompson_arm(arms, progress, rng, display, tool_weight)
+	var sampled_arm := _thompson_arm(arms, progress, rng, display, tool_weight, allowed_sizes, no_tool_streak)
 	if not sampled_arm.is_empty() and rng.randf() >= EXTRA_EXPLORATION_PROBABILITY:
 		sampled_arm["mode"] = "thompson_sampling"
 		sampled_arm["reason"] = "posterior_reward"
 		sampled_arm["toolRewardWeight"] = tool_weight
-		return sampled_arm
+		return _decorate_recommended_arm(sampled_arm, allowed_sizes, no_tool_streak, difficulty_floor)
 
-	var random_arm := _weighted_arm_choice(arms, progress, rng, "posterior_exploration", tool_weight)
-	return random_arm
+	var random_arm := _weighted_arm_choice(arms, progress, rng, "posterior_exploration", tool_weight, allowed_sizes, no_tool_streak)
+	return _decorate_recommended_arm(random_arm, allowed_sizes, no_tool_streak, difficulty_floor)
+
+
+static func _difficulty_floor_for_no_tool_streak(no_tool_streak: int) -> String:
+	if no_tool_streak >= NO_TOOL_HARD_FLOOR_STREAK:
+		return "hard"
+	if no_tool_streak >= NO_TOOL_DIFFICULTY_STREAK:
+		return "medium"
+	return ""
+
+
+static func _arms_at_or_above_difficulty(arms: Array, difficulty_floor: String) -> Array:
+	var floor_index := DIFFICULTY_ORDER.find(difficulty_floor)
+	if floor_index <= 0:
+		return arms
+	var filtered: Array = []
+	for arm in arms:
+		var difficulty_index := DIFFICULTY_ORDER.find(str(arm.get("difficulty", "simple")))
+		if difficulty_index >= floor_index:
+			filtered.append(arm)
+	return filtered if not filtered.is_empty() else arms
+
+
+static func _difficulty_pressure_multiplier(allowed_sizes: Array, difficulty: String, no_tool_streak: int) -> float:
+	var multiplier := 1.0
+	if not allowed_sizes.has(6):
+		if difficulty == "hard":
+			multiplier *= PRE_SIZE_SIX_HARD_MULTIPLIER
+		elif difficulty == "challenge":
+			multiplier *= PRE_SIZE_SIX_CHALLENGE_MULTIPLIER
+	if no_tool_streak >= NO_TOOL_CHALLENGE_PRESSURE_STREAK:
+		if difficulty == "hard":
+			multiplier *= 1.35
+		elif difficulty == "challenge":
+			multiplier *= 2.0
+	elif no_tool_streak >= NO_TOOL_HARD_FLOOR_STREAK:
+		if difficulty == "hard":
+			multiplier *= 1.25
+		elif difficulty == "challenge":
+			multiplier *= 1.60
+	elif no_tool_streak >= NO_TOOL_DIFFICULTY_STREAK:
+		if difficulty == "hard":
+			multiplier *= 1.15
+		elif difficulty == "challenge":
+			multiplier *= 1.35
+	return multiplier
+
+
+static func _decorate_recommended_arm(arm: Dictionary, allowed_sizes: Array, no_tool_streak: int, difficulty_floor: String) -> Dictionary:
+	var result := arm.duplicate(true)
+	result["noToolStreak"] = no_tool_streak
+	result["difficultyFloor"] = difficulty_floor
+	result["preSizeSixDifficultyPressure"] = not allowed_sizes.has(6)
+	return result
 
 
 static func _available_arms(level_index: Dictionary, allowed_sizes: Array) -> Array:
@@ -639,7 +755,7 @@ static func _arms_for_size_quota(arms: Array, progress: Dictionary) -> Array:
 	return result
 
 
-static func _weighted_arm_choice(arms: Array, progress: Dictionary, rng: RandomNumberGenerator, reason: String, tool_weight: float) -> Dictionary:
+static func _weighted_arm_choice(arms: Array, progress: Dictionary, rng: RandomNumberGenerator, reason: String, tool_weight: float, allowed_sizes: Array, no_tool_streak: int) -> Dictionary:
 	var weights: Array[float] = []
 	var total := 0.0
 	for arm in arms:
@@ -649,6 +765,7 @@ static func _weighted_arm_choice(arms: Array, progress: Dictionary, rng: RandomN
 		var gap := float(maxi(1, MIN_COMBO_EXPOSURE - plays))
 		var novelty := 1.0 if plays == 0 else 0.35
 		var weight := gap * novelty * _dirichlet_arm_mean(progress, size, difficulty)
+		weight *= _difficulty_pressure_multiplier(allowed_sizes, difficulty, no_tool_streak)
 		weights.append(maxf(0.001, weight))
 		total += weights.back()
 	if total <= 0.0:
@@ -666,7 +783,7 @@ static func _weighted_arm_choice(arms: Array, progress: Dictionary, rng: RandomN
 	return arms.back().duplicate(true)
 
 
-static func _thompson_arm(arms: Array, progress: Dictionary, rng: RandomNumberGenerator, display: int, tool_weight: float) -> Dictionary:
+static func _thompson_arm(arms: Array, progress: Dictionary, rng: RandomNumberGenerator, display: int, tool_weight: float, allowed_sizes: Array, no_tool_streak: int) -> Dictionary:
 	var best: Dictionary = {}
 	var best_score := -INF
 	for arm in arms:
@@ -678,8 +795,9 @@ static func _thompson_arm(arms: Array, progress: Dictionary, rng: RandomNumberGe
 		var retention := _beta_sample(stats, "retention", rng)
 		var score := completion * 0.20 + next_level * 0.45 + retention * 0.35
 		score += tool_weight * _expected_tool_value(size, difficulty)
-		if _no_tool_streak(progress) >= NO_TOOL_DIFFICULTY_STREAK:
+		if no_tool_streak >= NO_TOOL_DIFFICULTY_STREAK:
 			score += _difficulty_score(difficulty) * 0.08
+		score += (_difficulty_pressure_multiplier(allowed_sizes, difficulty, no_tool_streak) - 1.0) * 0.10
 		score += _dirichlet_arm_sample(progress, size, difficulty, rng) * 0.08
 		if score > best_score:
 			best_score = score
@@ -1047,13 +1165,7 @@ static func update_multinomial_posterior(raw_alpha: Dictionary, selected_key, qu
 
 
 static func _no_tool_streak(progress: Dictionary) -> int:
-	var streak := 0
-	var runs := _last_runs(progress, RECENT_WINDOW)
-	for index in range(runs.size() - 1, -1, -1):
-		if int(runs[index].get("toolUses", 0)) > 0:
-			break
-		streak += 1
-	return streak
+	return OpeningKingHintControllerScript.consecutive_no_tool_wins(progress, MAX_RUN_HISTORY)
 
 
 static func _most_common_recent_size(runs: Array, fallback: int) -> int:
