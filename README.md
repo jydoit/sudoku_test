@@ -120,6 +120,42 @@ Android 真机验收需要手机开启开发者选项和 USB 调试，并连接�
 
 本地模拟器使用 x86_64 系统镜像，Android 调试包需要同时启用 `arm64-v8a` 和 `x86_64`。真机安装主要使用 `arm64-v8a`，模拟器自动验收使用 `x86_64`。
 
+## iPhone 导出准备
+
+项目提供 `iOS`（Debug）和 `iOS Release` 两个 Godot 导出预设，均只面向 iPhone、使用 `arm64`、最低支持 iOS 15.0，并生成交由 Xcode 签名和构建的工程。Bundle ID 默认为 `com.shingosuper.colorking`。
+
+开发机需要：
+
+1. 安装与项目匹配的 Godot 4.7.1 官方 iOS 导出模板（Godot：`编辑器 > 管理导出模板`）。
+2. 安装并首次启动完整 Xcode，在 Xcode 设置中安装 iOS Platform；仅有 Command Line Tools 不够。
+3. 在 `Xcode > Settings > Accounts` 登录 Apple Account。个人真机调试可使用 Personal Team；TestFlight 或 App Store 分发需要 Apple Developer Program 会员。
+4. 在 Godot 的两个 iOS 预设中填写真实的 10 位 Apple Team ID。该值及签名凭据保存在本机，不提交到仓库。
+
+工具链安装后可检查：
+
+```bash
+xcodebuild -version
+xcode-select -p
+```
+
+若 `xcode-select -p` 仍指向 `/Library/Developer/CommandLineTools`，切换到完整 Xcode：
+
+```bash
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+```
+
+生成 Debug Xcode 工程：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --path . --export-debug "iOS" ./builds/ios/color_king_debug
+```
+
+正式发布使用 `iOS Release`，不得使用 Debug 预设：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --path . --export-release "iOS Release" ./builds/ios/color_king_release
+```
+
 启动当前自动验收模拟器：
 
 ```bash
