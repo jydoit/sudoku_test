@@ -80,6 +80,8 @@ const LION_LEFT_PEEK_BLINK = preload("res://assets/ui/lion_left_peek_blink.svg")
 const LION_RIGHT_PEEK_BLINK = preload("res://assets/ui/lion_right_peek_blink.svg")
 const LION_KING_CENTER_LANDING = preload("res://assets/ui/lion_king_center_landing.svg")
 const RESULT_PETAL_TEXTURE = preload("res://assets/ui/petal_neutral.svg")
+const HEART_ICON: Texture2D = preload("res://assets/ui/heart.svg")
+const WARNING_ICON: Texture2D = preload("res://assets/ui/warning.svg")
 const CARD := UITokensScript.SURFACE_CARD
 const INK := UITokensScript.INK
 const RESULT_COIN_START_DELAY := 0.00
@@ -240,7 +242,7 @@ const RESULT_PETAL_COLORS := [
 var completion_overlay: ColorRect
 var completion_title: Label
 var reward_label: Label
-var result_icon_label: Label
+var result_status_icon: TextureRect
 var result_piece_icon: TextureRect
 var result_lion_arm_icon: TextureRect
 var result_reward_label: Label
@@ -387,16 +389,16 @@ func configure(localizer: Callable = Callable()) -> void:
 	result_lion_arm_icon.show_behind_parent = true
 	result_lion_arm_icon.hide()
 
-	result_icon_label = Label.new()
-	result_icon_label.text = "♥"
-	result_icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	result_icon_label.add_theme_color_override("font_color", Color("#F25D72"))
-	result_icon_label.add_theme_color_override("font_shadow_color", Color("#B92E4A"))
-	result_icon_label.add_theme_constant_override("shadow_offset_x", 0)
-	result_icon_label.add_theme_constant_override("shadow_offset_y", 5)
-	result_icon_label.add_theme_font_size_override("font_size", 84)
-	result_icon_label.hide()
-	showcase_column.add_child(result_icon_label)
+	result_status_icon = TextureRect.new()
+	result_status_icon.name = "ResultStatusIcon"
+	result_status_icon.texture = HEART_ICON
+	result_status_icon.custom_minimum_size = Vector2(84, 84)
+	result_status_icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	result_status_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	result_status_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	result_status_icon.modulate = Color("#F25D72")
+	result_status_icon.hide()
+	showcase_column.add_child(result_status_icon)
 
 	result_reward_label = Label.new()
 	result_reward_label.text = ""
@@ -498,6 +500,7 @@ func _start_safe_area_tracking() -> void:
 
 func present_success(data: Dictionary) -> void:
 	overlay_mode = "success"
+	completion_next_button.icon = null
 	var excellent := bool(data.get("excellent", false))
 	music_stop_requested.emit()
 	stop_success_sequence()
@@ -512,7 +515,7 @@ func present_success(data: Dictionary) -> void:
 		_t("拼块挑战 · 第 %d 局完成", [maxi(1, int(data.get("round", 1)))])
 		if composite else _t("第 %d 关 已完成", [maxi(1, int(data.get("displayLevel", 1)))])
 	)
-	result_icon_label.hide()
+	result_status_icon.hide()
 	_show_center_result_lion_idle()
 	result_piece_icon.show()
 	stop_coin_animation()
@@ -552,6 +555,7 @@ func present_success(data: Dictionary) -> void:
 
 func present_failure(data: Dictionary) -> void:
 	overlay_mode = "failure"
+	completion_next_button.icon = null
 	result_is_excellent = false
 	stop_all_animations()
 	var composite := bool(data.get("composite", false))
@@ -560,10 +564,9 @@ func present_failure(data: Dictionary) -> void:
 		_t("拼块挑战 · 第 %d 局未完成", [maxi(1, int(data.get("round", 1)))])
 		if composite else _t("第 %d 关 未完成", [maxi(1, int(data.get("displayLevel", 1)))])
 	)
-	result_icon_label.text = "♥"
-	result_icon_label.add_theme_color_override("font_color", Color("#F25D72"))
-	result_icon_label.add_theme_color_override("font_shadow_color", Color("#B92E4A"))
-	result_icon_label.show()
+	result_status_icon.texture = HEART_ICON
+	result_status_icon.modulate = Color("#F25D72")
+	result_status_icon.show()
 	result_piece_icon.hide()
 	result_reward_label.text = _t("红心已用完")
 	result_reward_label.show()
@@ -576,14 +579,14 @@ func present_failure(data: Dictionary) -> void:
 
 func present_deadlock(revive_price: int) -> void:
 	overlay_mode = "assembly_deadlock"
+	completion_next_button.icon = null
 	result_is_excellent = false
 	stop_all_animations()
 	completion_title.text = _t("拼块死局")
 	reward_label.text = _t("同色区域已被隔离")
-	result_icon_label.text = "!"
-	result_icon_label.add_theme_color_override("font_color", Color("#F2A93B"))
-	result_icon_label.add_theme_color_override("font_shadow_color", Color("#A86812"))
-	result_icon_label.show()
+	result_status_icon.texture = WARNING_ICON
+	result_status_icon.modulate = Color.WHITE
+	result_status_icon.show()
 	result_piece_icon.hide()
 	result_reward_label.text = _t("当前摆法已经无法完成颜色区域")
 	result_reward_label.show()
@@ -600,7 +603,7 @@ func present_tutorial_complete(has_saved_progress: bool) -> void:
 	stop_all_animations()
 	completion_title.text = _t("已经了解全部规则")
 	reward_label.text = _t("开始真正的挑战吧！")
-	result_icon_label.hide()
+	result_status_icon.hide()
 	_show_center_result_lion_idle()
 	result_piece_icon.show()
 	result_reward_label.text = _t("新手教程完成")

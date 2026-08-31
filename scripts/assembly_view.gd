@@ -12,6 +12,10 @@ signal intro_cancelled()
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const CompositePlacementEngineScript = preload("res://scripts/rules/composite_placement_engine.gd")
 const BLOCK_TILE_TEXTURE: Texture2D = preload("res://assets/ui/block_tile_neutral.svg")
+const CHECK_ICON: Texture2D = preload("res://assets/ui/check.svg")
+const CHEVRON_LEFT_ICON: Texture2D = preload("res://assets/ui/chevron_left.svg")
+const CHEVRON_RIGHT_ICON: Texture2D = preload("res://assets/ui/chevron_right.svg")
+const COLOR_SWATCH_ICON: Texture2D = preload("res://assets/ui/color_swatch.svg")
 const BOARD_LAYOUT_INSET := 10.0
 const TRAY_CELL_SIZE := 21.0
 const TRAY_SLOT_HEIGHT := 94.0
@@ -75,7 +79,7 @@ var _intro_hand: Control
 var _hint_popup: PanelContainer
 var _hint_title: Label
 var _hint_copy: Label
-var _hint_swatch: Label
+var _hint_swatch: TextureRect
 var _hint_piece_id := -1
 var _hint_origin := Vector2i(-99, -99)
 var _intro_tween: Tween
@@ -486,7 +490,12 @@ func _draw_tray() -> void:
 		_draw_slot_frame(slot_rect, region_color, frame_alpha, not is_placed or slot_feedback > 0.0)
 		if is_placed:
 			_draw_piece_preview(piece, slot_rect, 0.28 * tray_alpha)
-			draw_string(ThemeDB.fallback_font, slot_rect.end - Vector2(24, 12), "✓", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color(0.72, 0.92, 0.80, 0.75 * tray_alpha))
+			draw_texture_rect(
+				CHECK_ICON,
+				Rect2(slot_rect.end - Vector2(28, 28), Vector2(20, 20)),
+				false,
+				Color(0.72, 0.92, 0.80, 0.75 * tray_alpha)
+			)
 			if slot_feedback > 0.0:
 				_draw_return_slot_feedback(slot_rect, region_color, slot_feedback, tray_alpha)
 			continue
@@ -500,8 +509,8 @@ func _draw_tray() -> void:
 
 	if max_scroll > 0.0:
 		var hint_color := Color(1.0, 1.0, 1.0, 0.58 * tray_alpha)
-		draw_string(ThemeDB.fallback_font, tray_rect.position + Vector2(8, tray_rect.size.y * 0.5 + 7), "‹", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, hint_color)
-		draw_string(ThemeDB.fallback_font, tray_rect.end - Vector2(22, tray_rect.size.y * 0.5 - 7), "›", HORIZONTAL_ALIGNMENT_LEFT, -1, 24, hint_color)
+		draw_texture_rect(CHEVRON_LEFT_ICON, Rect2(tray_rect.position + Vector2(6, tray_rect.size.y * 0.5 - 11), Vector2(22, 22)), false, hint_color)
+		draw_texture_rect(CHEVRON_RIGHT_ICON, Rect2(tray_rect.end - Vector2(28, tray_rect.size.y * 0.5 + 11), Vector2(22, 22)), false, hint_color)
 
 
 func _draw_slot_frame(slot_rect: Rect2, region_color: Color, alpha: float, emphasized: bool) -> void:
@@ -1044,8 +1053,7 @@ func show_piece_hint(piece_id: int, origin: Vector2i) -> void:
 		color_name = str(UITokensScript.REGION_COLOR_NAMES[color_index])
 	_hint_title.text = _localized("提示：%s块放这里", [_localized(color_name)])
 	_hint_copy.text = _localized("正确位置：第 %d 行，第 %d 列", [origin.y + 1, origin.x + 1])
-	_hint_swatch.text = "■"
-	_hint_swatch.add_theme_color_override("font_color", _region_color(region_id))
+	_hint_swatch.modulate = _region_color(region_id)
 	_position_hint_popup()
 	_hint_popup.show()
 	queue_redraw()
@@ -1098,11 +1106,12 @@ func _build_hint_popup() -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	margin.add_child(row)
-	_hint_swatch = Label.new()
+	_hint_swatch = TextureRect.new()
+	_hint_swatch.texture = COLOR_SWATCH_ICON
 	_hint_swatch.custom_minimum_size = Vector2(34, 42)
-	_hint_swatch.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hint_swatch.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_hint_swatch.add_theme_font_size_override("font_size", 28)
+	_hint_swatch.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_hint_swatch.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_hint_swatch.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(_hint_swatch)
 	var copy_column := VBoxContainer.new()
 	copy_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL

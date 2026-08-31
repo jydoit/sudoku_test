@@ -1,5 +1,7 @@
 extends Control
 
+const CROWN_ICON: Texture2D = preload("res://assets/ui/crown.svg")
+
 const LevelStoreScript = preload("res://scripts/level_store.gd")
 const LEVELS_PATH := "res://data/levels.json"
 const INK := Color("#26334A")
@@ -215,7 +217,8 @@ func _refresh_cells() -> void:
 			var region_id := int(current_level["regions"][row][col])
 			var color: Color = REGION_COLORS[(region_id - 1) % REGION_COLORS.size()]
 			var is_solution := solution.has(Vector2i(col, row))
-			button.text = "♛" if is_solution else str(region_id)
+			button.text = "" if is_solution else str(region_id)
+			button.icon = CROWN_ICON if is_solution else null
 			button.add_theme_color_override("font_color", INK)
 			button.add_theme_stylebox_override("normal", _button_style(color, 10))
 			button.add_theme_stylebox_override("hover", _button_style(color.lightened(0.08), 10))

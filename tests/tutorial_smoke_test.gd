@@ -50,7 +50,8 @@ func _run() -> void:
 	assert(game.coach_label.get_theme_font_size("font_size") >= 18, "Tutorial guidance should use larger text")
 	assert(game.coach_label.get_theme_color("font_color") == Color("#31506D"), "Tutorial guidance should use dark text")
 	assert(game.tutorial_hand_label.visible, "Tutorial should show hand pointer")
-	assert(game.tutorial_hand_label.get_theme_font_size("font_size") >= 56, "Tutorial hand should be large and easy to notice")
+	assert(game.tutorial_hand_label.texture.resource_path == "res://assets/ui/hand_pointer.svg", "Tutorial pointer should use the bundled SVG instead of an emoji glyph")
+	assert(game.tutorial_hand_label.size.x >= 72.0 and game.tutorial_hand_label.size.y >= 72.0, "Tutorial hand should be large and easy to notice")
 	assert(game.board.tutorial_mask_enabled, "Tutorial should mask non-target cells")
 	assert(game.board.tutorial_focus_cell == Vector2i(2, 2), "Tutorial should focus the first crown")
 

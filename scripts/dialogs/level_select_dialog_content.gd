@@ -1,5 +1,7 @@
 extends MarginContainer
 
+const CHECK_ICON: Texture2D = preload("res://assets/ui/check.svg")
+
 var picker: OptionButton
 var _localizer: Callable
 
@@ -25,9 +27,10 @@ func present(levels: Array, completed_levels: Array, selected_index: int) -> voi
 	picker.clear()
 	for index in range(levels.size()):
 		var level: Dictionary = levels[index]
-		var completed_mark := "✓ " if completed_levels.has(int(level["levelId"])) else ""
 		var label := _t("关卡 %d · %s", [int(level["levelId"]), _t(str(level.get("difficulty", "normal")))])
-		picker.add_item("%s%s" % [completed_mark, label], index)
+		picker.add_item(label, index)
+		if completed_levels.has(int(level["levelId"])):
+			picker.set_item_icon(picker.item_count - 1, CHECK_ICON)
 	if not levels.is_empty():
 		picker.select(clampi(selected_index, 0, levels.size() - 1))
 

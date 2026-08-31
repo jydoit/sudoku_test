@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 48 48">
+  <title>Crown</title>
+  <path d="M7 35 4.5 14 16 22 24 7l8 15 11.5-8L41 35Z" fill="#FFD45F" stroke="#8B5A10" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M8 41h32" fill="none" stroke="#8B5A10" stroke-width="4" stroke-linecap="round"/>
+</svg>
