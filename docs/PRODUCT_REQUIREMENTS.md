@@ -1,6 +1,6 @@
 # color king 产品需求文档
 
-最后更新：2026-08-30
+最后更新：2026-08-31
 适用分支：`jydoit/dev`
 当前阶段：Godot MVP
 
@@ -407,11 +407,13 @@ Splash 验收标准：
 - 每逢 10 的整数关为固定挑战关；第 31 关起，非 10 倍数的 5 关点位（如 35、45、55）有 50% 概率成为附加挑战关；实际挑战关后一关为缓冲关，保持挑战关 size、难度降低一档，并显示提示皇冠。
 - 普通关卡使用分层后验推荐：size 层使用 Dirichlet 多项分布，size 内的 difficulty 层使用 Dirichlet 多项分布，每个 size×difficulty 组合分别维护通关、下一关开启和次日留存三个 Beta-Bernoulli 后验，并用 Thompson Sampling 选择。
 - 新 size 解锁时降低旧 size 的历史探索权重，为新 size 写入冷启动加成并优先探测 Medium；每个 size 和组合都有最低曝光配额，未充分曝光的组合优先于稳定收益采样。
-- 选择时观察最近 5 局：若存在高于最近主尺寸且尚未探测的 size，优先该 size 的 Medium；否则优先最近 5 局最大 size 中尚未探测的组合。连续 3 局未使用道具时提高难度压力，最近最大 size 的探测优先 Hard。
+- 选择时观察最近 5 局：若存在高于最近主尺寸且尚未探测的 size，优先该 size 的 Medium；否则优先最近 5 局最大 size 中尚未探测的组合。普通动态推荐额外按最长 40 局历史向后统计连续“已通关且未使用提示或直找”的局数：连续 3 局时排除 Simple，连续 6 局时最低为 Hard，连续 10 局时继续保持 Hard 下限并把 Challenge 压力再提高 2 倍；使用任一道具或失败都会结束连续计数。
+- 在 6x6 尚未开放、普通推荐只能从 5x5 取题时，Hard 权重乘以 `1.75`、Challenge 权重乘以 `2.25`；该加成同时参与未曝光组合、曝光配额、后验探索和 Thompson Sampling，不影响前 10 关、每逢 10 关挑战以及挑战后一关的独立恢复流程。
 - 普通关卡固定记录直找和提示的使用概率。没有未探测组合后，组合配额和 Thompson Sampling 使用最高道具收益权重，促进玩家在更高难度下使用帮助工具。
 - 每逢 10 关的固定挑战分支、第 31 关起 5 关点位的 50% 附加挑战分支，以及挑战后的下一关缓冲分支保持独立于普通后验推荐，后一关沿用挑战 size 并降低一档难度。
-- 第 11 关起非挑战普通关保留提示皇冠；实际挑战关屏蔽提示皇冠。
-- 动态提示皇冠数量按棋盘 size 加权：5x5 固定 1 个，6x6 为 1-2 个，7x7 为 1-3 个，8x8 及以上为 1-3 个。
+- 第 11 关起先按原规则决策提示皇冠数量，再由独立的 `OpeningKingHintController` 做只减不增的二次裁剪；该控制器不得修改 `levelId`、size、difficulty、推荐 mode 或挑战标记。前 10 关、每逢 10 关的挑战关和挑战后一关完全保留原提示处理顺序，其中实际挑战关仍屏蔽提示皇冠、挑战后恢复关仍显示已决策的提示皇冠。
+- 最近 3 局全部通关且均未使用提示或直找时，普通动态关的提示裁剪规则为：size<6 全部关闭；size=6 有 70% 概率全部关闭、30% 保留原数量；size>=7 且原数量为 1 时有 50% 关闭、50% 保留，原数量为 2 时有 70% 降为 1、30% 保留 2，原数量大于 2 时有 80% 显示 `n-1`、20% 保持 `n`。最近不足 3 局、任一局失败或使用过道具时保持原数量。概率按展示关卡、levelId 和推荐进度生成稳定随机结果，同一进度重复计算不得闪变。
+- 提示皇冠的原始决策数量继续按棋盘 size 加权：5x5 固定 1 个，6x6 为 1-2 个，7x7 为 1-3 个，8x8 及以上为 1-3 个。
 - 基础校验包括行列尺寸、区域行列数和答案数量。
 - 更完整的唯一解与路径校验目前由 `tests/smoke_test.gd` 覆盖。
 
@@ -833,7 +835,9 @@ Splash 验收标准：
 | 普通玩法组合推荐 | Dirichlet + Beta-Bernoulli + Thompson Sampling | `scripts/level_director.gd` | 反馈信号包括通关、失败、下一关开启和次日留存 |
 | 新 size 冷启动 | 新 size Dirichlet 加成，优先 Medium | `LevelDirector._apply_size_release_policy()` | 新 size 开放时衰减旧 size 的历史探索权重 |
 | 最低曝光配额 | size 12 局；组合 6 局 | `MIN_SIZE_EXPOSURE`、`MIN_COMBO_EXPOSURE` | 未充分探索的层级优先补足 |
-| 无道具难度压力 | 连续 3 局未使用道具后提高难度 | `NO_TOOL_DIFFICULTY_STREAK` | 最近最大 size 的探测优先 Hard |
+| 无道具难度压力 | 连续 3 局最低 Medium；连续 6 局最低 Hard；连续 10 局提高 Challenge 压力 | `NO_TOOL_*_STREAK`、`LevelDirector._recommended_arm()` | 只作用于第 10 关后的普通动态推荐；道具使用或失败中断连续计数，逢 10 关及挑战后恢复不受影响 |
+| 6x6 解锁前难度加权 | Hard ×1.75；Challenge ×2.25 | `PRE_SIZE_SIX_*_MULTIPLIER` | 只在允许尺寸不含 6 时应用；参与配额、探索和 Thompson Sampling |
+| 动态提示数量控制 | 连续 3 局无道具通关后按 size 和原提示数概率减量 | `OpeningKingHintController.adjusted_hint_count()` | 现有逻辑先决定数量，控制器只减不增；前 10 关、挑战关、挑战后恢复关保持原逻辑 |
 | 道具使用策略 | 直找 15%；提示 25%；收益权重 0.08 / 0.28 | `TOOL_*_PROBABILITY`、`TOOL_REWARD_*` | 没有未探测组合后使用最高道具收益权重 |
 | 复合拼块最小尺寸 | 6x6 | `LevelDirector.assemblyEnabled` | 5x5 不进入复合拼块玩法 |
 | 复合拼块触发 | 10 的整数倍里程碑且尺寸 ≥6 | `LevelDirector._make_schedule()` | 其它挑战关和普通关卡直接进入皇冠阶段 |
@@ -904,6 +908,12 @@ HOME=/Users/shingo_mac/Documents/Codex/2026-06-29/du-y/work/godot_home /Applicat
 
 ```bash
 HOME=/Users/shingo_mac/Documents/Codex/2026-06-29/du-y/work/godot_home /Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/shingo_mac/Desktop/push_sudoku_shingosuper --script res://tests/composite_smoke_test.gd
+```
+
+推荐与提示数量策略测试：
+
+```bash
+HOME=/Users/shingo_mac/Documents/Codex/2026-06-29/du-y/work/godot_home /Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/shingo_mac/Desktop/push_sudoku_shingosuper --script res://tests/recommendation_hint_policy_test.gd
 ```
 
 ## 10. 迭代更新规则
