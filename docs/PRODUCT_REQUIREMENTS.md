@@ -878,7 +878,7 @@ Splash 验收标准：
 - 仓库提供 `iOS` 和 `iOS Release` 两个导出预设：仅面向 iPhone、只包含 `arm64`、最低系统为 iOS 15.0，Bundle ID 为 `com.shingosuper.colorking`，由 Godot 生成 Xcode 工程后交给 Xcode 自动管理签名。
 - `iOS` 保留 Debug 选关能力，仅用于内部调试；iPhone 验收测试和正式发布统一使用 `iOS Release`，排除 Debug 专用选关脚本。验收测试可以使用 Apple Development 证书签名 Release 构建。
 - iOS 导出机必须安装完整 Xcode 和 iOS Platform；仅安装 Xcode Command Line Tools 不满足导出要求。Apple Team ID、证书和描述文件属于本机签名配置，不得提交到仓库。
-- iOS 使用 Godot `Playback` 音频会话类别（`audio/general/ios/session_category=3`），确保音乐和音效在设备侧边静音键开启时仍可通过扬声器播放；应用不采集麦克风，也不使用 `Play and Record`。
+- iOS 保持 Godot 默认 `Ambient` 音频会话类别，与 Android 共用同一套音乐、音效资源和游戏内音量配置；iPhone 侧边静音键开启时允许系统静音，不强制切换到 `Playback` 或 `Play and Record`。
 - 当前版本不声明相机、麦克风、相册、追踪、推送、Game Center 或 Wi-Fi 特殊能力；后续接入广告、统计或原生 SDK 时，必须同步更新隐私清单、权限说明和本节。
 
 ## 8. 发布前回归测试清单
