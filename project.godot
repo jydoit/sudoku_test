@@ -22,6 +22,11 @@ boot_splash/bg_color=Color(0.176471, 0.490196, 0.733333, 1)
 boot_splash/show_image=false
 boot_splash/minimum_display_time=0
 
+[audio]
+
+general/ios/session_category=3
+general/ios/mix_with_others=false
+
 [display]
 
 window/size/viewport_width=540

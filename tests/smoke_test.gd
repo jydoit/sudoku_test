@@ -309,15 +309,25 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	assert(game.top_home_button.custom_minimum_size.x >= 52.0, "The level home control should use an enlarged touch target")
+	assert(game.top_home_button.text.is_empty(), "Home should not depend on a Unicode house glyph")
+	assert(game.top_home_button.icon != null and game.top_home_button.icon.resource_path == "res://assets/ui/home.svg", "Home should render the bundled SVG icon on every platform")
+	assert(game.top_home_button.alignment == HORIZONTAL_ALIGNMENT_CENTER and game.top_home_button.icon_alignment == HORIZONTAL_ALIGNMENT_CENTER, "Home icon should stay centered inside its touch target")
 	assert(game.coach_panel != null and not game.coach_panel.visible, "Formal levels should remove the coach text interval from the layout")
 	assert(game.board.size.y >= 600.0, "The board layout should receive the space released by the hidden coach interval")
 	var expanded_board_rect: Rect2 = game.board._board_geometry()["rect"]
 	assert(expanded_board_rect.size.x >= 510.0 and expanded_board_rect.size.y >= 510.0, "The formal board should use the tightened horizontal and internal spacing")
 	assert(game.help_button != null and game.help_button.get_parent() == game.top_home_button.get_parent(), "Help should share the level top navigation row")
 	assert(game.help_button.custom_minimum_size.x >= 46.0, "Help should use a mobile-friendly touch target")
+	assert(game.help_button.text.is_empty(), "Help should not depend on a question-mark font glyph")
+	assert(game.help_button.icon != null and game.help_button.icon.resource_path == "res://assets/ui/help.svg", "Help should render the bundled SVG icon on every platform")
+	assert(game.help_button.alignment == HORIZONTAL_ALIGNMENT_CENTER and game.help_button.icon_alignment == HORIZONTAL_ALIGNMENT_CENTER, "Help icon should stay centered inside its touch target")
 	assert(game.settings_button != null and game.settings_button.get_parent() == game.top_home_button.get_parent(), "Settings should share the level top navigation row")
 	assert(game.settings_button.text.is_empty(), "Settings should not depend on a Unicode gear glyph")
 	assert(game.settings_button.icon != null and game.settings_button.icon.resource_path == "res://assets/ui/settings.svg", "Settings should render the bundled SVG gear on every platform")
+	assert(game.settings_button.alignment == HORIZONTAL_ALIGNMENT_CENTER and game.settings_button.icon_alignment == HORIZONTAL_ALIGNMENT_CENTER, "Settings gear should stay centered inside its touch target")
+	assert("stroke-width=\"5\"" in FileAccess.get_file_as_string("res://assets/ui/settings.svg"), "Settings gear should keep the approved heavy outline")
+	assert("stroke-width=\"5\"" in FileAccess.get_file_as_string("res://assets/ui/help.svg"), "Help icon should keep the approved heavy outline")
+	assert(int(ProjectSettings.get_setting("audio/general/ios/session_category", 0)) == 3, "iOS must use the Playback audio session so sound survives the silent switch")
 	assert(game.dialog_controller != null, "All modal dialogs should use the shared dialog controller")
 	var dialog_card: PanelContainer = game.dialog_controller.find_child("DialogCard", true, false)
 	var dialog_style := dialog_card.get_theme_stylebox("panel") as StyleBoxFlat
