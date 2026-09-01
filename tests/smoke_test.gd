@@ -327,7 +327,7 @@ func _run() -> void:
 	assert(game.settings_button.alignment == HORIZONTAL_ALIGNMENT_CENTER and game.settings_button.icon_alignment == HORIZONTAL_ALIGNMENT_CENTER, "Settings gear should stay centered inside its touch target")
 	assert("stroke-width=\"5\"" in FileAccess.get_file_as_string("res://assets/ui/settings.svg"), "Settings gear should keep the approved heavy outline")
 	assert("stroke-width=\"5\"" in FileAccess.get_file_as_string("res://assets/ui/help.svg"), "Help icon should keep the approved heavy outline")
-	assert(int(ProjectSettings.get_setting("audio/general/ios/session_category", 0)) == 3, "iOS must use the Playback audio session so sound survives the silent switch")
+	assert(int(ProjectSettings.get_setting("audio/general/ios/session_category", 0)) == 0, "iOS should keep the default Ambient audio session and respect the silent switch")
 	assert(game.dialog_controller != null, "All modal dialogs should use the shared dialog controller")
 	var dialog_card: PanelContainer = game.dialog_controller.find_child("DialogCard", true, false)
 	var dialog_style := dialog_card.get_theme_stylebox("panel") as StyleBoxFlat
