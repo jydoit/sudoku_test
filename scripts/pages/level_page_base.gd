@@ -29,6 +29,7 @@ const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resou
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const LION_KING_ICON = preload("res://assets/ui/lion_king.svg")
 const SETTINGS_ICON = preload("res://assets/ui/settings.svg")
+const HELP_ICON = preload("res://assets/ui/help.svg")
 const HOME_ICON = preload("res://assets/ui/home.svg")
 const HEART_ICON = preload("res://assets/ui/heart.svg")
 const INITIAL_HEART_COUNT := 3
@@ -409,6 +410,8 @@ func _build_top_bar(initial_coins: int) -> Control:
 
 	top_home_button = _small_button("", Vector2(52, 52), 28)
 	top_home_button.icon = HOME_ICON
+	top_home_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	top_home_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	top_home_button.tooltip_text = "返回首页"
 	top_home_button.pressed.connect(func() -> void: home_requested.emit())
 	row.add_child(top_home_button)
@@ -441,12 +444,17 @@ func _build_top_bar(initial_coins: int) -> Control:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(spacer)
-	help_button = _small_button("?", Vector2(46, 46), 24)
+	help_button = _small_button("", Vector2(46, 46), 24)
+	help_button.icon = HELP_ICON
+	help_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	help_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	help_button.tooltip_text = "查看消除规则"
 	help_button.pressed.connect(func() -> void: help_requested.emit())
 	row.add_child(help_button)
 	settings_button = _small_button("", Vector2(46, 46), 22)
 	settings_button.icon = SETTINGS_ICON
+	settings_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	settings_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	settings_button.tooltip_text = "设置"
 	settings_button.pressed.connect(func() -> void: settings_requested.emit())
 	row.add_child(settings_button)
