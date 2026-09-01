@@ -27,7 +27,7 @@
 | `result_cheerful.wav` | EXCELLENT 专用欢快音乐；短尾卡林巴主旋律、大三度回应与强弱交替的低木质节拍形成轻快弹跳感，不使用沙锤、刷奏或擦奏噪声，后段主动留白给金币音效 |
 | `coin_arrive.wav` / `coin_reel.wav` / `coin_settle.wav` | 阻尼金币落槽、单次系统选择器式滚轮刻度和低频停止锁定；刻度由实际数字步进事件驱动 |
 
-技术规格：`44.1kHz / 16-bit / mono WAV`。生成脚本为 `tools/generate_audio_sfx.py`，固定随机种子，重复运行可得到一致结果。
+技术规格：`44.1kHz / 16-bit / mono WAV`。除较长的 `result_cheerful.wav` 继续使用 QOA（Godot WAV 导入 `compress/mode=2`）外，其余短促音效均使用未压缩 PCM（`compress/mode=0`），避免点击和落子等瞬态在移动端产生有损压缩伪影。生成脚本为 `tools/generate_audio_sfx.py`，固定随机种子，重复运行可得到一致结果；重新生成素材后不得覆盖各 `.wav.import` 中的导入策略。
 
 重新生成：
 
