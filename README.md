@@ -154,7 +154,10 @@ sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot --path . --export-release "iOS Release" ./builds/ios/color_king_release
+./tools/prepare_ios_export.sh ./builds/ios/color_king_release
 ```
+
+`prepare_ios_export.sh` 会读取 Xcode 工程的 build number，把 Godot 模板固定使用的 `Launch Screen` 名称替换为 color king 专用的版本化名称。修改 iOS 原生启动素材时，需要递增两个 iOS 预设的 build number，脚本会随之生成新的缓存键，避免真机继续显示系统缓存的旧 Godot 启动快照。
 
 启动当前自动验收模拟器：
 

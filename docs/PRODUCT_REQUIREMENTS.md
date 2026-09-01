@@ -130,7 +130,7 @@ color king 是一款竖屏移动端休闲逻辑谜题。玩家在彩色区域棋
 统一约束：
 
 - Android 12 及以上保留系统强制启动页，使用 `color king` 自适应图标和现有蓝色背景，并只停留到 Godot 主循环可用；Debug 与 Release 导出预设都必须设置 `splash_screen/disable_godot_boot_splash=true`，项目同时设置 `application/boot_splash/show_image=false` 和 `minimum_display_time=0`，禁止在系统启动页和游戏内品牌动画之间插入默认 Godot 引擎 Logo 页面。系统页结束后必须直接衔接游戏内“拼块成盘”Splash。
-- iOS 保留系统要求的原生 Launch Screen，但 Debug 与 Release 导出预设必须显式使用与现有蓝色背景完全同色、完全不透明的占位图；不得使用可能被 Xcode 编译成模板资源的全透明图片，也不得留空回退到 iOS 导出模板自带的 Godot Logo。原生 Launch Screen 结束后直接衔接游戏内“拼块成盘”Splash；修改原生启动资源时必须递增 iOS build number，避免系统继续复用旧启动快照。
+- iOS 保留系统要求的原生 Launch Screen，但 Debug 与 Release 导出预设必须显式使用与现有蓝色背景完全同色、完全不透明的占位图；不得使用可能被 Xcode 编译成模板资源的全透明图片，也不得留空回退到 iOS 导出模板自带的 Godot Logo。Godot 导出后必须运行 `tools/prepare_ios_export.sh`，依据 build number 将模板固定的 `Launch Screen` storyboard 改为 color king 专用的版本化缓存键。原生 Launch Screen 结束后直接衔接游戏内“拼块成盘”Splash；修改原生启动资源时必须递增 iOS build number，使脚本生成新的缓存键，避免系统继续复用旧启动快照。
 - 仅在应用冷启动或重新启动应用时播放；首页、关卡、结果页之间的普通路由切换不重复播放。
 - 正常模式总时长控制在 `5.80-6.20s`，减少动画模式控制在 `2.00-2.20s`；资源已经准备好时仍完整展示各阶段，资源加载较慢时停留在最后一个稳定画面，不循环抖动或制造假的百分比进度。
 - 使用首页和结果页共用的蓝色主色系、明亮经典 10 色棋盘色板和戴皇冠的小狮子贴图；不得使用 Unicode 皇冠字符，不得引入与核心玩法无关的装饰角色。
@@ -877,6 +877,7 @@ Splash 验收标准：
 
 - iOS 导出统一使用与编辑器一致的 Godot `4.7.1.stable` 官方 `ios.zip` 模板；模板安装在开发机的 Godot 用户目录，不提交到仓库。
 - 仓库提供 `iOS` 和 `iOS Release` 两个导出预设：仅面向 iPhone、只包含 `arm64`、最低系统为 iOS 15.0，Bundle ID 为 `com.shingosuper.colorking`，由 Godot 生成 Xcode 工程后交给 Xcode 自动管理签名。
+- Godot 导出的 Xcode 工程必须先运行 `tools/prepare_ios_export.sh` 再构建；该步骤用版本化的 color king storyboard 名称替换模板默认名称，防止 SpringBoard 继续显示旧 Godot 启动快照。
 - `iOS` 保留 Debug 选关能力，仅用于内部调试；iPhone 验收测试和正式发布统一使用 `iOS Release`，排除 Debug 专用选关脚本。验收测试可以使用 Apple Development 证书签名 Release 构建。
 - iOS 导出机必须安装完整 Xcode 和 iOS Platform；仅安装 Xcode Command Line Tools 不满足导出要求。Apple Team ID、证书和描述文件属于本机签名配置，不得提交到仓库。
 - iOS 保持 Godot 默认 `Ambient` 音频会话类别，与 Android 共用同一套音乐、音效资源和游戏内音量配置；iPhone 侧边静音键开启时允许系统静音，不强制切换到 `Playback` 或 `Play and Record`。
