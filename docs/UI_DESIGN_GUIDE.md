@@ -571,7 +571,7 @@ tests/*.gd 保障关键行为不回退
 | 错误 X | `scripts/ui_tokens.gd` 的 `WRONG_X_*` | `game_board.gd` 的 `_draw_wrong()` 引用 |
 | 正确皇冠角色 | `assets/ui/lion_king.svg` | 张嘴开心笑、眼睛带高光的正脸狮子，供普通、提示和开局皇冠共用 |
 | 错误皇冠角色 | `assets/ui/lion_king_wrong.svg` | 嘴角向下的苦笑狮子，并由棋盘叠加小型红色 X 徽标 |
-| 通关角色 | `assets/ui/lion_king_center_body.svg` + `lion_king_center_arm_00.svg`～`12.svg` | 开心站立的橘色狮子；身体、脸和描边固定，随机动作只切换独立手臂关键帧，位置、比例和旋转保持锁定 |
+| 通关角色 | `assets/ui/lion_king_center_full_wave_00.png`、`lion_king_center_coin_toss_00.png`～`06.png` | 图片模型生成的完整狮子位图；落地后固定显示微笑帧，Excellent 在花瓣结束前约 `0.34s` 提前进入捧币蓄力，发放奖励时按“捧住金币堆—双手向上托举—头顶撒开—空手回收”单向播放约 `0.84s`；头顶释放点另叠加 `12` 枚 `20px` 金币，以更高、更宽的扇形爆发增强冲击力，并通过约 `0.08s` 起飞错时、不同最高点、飞行时长和前后缩放形成自然错层，结束后立即静止；运行时只注册 coin toss，禁止倒放含金币帧、挥手/欢呼/调皮动作或重新叠加独立身体/手臂层 |
 | 顶部红心体力 | `scripts/main.gd` 的 `_build_heart_display()`、`_update_heart_label()` | 独立槽位、有效心跳动、失去后灰色静止 |
 | 底部道具布局 | `scripts/main.gd` 的 `_build_action_bar()`、`_tool_button()` | 清除、皇冠直找、提示三等分，图标在上文字在下 |
 | 提示与清除图标 | `scripts/tool_icon.gd` | 使用可缩放的自绘灯泡与清除图标，避免小位图模糊 |

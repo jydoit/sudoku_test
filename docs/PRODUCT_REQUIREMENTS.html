@@ -109,7 +109,7 @@ figcaption {
   </header>
   <main class="content">
 <h1>color king 产品需求文档</h1>
-<p>最后更新：2026-08-11</p>
+<p>最后更新：2026-08-31</p>
 <p>适用分支：<code>jydoit/dev</code></p>
 <p>当前阶段：Godot MVP</p>
 <h2>1. 文档目的</h2>
@@ -193,7 +193,7 @@ figcaption {
 <ul>
 <li>排行榜、活动、队伍、商店、宝箱为占位入口。</li>
 <li>当前不显示广告位。</li>
-<li>应用启动 Splash 动画尚未接入；候选脚本和验收规则见 5.1，默认推荐方案 A。</li>
+<li>应用启动 Splash 已接入“拼块成盘 → 规则汇聚 → 狮子戴冠”的融合动画；正式脚本和验收规则见 5.1。</li>
 </ul>
 <h2>5. 信息架构</h2>
 <p>主要页面：</p>
@@ -221,51 +221,51 @@ figcaption {
 </ul>
 <h3>5.1 应用启动 Splash 动画</h3>
 <p>用户目标：在读取存档、关卡目录和本地化配置时，用一个短、清楚、有 color king 识别度的动画完成启动过渡；玩家应先看到“彩色区域 + 皇冠狮子”的品牌信号，再进入首页或新手教程。</p>
-<p>当前状态：设计候选，尚未接入运行时。确认方案后再创建 <code>scripts/overlays/splash_overlay.gd</code> 及对应场景，不在 Splash 中读取或修改真实棋盘、皇冠答案、红心和金币。</p>
+<p>当前状态：已接入运行时。<code>scripts/overlays/splash_overlay.gd</code> 在冷启动时覆盖目标页面，用一套固定装饰棋盘展示拼块玩法和普通皇冠玩法的融合；Splash 不读取或修改真实棋盘、皇冠答案、红心和金币。</p>
 <p>统一约束：</p>
 <ul>
+<li>Android 12 及以上保留系统强制启动页，使用 <code>color king</code> 自适应图标和现有蓝色背景，并只停留到 Godot 主循环可用；Debug 与 Release 导出预设都必须设置 <code>splash_screen/disable_godot_boot_splash=true</code>，项目同时设置 <code>application/boot_splash/show_image=false</code> 和 <code>minimum_display_time=0</code>，禁止在系统启动页和游戏内品牌动画之间插入默认 Godot 引擎 Logo 页面。系统页结束后必须直接衔接游戏内“拼块成盘”Splash。</li>
+<li>iOS 保留系统要求的原生 Launch Screen，但 Debug 与 Release 导出预设必须显式使用与现有蓝色背景完全同色、完全不透明的占位图；不得使用可能被 Xcode 编译成模板资源的全透明图片，也不得留空回退到 iOS 导出模板自带的 Godot Logo。Godot 导出后必须运行 <code>tools/prepare_ios_export.sh</code>，依据 build number 将模板固定的 <code>Launch Screen</code> storyboard 改为 color king 专用的版本化缓存键。原生 Launch Screen 结束后直接衔接游戏内“拼块成盘”Splash；修改原生启动资源时必须递增 iOS build number，使脚本生成新的缓存键，避免系统继续复用旧启动快照。</li>
 <li>仅在应用冷启动或重新启动应用时播放；首页、关卡、结果页之间的普通路由切换不重复播放。</li>
-<li>默认总时长控制在 <code>0.85-1.40s</code>；资源已经准备好时仍保留至少 <code>0.85s</code> 的品牌展示，资源加载较慢时停留在最后一个稳定画面，不循环抖动或制造假的百分比进度。</li>
+<li>正常模式总时长控制在 <code>5.80-6.20s</code>，减少动画模式控制在 <code>2.00-2.20s</code>；资源已经准备好时仍完整展示各阶段，资源加载较慢时停留在最后一个稳定画面，不循环抖动或制造假的百分比进度。</li>
 <li>使用首页和结果页共用的蓝色主色系、明亮经典 10 色棋盘色板和戴皇冠的小狮子贴图；不得使用 Unicode 皇冠字符，不得引入与核心玩法无关的装饰角色。</li>
 <li>Splash 只负责视觉过渡，不展示关卡答案，不把装饰棋盘写入正式存档；动画结束后才解锁首页或教程输入。</li>
 <li>竖屏移动端以 <code>540x960</code> 为基准检查，内容位于安全区内，狮子和色块不得越过屏幕边缘；横屏或窄屏时只缩放内容，不改变动画顺序。</li>
 <li>尊重静音、音效音量和减少动画设置。减少动画模式下取消闪光、缩放回弹和色块飞行，仅保留淡入、短暂停留和淡出；允许用户在首个稳定画面后跳过。</li>
 </ul>
-<p>实现建议：使用一个 <code>CanvasLayer</code> 下的 <code>Control</code> 作为 Splash 根节点，<code>AnimationPlayer</code> 保存固定时间轴和信号点，<code>Tween</code> 只处理一次性的淡入、回弹和离场；不使用 <code>AnimationTree</code>。启动期间并行准备存档、关卡目录和本地化资源，Splash 通过 <code>ready_to_enter</code> 信号等待真实启动状态完成。建议保留 <code>boot_started</code>、<code>splash_ready</code>、<code>splash_finished</code> 和 <code>splash_skipped</code> 四个语义事件，避免 <code>scripts/main.gd</code> 直接操作 Splash 内部节点。</p>
-<h4>方案 A：小狮子点亮棋盘（默认推荐）</h4>
-<p>定位：最适合作为默认冷启动动画。它同时表达颜色区域、棋盘边界、皇冠狮子和“找到皇冠”的核心目标，信息密度适中，首次启动不会误解为另一种玩法。</p>
+<p>实现结构：使用一个 <code>CanvasLayer</code> 下的全屏 <code>Control</code> 作为 Splash 根节点，由单一 <code>AnimationPlayer</code> 独占 <code>splash_brand_reveal</code>、<code>splash_reduced</code> 和 <code>splash_finish</code> 三段时间轴；不使用 <code>AnimationTree</code>，也不让多个 Tween 同时修改相同属性。启动数据未准备完成时停在最终稳定帧，收到 <code>mark_ready_to_enter()</code> 后才播放离场。保留 <code>boot_started</code>、<code>splash_ready</code>、<code>splash_finished</code> 和 <code>splash_skipped</code> 四个语义事件，<code>scripts/main.gd</code> 只监听事件与转发语义化音效，不直接控制 Splash 内部节点。</p>
+<h4>正式方案：拼块成盘，逻辑点冠</h4>
+<p>定位：冷启动默认动画。玩家先看到缩略版真实异形拼块依次进入缺口，完整棋盘随后压平为普通皇冠玩法，同一棋盘上的行、列和颜色区域再汇聚到皇冠与小狮子，明确表达“先拼成棋盘，再在棋盘中找到皇冠”的产品融合关系。</p>
 <p>动画脚本：</p>
-<div class="table-wrap"><table><thead><tr><th>时间</th><th>画面动作</th><th>声音与节奏</th></tr></thead><tbody><tr><td><code>0.00-0.16s</code></td><td>蓝色背景淡入，<code>color king</code> 标题从 <code>96%</code> 轻微放大到 <code>100%</code>；中央留出棋盘构图空间。</td><td>很轻的暖色上行铺底。</td></tr><tr><td><code>0.16-0.48s</code></td><td>5x5 抽象棋盘由中心向外铺开，明亮色块分三批出现；黑色外框和区域边界随后补齐，边界只画一次。</td><td>三次柔和纸面/木质点击，间隔约 <code>80ms</code>。</td></tr><tr><td><code>0.44-0.70s</code></td><td>戴皇冠的小狮子从上方进入中央装饰格，落地时做一次 <code>1.04 -&gt; 0.96 -&gt; 1.00</code> 的轻回弹；该格不是实际答案格。</td><td>一次短促但不尖锐的金属亮音。</td></tr><tr><td><code>0.70-0.94s</code></td><td>一条行线、一条列线和一个颜色区域边界依次亮起后熄灭，提示玩家“行、列、颜色区域”三类观察维度；不出现解释文字。</td><td>三个低音量确认音，最后接短尾音。</td></tr><tr><td><code>0.94-1.18s</code></td><td>棋盘和狮子保持稳定 <code>0.12s</code>，标题回到正常透明度；整体向首页或教程方向交叉淡出。</td><td>音效尾音与页面进入同步，不叠加屏幕震动。</td></tr></tbody></table></div>
-<p>Godot 脚本建议：<code>AnimationPlayer</code> clip 命名为 <code>splash_brand_reveal</code>，棋盘示意图由独立 <code>SplashBoardIllustration</code> 绘制，使用现有色板和狮子贴图；加载完成后通过 <code>animation_finished</code> 或 <code>splash_ready</code> 选择 <code>finish</code> / <code>hold</code> 分支。方案 A 的反馈强度属于小型 UI 反馈，不使用 hit-stop 和 screen shake。</p>
-<p>优点：品牌识别最快，和普通皇冠关卡、教程入口都兼容。注意点：棋盘必须是装饰副本，不能复用真实关卡状态，避免启动动画改变答案或触发提示逻辑。</p>
-<h4>方案 B：彩色拼块合板</h4>
-<p>定位：突出复合拼块是产品差异点，适合作为拼块玩法首次解锁、拼块入口专属启动过场或后续 A/B 版本，不建议作为所有用户每次冷启动的默认动画。</p>
-<p>动画脚本：</p>
-<div class="table-wrap"><table><thead><tr><th>时间</th><th>画面动作</th><th>声音与节奏</th></tr></thead><tbody><tr><td><code>0.00-0.18s</code></td><td>蓝色背景出现，四个带侧面的彩色方块从屏幕四边滑入，落点形成松散的方形轮廓。</td><td>低频木质拖动声。</td></tr><tr><td><code>0.18-0.56s</code></td><td>6-8 个抽象拼块依次吸附到轮廓内；每次吸附只做短促位置回弹，不旋转、不遮挡标题。</td><td>每次吸附一个短点击，最后一次音量略高。</td></tr><tr><td><code>0.56-0.78s</code></td><td>拼块整体压平为二维颜色区域，黑色区域边界从接缝处向外展开。</td><td>一次柔和“合板”低音。</td></tr><tr><td><code>0.78-1.04s</code></td><td>小狮子从拼块中心升起，皇冠上的高光扫过一次；色块停止运动。</td><td>短金属亮音。</td></tr><tr><td><code>1.04-1.30s</code></td><td>画面淡出到目标页面；如果实际加载未完成，停留在已经压平的稳定棋盘上。</td><td>尾音保持短，不循环。</td></tr></tbody></table></div>
-<p>Godot 脚本建议：使用 <code>AnimationPlayer</code> 控制固定的入场顺序，<code>Tween</code> 控制每个拼块的吸附和回弹；拼块只使用装饰数据，不调用 <code>CompositeLevel</code>、不改变托盘顺序、不写入 <code>compositeState</code>。</p>
-<p>优点：能一眼体现“拼接颜色区域再找皇冠”的独特流程。注意点：对新用户而言，可能把拼块误认为所有关卡的第一步，因此更适合拼块入口或解锁庆祝，不宜默认覆盖普通启动流程。</p>
-<h4>方案 C：皇冠规则扫描</h4>
-<p>定位：强化逻辑谜题和“观察后找到皇冠”的感觉，适合已有正式进度的玩家、教程入口或低动效版本。</p>
-<p>动画脚本：</p>
-<div class="table-wrap"><table><thead><tr><th>时间</th><th>画面动作</th><th>声音与节奏</th></tr></thead><tbody><tr><td><code>0.00-0.14s</code></td><td><code>color king</code> 标题淡入，背景保持静止，中央出现空白棋盘轮廓。</td><td>单个很轻的起始音。</td></tr><tr><td><code>0.14-0.40s</code></td><td>棋盘格线从左上向右下绘制；颜色区域先填充，黑色边界最后闭合。</td><td>连续但低音量的纸面划线声。</td></tr><tr><td><code>0.40-0.66s</code></td><td>一条柔和扫描光沿一行和一列移动，在交叉处短暂停留；不显示真实关卡候选。</td><td>两个短确认音。</td></tr><tr><td><code>0.66-0.88s</code></td><td>扫描光沿一个颜色区域边界绕行，边界亮度升高后恢复。</td><td>轻微环绕音，不使用闪屏。</td></tr><tr><td><code>0.88-1.10s</code></td><td>小狮子在扫描交叉附近出现并做一次眨眼/点头，表达“找到皇冠”。</td><td>单次温和收束音。</td></tr><tr><td><code>1.10-1.24s</code></td><td>整体淡出，进入首页或教程。</td><td>尾音结束后释放输入。</td></tr></tbody></table></div>
-<p>Godot 脚本建议：网格和扫描线由 <code>Control._draw()</code> 或独立绘制节点完成，扫描线位移使用 <code>Tween</code> 的 ease-out；不要创建真实 <code>GameBoard</code>，避免启动期间运行冲突检查、提示蒙层或皇冠答案逻辑。</p>
-<p>优点：玩法表达最准确、动效最克制。注意点：品牌记忆点和情绪张力弱于方案 A，首次启动需要配合更清楚的首页主视觉。</p>
-<p>推荐决策：默认冷启动先实现方案 A；方案 B 留给拼块入口或拼块解锁庆祝；方案 C 可作为减少动画模式或老玩家启动变体。三套方案均应保持同一时长区间、同一狮子贴图和同一蓝色背景，避免不同入口像不同产品。</p>
+<div class="table-wrap"><table><thead><tr><th>时间</th><th>画面动作</th><th>声音与节奏</th></tr></thead><tbody><tr><td><code>0.00-0.84s</code></td><td>蓝天渐变背景淡入；不完整的 6x6 装饰棋盘和三个待放异形拼块出现，第一块被拿起、沿固定路径进入缺口并吸附。</td><td><code>0.84s</code> 播放中等尺寸木质放置音。</td></tr><tr><td><code>0.84-1.68s</code></td><td>第二块被拿起、移动并吸附；棋盘、镜头与其它拼块保持同一注册位置，拼块不旋转。</td><td><code>1.68s</code> 播放第二次木质放置音。</td></tr><tr><td><code>1.68-3.08s</code></td><td>最后一块从棋盘下方升起，沿轻微曲线路径移动，在缺口上方悬停后向下落位。</td><td><code>3.08s</code> 使用稍完整的大块放置音。</td></tr><tr><td><code>3.08-3.76s</code></td><td>完整棋盘只做一次 <code>1.00 -&gt; 1.025 -&gt; 0.992 -&gt; 1.00</code> 收束回弹，拼块厚度和阴影退出，压平为普通皇冠棋盘。</td><td><code>3.42s</code> 播放一次拼块完成音，不叠加屏幕震动。</td></tr><tr><td><code>3.76-4.58s</code></td><td>同一棋盘依次出现行、列和颜色区域高光，三者汇聚到装饰皇冠格；标准小狮子从棋盘后方上升，<code>color king</code> 标题同步淡入。</td><td><code>4.38s</code> 使用现有皇冠揭示短音。</td></tr><tr><td><code>4.58-5.55s</code></td><td>棋盘、皇冠、小狮子和标题完全静止；资源未就绪时停在此稳定画面。</td><td>保持静音，不循环。</td></tr><tr><td><code>5.55-6.00s</code></td><td>目标页面已准备好时，整个 Splash 统一淡出并释放输入。</td><td>不新增离场音。</td></tr></tbody></table></div>
+<p>关键帧资源：图像生成模型产出的 4x4 位图母版仅保存在 <code>docs/animation_sources/splash/</code>，由 <code>tools/process_splash_sprite_sheet.py</code> 去除烘焙棋盘格、统一注册并逐帧矢量追踪；运行时只加载 <code>assets/ui/splash/splash_assembly_00.svg</code> 至 <code>15.svg</code> 共 <code>16</code> 张纯路径 SVG，并在最终稳定帧叠加项目标准 <code>lion_king_center_body.svg</code>，不加载或打包逐帧 PNG。SVG 画布统一为 <code>320x320</code>，不得包含 <code>&lt;image&gt;</code> 嵌入、文字、水印或真实关卡答案。</p>
+<p>品牌标题使用 <code>assets/ui/splash/color_king_title.svg</code>，由 <code>tools/generate_splash_title_svg.py</code> 将圆润粗体字形固化为纯 <code>&lt;path&gt;</code>；标题包含蓝灰偏移阴影、深金外沿、金色纵向渐变、浅金高光边和两枚小型矢量闪光。运行时使用保持宽高比的 <code>TextureRect</code>，不得回退为依赖设备字体的 Label，也不得在 SVG 中保存 <code>&lt;text&gt;</code> 或嵌入位图。</p>
+<p>减少动画模式使用 <code>1.65s</code> 的淡入和三张稳定关键帧（未完成拼块、完整平面棋盘、狮子戴冠），再用 <code>0.45s</code> 淡出；取消逐块飞行、完成回弹和高光闪动。普通时间轴在完整棋盘出现后允许点击、触摸或键盘跳过，跳过与自然结束都只能释放一次启动路由。</p>
 <p>Splash 验收标准：</p>
 <ul>
 <li>新用户启动时，Splash 结束后进入单张 5x5 新手教程；已有存档用户进入原本应进入的首页/关卡/恢复流程，动画不改变路由判断。</li>
 <li>540x960 竖屏下标题、棋盘示意图、小狮子和淡出过渡均不裁切；窄屏下无文字溢出或安全区遮挡。</li>
-<li>真实资源已就绪时总时长不超过 <code>1.40s</code>；资源未就绪时不显示空白页面、不循环跳动，准备完成后从稳定画面自然退出。</li>
+<li>真实资源已就绪时正常模式总时长约 <code>6.00s</code>、减少动画模式约 <code>2.10s</code>；资源未就绪时不显示空白页面、不循环跳动，准备完成后从稳定画面自然退出。</li>
 <li>动画中途退出应用不会写入教程完成、关卡进度、金币、红心、皇冠或拼块现场；重新启动可以正常继续原流程。</li>
 <li>静音时不播放音效；减少动画模式无闪烁、无明显回弹和无屏幕震动；稳定画面后允许跳过且只释放一次输入。</li>
 <li>连续冷启动两次不产生重复节点、重复音效、残留 Tween 或无法释放的 Splash 覆盖层。</li>
+</ul>
+<h3>5.2 应用图标</h3>
+<p>应用图标使用 <code>docs/icon_sources/app_icon_reference.png</code> 固化的“上方独立拼块皇冠 + 左下小狮子伸手争取皇冠”品牌构图，直接表达拼块玩法、皇冠目标和角色之间的关系；皇冠不得恢复为狮子鬃毛轮廓。正式资源必须保持母版中的皇冠外轮廓、五块拼块形状、皇冠与角色间距、狮子在左下角的裁切比例、脸型、抬手角度、金色立体高光和暖色中心光晕，不能再用少量几何图元改画为扁平近似方案。所有交付资源必须是纯 SVG 路径与基础图元，不嵌入位图、文字或预先裁好的圆角底板。</p>
+<ul>
+<li><code>assets/icon.svg</code> 是商店、旧版启动器和不支持自适应图标的平台使用的完整合成图，蓝天渐变背景必须铺满且完全不透明，由平台负责圆形、圆角方形等最终蒙版裁切。</li>
+<li><code>assets/icon_foreground.svg</code> 是 Android 自适应图标透明前景，只保留拼块皇冠、小狮子和必要的对象投影；透明区域不得被白色或蓝色矩形烘焙。生成时必须把系统识别出的皇冠与狮子保存为两个独立矢量组：皇冠固定应用 <code>translate(333 221) scale(0.546)</code>，使完整外轮廓进入安全圆；狮子固定应用 <code>translate(261 169) scale(0.7)</code>，使完整面部和伸出的手掌在圆形与圆角方形蒙版中可辨认，并让母版底部裁切线继续隐藏在系统蒙版外。两项变换不得反向影响商店与旧版启动器使用的完整合成图。</li>
+<li><code>assets/icon_background.svg</code> 是与完整合成图一致的全不透明蓝天渐变背景，不包含狮子或皇冠，避免启动器视差和主题蒙版移动时露出透明边缘。</li>
+<li><code>assets/icon_monochrome.svg</code> 是 Android 主题图标使用的单色透明前景，使用单一实色轮廓并保留必要的眼睛、笑脸和拼块负形；不得直接把彩色图降透明度充当单色层。</li>
+<li>四份 SVG 共用 <code>0 0 1254 1254</code> 的母版视图坐标和同一套源对象比例；彩色与单色自适应前景分别对皇冠和狮子应用一致的双组安全区构图，背景和完整合成图保持母版坐标。Android 三层资源使用 <code>432 x 432</code> 固有导出尺寸，完整合成图使用 <code>1024 x 1024</code>。Android Debug 与 Release 导出预设必须分别接入同一组前景、背景和单色资源。主识别内容按 Android <code>108 x 108dp</code> 自适应图标坐标检查：皇冠完整轮廓以及狮子的眼睛、口鼻和手掌必须落在中央 <code>66 x 66dp</code> 安全圆内，只有角色身体外围允许延伸到蒙版裁切区；蒙版预览必须组合真实的前景与背景层，并按 <code>108dp</code> 图层画布、<code>72dp</code> 可见蒙版范围验证圆形、圆角方形、Squircle 和启动器缩放后的裁切效果，不能使用完整合成图代替分层预览。</li>
+<li><code>tools/extract_app_icon_foreground.swift</code> 使用系统前景实例蒙版从已确认母版中分离皇冠和小狮子，按实例垂直质心确定上方皇冠与下方狮子并分别输出；<code>tools/build_app_icon_vectors.py</code> 再通过固定参数把合并主体、皇冠和狮子分别转为纯路径 SVG，以双组构图生成自适应前景，同时用合并主体保持完整合成图不变，并以确定性渐变和光芒重建背景。参考 PNG 和全部中间提取图不得嵌入最终 SVG，也必须从 Debug、Release 包体中排除。</li>
 </ul>
 <h2>6. 模块需求</h2>
 <h3>6.1 首页模块</h3>
 <p>用户目标：明确当前在 color king 主界面，看到主视觉和最核心入口，一键进入当前关卡、独立体验拼块玩法，并可在不丢失正式进度的前提下重新体验新人流程。</p>
 <p>功能逻辑：</p>
 <ul>
-<li>首屏显示与关卡结果页一致的蓝色主色系背景和 color king 主视觉。</li>
+<li>首屏显示与关卡结果页一致的蓝色主色系背景，并与启动 Splash 复用同一份 <code>color_king_title.svg</code> 品牌主视觉；标题必须保留圆润粗体、金色渐变、深金描边、蓝灰阴影和矢量闪光，不得回退为普通 Label。</li>
 <li>首页不显示顶部金币、生命、星数、设置按钮。</li>
 <li>首页不显示左侧每日奖励、宝箱入口。</li>
 <li>首页不显示右侧活动、排行榜入口。</li>
@@ -273,11 +273,11 @@ figcaption {
 <li>中下部按“开始关卡 / 拼块玩法 / 新人流程”显示三个按钮；“开始关卡”保持最高视觉层级。</li>
 <li>首页不显示庭院、章节进度或装修进度。</li>
 <li>“新人流程”按钮用于重新体验新手引导；已有正式进度时先保存正式现场，教程完成或跳过后恢复，新用户没有历史现场时进入第 1 关。</li>
-<li>“拼块玩法”按钮在完成新人流程后可点击，并与普通关卡的 6x6 size 解锁条件保持一致：当前为方便测试调整为玩到第 11 关。未达到条件时入口显示“第 11 关解锁”，点击弹窗提示所需关卡且不创建拼块现场；达到后进入独立的 6x6-9x9 复合拼块挑战。进入前保存主线关卡、资源与未完成棋盘，返回首页时完整恢复主线关卡现场；独立体验不增加主线关卡号、通关记录或主线导演统计，但拼块入场费和通关金币会同步保留到共享金币余额。每局先调用普通玩法推荐核心，从已解锁且存在离线拼块数据的棋盘中得到 <code>size × difficulty class</code>，再由独立拼块导演为该 size 采样 Simple/Medium/Hard 拆分 pattern。标题显示“拼块挑战 · 第 N 局”，不在关卡标题右侧展示抽中的 pattern。独立玩法另外保存最近局数、推荐模型、pattern 后验、每日免费次数、入场费、应发奖励、seed、拼块位置、放置顺序、死局状态、红心、道具余量和皇冠阶段棋盘；退出仍恢复主线现场，再次进入时恢复未完成局且不重复计次或收费，最近一局已完成则进入下一局。</li>
+<li>“拼块玩法”按钮在完成新人流程后可点击，并与普通关卡的 6x6 size 共用同一个解锁条件：第 30 关同时开放 6x6 普通关卡和拼块玩法。未达到条件时入口显示“第 30 关解锁”，点击弹窗提示所需关卡且不创建拼块现场；达到后进入独立的 6x6-9x9 复合拼块挑战。进入前保存主线关卡、资源与未完成棋盘，返回首页时完整恢复主线关卡现场；独立体验不增加主线关卡号、通关记录或主线导演统计，但拼块入场费和通关金币会同步保留到共享金币余额。每局先调用普通玩法推荐核心，从已解锁且存在离线拼块数据的棋盘中得到 <code>size × difficulty class</code>，再由独立拼块导演为该 size 采样 Simple/Medium/Hard 拆分 pattern。标题显示“拼块挑战 · 第 N 局”，不在关卡标题右侧展示抽中的 pattern。独立玩法另外保存最近局数、推荐模型、pattern 后验、每日免费次数、入场费、应发奖励、seed、拼块位置、放置顺序、死局状态、红心、道具余量和皇冠阶段棋盘；退出仍恢复主线现场，再次进入时恢复未完成局且不重复计次或收费，最近一局已完成则进入下一局。</li>
 </ul>
 <p>当前实现：</p>
 <ul>
-<li>首页 UI 由独立的 <code>scripts/pages/home_page.gd</code> 构建并持有“开始关卡 / 拼块玩法 / 新人流程”三个入口；页面只接收展示数据并发出语义化信号，不读取关卡、存档或经济状态。</li>
+<li>首页 UI 由独立的 <code>scripts/pages/home_page.gd</code> 构建并持有共享 SVG 品牌标题及“开始关卡 / 拼块玩法 / 新人流程”三个入口；页面只接收展示数据并发出语义化信号，不读取关卡、存档或经济状态。</li>
 <li>“开始关卡”调用当前关卡流程；“拼块玩法”调用 <code>_start_home_composite_flow()</code>，并通过 <code>CompositeLevelDirector</code> 进入隔离的自适应拼块挑战；“新人流程”调用 <code>_replay_tutorial_preserving_progress()</code> 保存正式关卡快照并进入教程。</li>
 <li>资源、活动、排行榜、宝箱和底部导航入口已从首页隐藏。</li>
 </ul>
@@ -287,7 +287,7 @@ figcaption {
 <ul>
 <li>点击开始关卡进入关卡页。</li>
 <li>点击新人流程会重新进入新手引导。</li>
-<li>第 10 关及以前点击拼块玩法会弹出“玩到第 11 关即可解锁”的提示，不保存或替换当前主线现场；第 11 关起点击会进入 6x6 拼接阶段，从关卡顶部或结果页返回首页后，主线关卡、棋盘现场和资源恢复到进入前状态。</li>
+<li>第 29 关及以前点击拼块玩法会弹出“玩到第 30 关即可解锁”的提示，不保存或替换当前主线现场；第 30 关起点击会进入 6x6 拼接阶段，从关卡顶部或结果页返回首页后，主线关卡、棋盘现场和资源恢复到进入前状态。</li>
 <li>首页不显示金币、生命、星数、左侧入口、右侧入口和底部导航。</li>
 </ul>
 <h3>6.2 关卡页模块</h3>
@@ -326,6 +326,7 @@ figcaption {
 <li>点击帮助按钮会打开消除规则浮窗，三张示意图和文字分别准确表达邻格、行列和颜色区域规则。</li>
 <li>复合拼块关卡的拼接阶段打开帮助时默认进入“拼块玩法”页；进入找皇冠阶段后默认回到“消除规则”，但仍可切换并重播拼块流程动画。</li>
 <li>所有模态弹窗同一时间只显示一个，并统一拦截底层棋盘输入、支持取消键关闭和移动端安全边距。</li>
+<li>移动端以 <code>540×960</code> 为设计基准并使用可扩展画布适配全面屏；所有页面装饰背景铺满设备物理边缘，不能因固定宽高比或 Android 系统栏留下黑边。首页和共用结果页采用“清透中深天蓝 → 晴空蓝 → 浅蓝薄雾 → 米白内容区 → 底部柔和天空蓝”的连续渐变，不能形成压暗的藏蓝色带；米白色关卡页在顶部状态栏与底部手势区叠加同一套向内容区渐隐的天空蓝边缘，确保系统时间、状态图标和手势条清晰可辨，同时不能压暗棋盘、工具栏或按钮。关卡、按钮、标题与棋盘继续避让系统安全区。</li>
 <li>点击“选关”可打开选择弹窗，并能进入所选关卡。</li>
 <li>关卡标题只显示关卡编号。</li>
 <li>新手教程显示与正式关卡一致的标题、帮助、红心、皇冠进度和三道具布局，并以“跳过”替代“选关”。</li>
@@ -342,7 +343,7 @@ figcaption {
 <li>双击空格或普通排除 X 尝试标记皇冠。</li>
 <li>双击标准答案格放置张嘴开心笑、眼睛带高光的狮子皇冠；双击非标准答案格会显示嘴角向下的苦笑狮子，并叠加不可修改的红色 X 徽标，同时只扣除 1 个红心，不扣除皇冠直找次数、提示次数或金币。</li>
 <li>正式关卡进入或重试时按展示关卡序号重置红心：第 1-10 关 3 个、第 11-30 关 2 个、第 31 关起 1 个；错误皇冠尝试扣 1 个红心，红心为 0 时锁定棋盘并弹出关卡失败页。</li>
-<li>皇冠直找按钮与清除、提示按钮同一行显示；每个用户初始 3 次，点击后直接把一个未找到的标准答案格标记为锁定皇冠。三个按钮统一使用紧凑的“图标 + 简短名称 + 固定高度状态胶囊”结构：清除显示“免费”，直找和提示有次数时显示“免费 ×N”；次数为 0 时不显示 <code>×0</code>，状态胶囊直接切换为金币图标和本次价格。付费胶囊必须使用不透明底色：直找沿用金币黄体系，提示使用提示绿体系，不能只依赖透明金币贴图承载价格；金币图标使用 SVG 矢量源，避免小尺寸道具价格出现位图毛刺。工具栏不得挤压棋盘或在 540×960 竖屏下越过底部安全区。</li>
+<li>皇冠直找按钮与清除、提示按钮同一行显示；每个新用户初始 1 次皇冠直找和 2 次提示，点击后直接把一个未找到的标准答案格标记为锁定皇冠。三个按钮统一使用紧凑的“图标 + 简短名称 + 固定高度状态胶囊”结构：清除显示“免费”，直找和提示有次数时显示“免费 ×N”；次数为 0 时不显示 <code>×0</code>，状态胶囊直接切换为金币图标和本次价格。付费胶囊必须使用不透明底色：直找沿用金币黄体系，提示使用提示绿体系，不能只依赖透明金币贴图承载价格；金币图标使用 SVG 矢量源，避免小尺寸道具价格出现位图毛刺。工具栏不得挤压棋盘或在 540×960 竖屏下越过底部安全区。</li>
 <li>清除为永久免费道具，清除普通排除 X、普通皇冠和错误红色 X；保留开局提示皇冠和皇冠直找产生的提示皇冠，清除错误标记不返还已扣除的红心，清除结果可以撤销。</li>
 <li>关卡失败页沿用通关结果页蓝色整屏风格，文案为失败反馈，按钮为显示动态价格的“金币复活”和“重新挑战”。</li>
 <li>棋盘支持鼠标点击和触屏点击。</li>
@@ -362,7 +363,7 @@ figcaption {
 <li>开局提示皇冠的回弹动画只调整字号，最大不超过格子尺寸的 <code>72%</code>，边缘格动画不得越过棋盘外框。</li>
 <li><code>GameBoard</code> 通过 <code>cell_pressed(row, col)</code>、<code>cell_double_pressed(row, col)</code>、<code>cell_drag_started(row, col)</code>、<code>cell_dragged(row, col)</code>、<code>cell_drag_ended()</code> 信号把点击、双击和滑动传回主逻辑。</li>
 <li>高亮类型包括 <code>unit</code>、<code>candidate</code>、<code>exclude</code>、<code>place</code>。</li>
-<li><code>play_cell_feedback()</code>、<code>play_wrong_feedback()</code> 和 <code>play_guide_feedback()</code> 分别提供普通放置/标记弹跳、错误皇冠短促晃动和提示柔和光环反馈。</li>
+<li><code>play_cell_feedback()</code>、<code>play_wrong_feedback()</code> 和 <code>play_guide_feedback()</code> 分别提供普通放置/标记弹跳、错误皇冠短促晃动和提示柔和光环反馈。每类临时反馈必须由唯一、可取消的 Tween 持有；切关或开始整盘胜利时间轴时先取消单格弹跳、错误晃动、表情反应和皇冠揭示，最终皇冠不能同时叠加“正确放置”和“整盘庆祝”两套动作。</li>
 </ul>
 <p>功能截图与交互流转：</p>
 <figure><img src="prd_screenshots/03_board_module.svg" alt="棋盘交互模块截图与交互流转"><figcaption>棋盘交互模块截图与交互流转</figcaption></figure>
@@ -458,15 +459,17 @@ figcaption {
 <li>出关导演：<code>scripts/level_director.gd</code>，负责解耦玩家显示关卡顺序与 <code>levelId</code>。</li>
 <li>前 10 个显示关卡固定编排：1-5 为 5x5 simple，6-8 为 5x5 medium，9 为 5x5 simple，10 为 5x5 hard 挑战关。</li>
 <li>第 10 关之后根据玩家进度、size、难度和最近行为动态选择关卡；关卡选择按 size/difficulty 索引读取，并用最近 50 个 <code>levelId</code> 做去重。</li>
-<li>动态 size 解锁节奏由 <code>SIZE_UNLOCK_DISPLAY_LEVELS</code> 统一控制：第 1 关开放 5x5，第 11 关起开放 5x5-6x6，第 80 关起开放 5x5-7x7，第 160 关起采样 6x6-8x8，第 240 关起采样 6x6-9x9。</li>
+<li>动态 size 解锁节奏由 <code>SIZE_UNLOCK_DISPLAY_LEVELS</code> 统一控制：第 1 关开放 5x5，第 30 关起开放 5x5-6x6 并同步解锁拼块入口，第 80 关起开放 5x5-7x7，第 160 关起采样 6x6-8x8，第 240 关起采样 6x6-9x9。</li>
 <li>每逢 10 的整数关为固定挑战关；第 31 关起，非 10 倍数的 5 关点位（如 35、45、55）有 50% 概率成为附加挑战关；实际挑战关后一关为缓冲关，保持挑战关 size、难度降低一档，并显示提示皇冠。</li>
 <li>普通关卡使用分层后验推荐：size 层使用 Dirichlet 多项分布，size 内的 difficulty 层使用 Dirichlet 多项分布，每个 size×difficulty 组合分别维护通关、下一关开启和次日留存三个 Beta-Bernoulli 后验，并用 Thompson Sampling 选择。</li>
 <li>新 size 解锁时降低旧 size 的历史探索权重，为新 size 写入冷启动加成并优先探测 Medium；每个 size 和组合都有最低曝光配额，未充分曝光的组合优先于稳定收益采样。</li>
-<li>选择时观察最近 5 局：若存在高于最近主尺寸且尚未探测的 size，优先该 size 的 Medium；否则优先最近 5 局最大 size 中尚未探测的组合。连续 3 局未使用道具时提高难度压力，最近最大 size 的探测优先 Hard。</li>
+<li>选择时观察最近 5 局：若存在高于最近主尺寸且尚未探测的 size，优先该 size 的 Medium；否则优先最近 5 局最大 size 中尚未探测的组合。普通动态推荐额外按最长 40 局历史向后统计连续“已通关且未使用提示或直找”的局数：连续 3 局时排除 Simple，连续 6 局时最低为 Hard，连续 10 局时继续保持 Hard 下限并把 Challenge 压力再提高 2 倍；使用任一道具或失败都会结束连续计数。</li>
+<li>在 6x6 尚未开放、普通推荐只能从 5x5 取题时，Hard 权重乘以 <code>1.75</code>、Challenge 权重乘以 <code>2.25</code>；该加成同时参与未曝光组合、曝光配额、后验探索和 Thompson Sampling，不影响前 10 关、每逢 10 关挑战以及挑战后一关的独立恢复流程。</li>
 <li>普通关卡固定记录直找和提示的使用概率。没有未探测组合后，组合配额和 Thompson Sampling 使用最高道具收益权重，促进玩家在更高难度下使用帮助工具。</li>
 <li>每逢 10 关的固定挑战分支、第 31 关起 5 关点位的 50% 附加挑战分支，以及挑战后的下一关缓冲分支保持独立于普通后验推荐，后一关沿用挑战 size 并降低一档难度。</li>
-<li>第 11 关起非挑战普通关保留提示皇冠；实际挑战关屏蔽提示皇冠。</li>
-<li>动态提示皇冠数量按棋盘 size 加权：5x5 固定 1 个，6x6 为 1-2 个，7x7 为 1-3 个，8x8 及以上为 1-3 个。</li>
+<li>第 11 关起先按原规则决策提示皇冠数量，再由独立的 <code>OpeningKingHintController</code> 做只减不增的二次裁剪；该控制器不得修改 <code>levelId</code>、size、difficulty、推荐 mode 或挑战标记。前 10 关、每逢 10 关的挑战关和挑战后一关完全保留原提示处理顺序，其中实际挑战关仍屏蔽提示皇冠、挑战后恢复关仍显示已决策的提示皇冠。</li>
+<li>最近 3 局全部通关且均未使用提示或直找时，普通动态关的提示裁剪规则为：size&lt;6 全部关闭；size=6 有 70% 概率全部关闭、30% 保留原数量；size&gt;=7 且原数量为 1 时有 50% 关闭、50% 保留，原数量为 2 时有 70% 降为 1、30% 保留 2，原数量大于 2 时有 80% 显示 <code>n-1</code>、20% 保持 <code>n</code>。最近不足 3 局、任一局失败或使用过道具时保持原数量。概率按展示关卡、levelId 和推荐进度生成稳定随机结果，同一进度重复计算不得闪变。</li>
+<li>提示皇冠的原始决策数量继续按棋盘 size 加权：5x5 固定 1 个，6x6 为 1-2 个，7x7 为 1-3 个，8x8 及以上为 1-3 个。</li>
 <li>基础校验包括行列尺寸、区域行列数和答案数量。</li>
 <li>更完整的唯一解与路径校验目前由 <code>tests/smoke_test.gd</code> 覆盖。</li>
 </ul>
@@ -627,10 +630,10 @@ figcaption {
 <p>功能逻辑：</p>
 <ul>
 <li>当皇冠数量等于目标数且无冲突时通关。</li>
-<li>找到最后一只小狮子后，先在关卡棋盘内播放约 <code>2.3s</code> 的分段完成庆祝：最后落下的小狮子先缓慢上升、在最高处短暂停留、再缓慢落回，其余已找到的小狮子按与其距离由近到远依次执行同样的上浮响应，最远处的小狮子也必须完整完成动作；加宽的金色径向扫光用约 <code>1.4s</code> 覆盖棋盘，并在扫过后保留暖金余辉、金色外框和星点收尾，在金色状态到达峰值时补充一次轻触感。约 <code>2.52s</code> 后才进入结算页。整段效果由单一时间轴驱动，不为每个格子创建独立 Tween；局内庆祝不能与结算金币和花瓣动画重叠。</li>
+<li>找到最后一只小狮子后，先在关卡棋盘内播放约 <code>2.3s</code> 的分段完成庆祝：最后落下的小狮子先切换开心笑脸，缓慢上升并左右欢乐摇摆，在最高处短暂停留后落回；其余已找到的小狮子按与其距离由近到远依次执行相同的笑脸上浮、摇摆和近身闪光响应，最远处的小狮子也必须完整完成动作。加宽的金色径向扫光用约 <code>1.4s</code> 覆盖棋盘，并在扫过后保留暖金余辉、金色外框和星点收尾，在金色状态到达峰值时补充一次轻触感。约 <code>2.52s</code> 后才进入结算页。整段效果由单一连续时间轴按每个渲染帧驱动，不为每个格子创建独立 Tween；局内庆祝不能与结算金币和花瓣动画重叠。</li>
 <li>每次成功完成关卡都会按展示关卡序号结算金币，重玩也按实际表现重新结算。基础金币随 <code>SIZE_UNLOCK_DISPLAY_LEVELS</code> 的 size 开放阶段增长：第 1-10 关为 1，第 11-79 关为 2，第 80-159 关为 3，第 160-239 关为 4，第 240 关起为 5。</li>
 <li>本关初始体力大于 1 且通关时没有消耗任何体力，评为 <code>EXCELLENT</code>，奖励为 <code>ceil(base × 1.3)</code> 并播放一次花瓣飘落庆祝动画；只有 1 点初始体力或发生过体力损失时评为 <code>GOOD</code>，奖励为 base 且不播放花瓣动画。</li>
-<li>通关结果页使用整屏奖励结构：蓝色背景、顶部完成文案、中部皇冠展位和底部按钮；标题、副标题和奖励文案必须在移动端安全宽度内自适应换行，不能被英文长文本的最小宽度撑出屏幕，卡片和按钮始终保留左右安全边距。</li>
+<li>通关结果页使用整屏奖励结构：铺满物理屏幕的“蓝天 × 米白”渐变背景、顶部完成文案、中部皇冠展位和底部按钮；渐变在屏幕上沿使用可承载白色系统图标的清透中深天蓝，并向下连续过渡到晴空蓝、浅蓝薄雾和米白内容区，最底部手势区以柔和天空蓝收尾，Android 系统栏与长屏边缘不得露出黑边或生硬深蓝色带。标题、副标题和奖励文案必须在移动端安全宽度内自适应换行，不能被英文长文本的最小宽度撑出屏幕，卡片和按钮始终保留运行时安全边距。</li>
 <li>顶部核心文案按表现显示 <code>EXCELLENT / GOOD</code> 和“第 X 关 已完成”。</li>
 <li>中部排行榜位置先使用皇冠展位，不显示排行榜；广告位置先不显示。</li>
 <li>不显示奖励进度栏和广告位置。</li>
@@ -641,8 +644,12 @@ figcaption {
 <li><code>_complete_level()</code> 处理完成状态、奖励、保存和弹窗。</li>
 <li>金币发放策略独立位于 <code>scripts/coin_reward_policy.gd</code>，直接读取 <code>LevelDirector.SIZE_UNLOCK_DISPLAY_LEVELS</code> 判断当前展示关卡所属的 <code>1-5</code> 金币档位，并负责 Excellent 判定与最终发放数量；<code>scripts/coin_economy.gd</code> 只负责道具价格、金币核销和流水。棋盘实际 size、开局提示皇冠和错误次数不再额外改变 Good 的基础金币。</li>
 <li><code>_next_level()</code> 和 <code>_replay_level()</code> 处理弹窗按钮。</li>
-<li><code>scripts/pages/result_page.gd</code> 是独立的全屏结果页，同时承载成功、失败、拼块死局和教程完成四种视觉状态。页面通过 <code>present_success / present_failure / present_deadlock / present_tutorial_complete</code> 接收语义数据，自行生成本地化文案并管理金币飞入、余额滚动、小狮子逐帧庆祝和花瓣动画；奖励计算与完成/失败统计由 <code>scripts/services/run_result_service.gd</code> 负责，<code>scripts/main.gd</code> 只处理结算后的导航。成功结算的角色展位显示一只开心站立的橘色皇冠狮子，每次进入结算页时随机选择自然挥手、逐步吐舌头或眨眼做鬼脸动画。每组循环使用 9-12 个动作关键帧，并使用不等长帧时长与动作停顿避免机械循环；角色容器的缩放、旋转和中心位置始终固定，不允许通过呼吸缩放或摇摆造成前后抖动。</li>
-<li>结算页只展示真实产生的金币奖励，不展示没有后续用途的“获得皇冠 +1”虚拟奖励；奖励行只保留金币图标和右侧金色大号账户余额，不再显示 <code>coins / 金币奖励</code> 文字。关卡顶部余额保持 <code>24px</code> 和至少 <code>62 x 44px</code> 的紧凑固定布局；结算页余额改为按实际位数自适应：一至六位分别使用 <code>38/36/34/32/29/26px</code> 字号以及至少 <code>42/58/76/94/108/122px</code> 数字区宽度，七位及以上使用 <code>23px</code> 并依据字体实测继续扩宽。结算金币图标使用 <code>44 x 44px</code>；金币图标和数字裁切区之间必须插入独立的 <code>28px</code> 布局占位节点，不依赖 HBox 主题 separation，数字区左侧另保留 <code>8px</code> 内边距，使图标控件右边缘到数字字形起点至少约 <code>36px</code>。奖励组保持整体居中，使金币相对向左、数字相对向右展开。滚动动画开始前按 <code>max(初始余额位数, 目标余额位数)</code> 一次性锁定本轮字号和数字区宽度，滚动过程中不得改变布局；动画停止后才允许按最终余额位数收紧，例如 <code>99→100</code> 全程使用三位规格，<code>100→99</code> 停止后才收紧为两位规格。通关奖励可以立即写入钱包和存档，但关卡页顶部必须继续显示奖励前余额，禁止在局内完成庆祝阶段提前展示增加；只有结算页负责可见的到账过程。结算页必须接收钱包交易返回的明确到账前、到账后余额，并在奖励行首次显示前写入到账前余额，首帧不得显示组件默认的 <code>0</code>、上一局残留余额或已经到账后的余额；页面淡入和 Excellent 撒花期间都保持该奖励前余额。页面淡入后停顿约 <code>0.45s</code>，小狮子配合挥手/抛金币动作，将与奖励数量一致的金币沿交错弧线逐枚抛向奖励行的金币图标。数字宽度更新后必须等待容器完成布局，再以金币图标的实际全局中心建立飞行终点，禁止使用旧布局位置或奖励行边界作为接收焦点；每枚金币落入时只触发目标图标的轻微回弹，余额在全部飞币完成前保持初始值。最后一枚金币完全落入后，余额使用单个 Tween 启动一次滚筒动画：只展示少量抽样中间值，不逐金币排队计数，前段快速掠过、末段减速并精确停在用户当前持有的金币总数。大额消费仍最多构建 <code>10</code> 个可见滚动步骤，在保持结束值和总时长正确的同时避免大量 Tween 导致手机掉帧。飞行金币固定使用移动端小尺寸，不能被素材原始尺寸撑大或飞出结果页。滚筒停止后小狮子恢复随机庆祝动作，整段结算动画按奖励数量控制在约 <code>2.15-3.3s</code>；金币已在结算状态写入时落盘，动画不得延迟或重复发放。</li>
+<li><code>scripts/pages/result_page.gd</code> 是独立的全屏结果页，同时承载成功、失败、拼块死局和教程完成四种视觉状态。页面通过 <code>present_success / present_failure / present_deadlock / present_tutorial_complete</code> 接收语义数据，自行生成本地化文案并管理金币飞入、余额滚动、小狮子庆祝和花瓣动画；奖励计算与完成/失败统计由 <code>scripts/services/run_result_service.gd</code> 负责，<code>scripts/main.gd</code> 只处理结算后的导航。成功结算进入时，不绘制骨骼化身体或四肢，也不播放整只狮子跑步。系统在左侧、右侧和底部三个物理屏幕边缘中等概率选择入场方向；左、右方向各使用 <code>16</code> 张独立逐帧 SVG，底部方向使用 <code>lion_bottom_entry_00.svg</code> 至 <code>10.svg</code> 的 <code>11</code> 张探头/支撑帧，以及 <code>lion_bottom_jump_00.svg</code> 至 <code>08.svg</code> 的 <code>9</code> 张独立起跳帧。生成母版保存在 <code>docs/animation_sources/lion_left_peek_jump_sheet.png</code>、<code>lion_right_peek_jump_sheet.png</code>、<code>lion_bottom_peek_jump_sheet.png</code> 和 <code>lion_bottom_jump_keyframes_sheet.png</code>。</li>
+<li>探头阶段约 <code>1.55s</code>：前 <code>7</code> 个身体姿势在约 <code>52%</code> 时间内依次展示皇冠、眼睛、双爪、完整头部、鬃毛和上身，随后进入观察停顿。底部、左侧和右侧观察段都只眨眼 <code>1</code> 次，闭眼保持约两个采样步后重新睁眼；观察段始终保留各方向同一张睁眼身体底图和同一屏幕边缘注册位置，只允许叠加 <code>lion_bottom/left/right_peek_blink.svg</code> 眼部透明覆盖层，手爪、头部、鬃毛、身体高度和控件位置均不得随眨眼变化。眨眼覆盖层结束并重新睁眼后，才允许第 <code>9-11</code> 帧进入独立蓄力阶段，让双爪持续压住对应屏幕边缘并只完成一次重心下沉。底部起跳的 <code>9</code> 帧必须按“压低后开始伸展 → 双手离边 → 身体持续上升 → 仅一次收腿 → 双臂举高并自然展开 → 双腿向下准备落地”单向推进，离边后禁止再次回到下蹲或坐姿，手臂也不得出现“下垂—举高—再下垂—再举高”的反复。底部腾空帧在约 <code>0.48s</code> 内播放，逐帧姿势约 <code>18fps</code>；三个方向的位置轨迹均继续按每个渲染帧沿贝塞尔曲线插值。</li>
+<li>三个方向都禁止复用头像、透视 Shader 或控件横纵缩放来冒充姿势变化，支撑阶段双爪必须锁定物理屏幕边缘，离边后才前往角色展位中心。边缘接触帧与居中腾空帧的注册差必须在起跳首帧按方向补偿，并在跳跃前 <code>28%</code> 路程内平滑释放，不能让角色刚离边就横向或纵向闪移。小狮子到达展位后，入场层只在落地阶段完成唯一一次位置缓冲，并从边缘展示尺寸连续缩放到展位的 <code>164px</code> 尺寸；接触展位后必须清空方向入场纹理，并立即切换为一张不透明的完整中央狮子位图，禁止在运行时叠加独立身体和手臂层，也禁止透明混合或形变插帧，以免产生断臂接缝、第二只手臂、尾巴重影、闪动或肢体伸缩。落地结束后的抵达庆祝必须锁定角色中心坐标、展位尺寸和 <code>0</code> 旋转，只允许切换同一注册画布的完整角色帧，不得再次上下位移、旋转或缩放身体。</li>
+<li>中央角色使用图片生成模型绘制的完整角色位图：<code>lion_king_center_full_wave_00.png</code> 包含已经烘焙为一个整体的头、皇冠、鬃毛、身体、双臂、双腿和尾巴，并使用 <code>400 x 400</code> 透明注册画布；运行时只能显示一张完整纹理，不存在固定身体底图或独立手臂叠层。角色从屏幕边缘完成落地并切换到中央展位后，必须立即固定为第 <code>0</code> 张微笑画面；抵达交接过程、等待奖励和奖励结束后都不得播放挥手、欢呼、调皮、呼吸缩放或其它循环动作。发放真实金币奖励时切换到专用完整角色帧 <code>lion_king_center_coin_toss_00.png</code> 至 <code>06.png</code>，约 <code>0.84s</code> 单向播放“腹前双手捧住金币堆 → 胸前托起 → 双手向上送出 → 双臂同时举至皇冠两侧 → 金币向头顶上方爆开 → 空手向外回收 → 双手落回胸前”；含金币的蓄力帧禁止倒放，不能让金币飞回手里。七帧的头、皇冠、鬃毛、躯干、腿和尾巴必须锁定同一注册位置，双肩和双臂烘焙在完整角色中，禁止单臂挥手、运行时拼接或按奖励数量拉伸动作时长。模型母版保存在 <code>docs/animation_sources/lion_center_coin_toss_model_sheet.png</code>，由 <code>tools/extract_lion_center_coin_toss_frames.gd</code> 离线去除模型返回的 RGB 棋盘格并输出透明注册帧。EXCELLENT 在花瓣结束前约 <code>0.34s</code> 提前进入捧币蓄力，消除花瓣结束后的静态停顿；动作开始约 <code>0.37s</code>、双手达到头顶释放姿势时，同步生成 <code>12</code> 枚 <code>20px</code> 装饰金币沿更高、更宽的上抛扇形轨迹散开并淡出，释放仍发生在花瓣完全结束之后。装饰金币须采用确定性的错层参数：在约 <code>0.08s</code> 内分批起飞，最高点上下差至少约 <code>58px</code>，同时改变飞行时长、前后缩放层级、落点和旋转，使空中分布自然错落而非排列成平齐横线；装饰金币不改变真实奖励数量、余额和到账音效。动作结束立即回到第 <code>0</code> 张微笑画面永久静止，不得继续挥手。中央帧动画器只注册 <code>coin_toss</code> 这一条动作轨道；wave/cheer/playful 轨道已经从运行时代码移除，原 <code>lion_king_center_full_wave_01.png</code> 至 <code>06.png</code> 文件仅作为待确认删除的历史素材保留且不再预加载。肩部必须与躯干连续连接，禁止断臂接缝、独立肢体层、直角钩形、柱状手臂或运行时形变。旧的中央固定身体 + <code>lion_king_center_arm_00.svg</code> 至 <code>12.svg</code> 独立手臂、<code>lion_king_center_landing.svg</code> 以及本分支已拒绝的独立曲肘位图方案均标记为废弃；历史资源保留待确认删除，但不进入当前结算页运行逻辑。GOOD 的飞币由入场完成事件触发，不使用固定时长计时器；EXCELLENT 的入场可与撒花同时进行，双手捧币蓄力允许与最后 <code>0.34s</code> 花瓣淡出重叠，但装饰金币和真实金币仍须在花瓣结束后释放。</li>
+<li>结算页只展示真实产生的金币奖励，不展示没有后续用途的“获得皇冠 +1”虚拟奖励；奖励行只保留金币图标和右侧金色大号账户余额，不再显示 <code>coins / 金币奖励</code> 文字。关卡顶部余额保持 <code>24px</code> 和至少 <code>62 x 44px</code> 的紧凑固定布局；结算页余额改为按实际位数自适应：一至六位分别使用 <code>38/36/34/32/29/26px</code> 字号以及至少 <code>42/58/76/94/108/122px</code> 数字区宽度，七位及以上使用 <code>23px</code> 并依据字体实测继续扩宽。结算金币图标使用 <code>44 x 44px</code>；金币图标和数字裁切区之间必须插入独立的 <code>28px</code> 布局占位节点，不依赖 HBox 主题 separation，数字区左侧另保留 <code>8px</code> 内边距，使图标控件右边缘到数字字形起点至少约 <code>36px</code>。奖励组保持整体居中，使金币相对向左、数字相对向右展开。滚动动画开始前按 <code>max(初始余额位数, 目标余额位数)</code> 一次性锁定本轮字号和数字区宽度，滚动过程中不得改变布局；动画停止后才允许按最终余额位数收紧，例如 <code>99→100</code> 全程使用三位规格，<code>100→99</code> 停止后才收紧为两位规格。通关奖励可以立即写入钱包和存档，但关卡页顶部必须继续显示奖励前余额，禁止在局内完成庆祝阶段提前展示增加；只有结算页负责可见的到账过程。结算页必须接收钱包交易返回的明确到账前、到账后余额，并在奖励行首次显示前写入到账前余额，首帧不得显示组件默认的 <code>0</code>、上一局残留余额或已经到账后的余额；页面淡入和 Excellent 撒花期间都保持该奖励前余额。GOOD 在入场结束后立即启动约 <code>0.84s</code> 的双手托举抛币动作；EXCELLENT 则在花瓣结束前约 <code>0.34s</code> 开始同一蓄力动作，并在动作开始约 <code>0.37s</code> 的头顶释放点、花瓣已经结束后，同时撒出装饰金币和第一枚真实奖励金币。与奖励数量一致的真实金币继续沿交错弧线逐枚飞向奖励行金币图标，角色不等待所有金币抵达才收手。数字宽度更新后必须等待容器完成布局，再以金币图标的实际全局中心建立飞行终点，禁止使用旧布局位置或奖励行边界作为接收焦点；每枚金币落入时只触发目标图标的轻微回弹，余额在全部飞币完成前保持初始值。最后一枚金币完全落入后，余额使用单个 Tween 启动一次滚筒动画：只展示少量抽样中间值，不逐金币排队计数，前段快速掠过、末段减速并精确停在用户当前持有的金币总数。大额消费仍最多构建 <code>10</code> 个可见滚动步骤，在保持结束值和总时长正确的同时避免大量 Tween 导致手机掉帧。真实飞行金币固定使用移动端小尺寸，不能被素材原始尺寸撑大或飞出结果页。抛币动作结束后小狮子立即恢复微笑静止画面，数字滚筒停止后也不再追加挥手或其它角色动作；整段结算动画按奖励数量控制在约 <code>2.15-3.3s</code>。金币已在结算状态写入时落盘，装饰散币不得写入经济系统，动画不得延迟或重复发放。</li>
+<li>当前飞币起点不再使用固定 <code>0.45s</code> 页面计时：GOOD 等待小狮子入场完成；EXCELLENT 在小狮子已入场的前提下，于花瓣结束前约 <code>0.34s</code> 提前进入双手捧币蓄力，花瓣结束后立即衔接金币释放。</li>
 <li>关卡完成会记录耗时、步数、提示数、直找次数、道具使用次数和难度收益；同时更新本组合的通关 Beta 后验，并在打开下一关、次日回访或失败时更新对应 Beta 与分层 Dirichlet 反馈。收益计算的耗时上限为 15 分钟。</li>
 <li>成功打开下一关会为上一局补记继续游玩收益；次日 24 小时内再次打开会为所有符合条件的完成局补记次留收益。</li>
 </ul>
@@ -789,6 +796,10 @@ figcaption {
 <li>新存档默认读取设备系统 locale；中文、阿拉伯语、法语和拉丁语分别映射为 <code>zh</code>、<code>ar</code>、<code>fr</code>、<code>la</code>，其它系统语言回退为英语 <code>en</code>。</li>
 <li>当前支持 English、中文、العربية、Français、Latina 五种语言。</li>
 <li>关卡页顶部齿轮按钮打开统一风格的游戏设置弹窗；用户可选择语言并调整音乐、音效和震动反馈，点击“应用”后立即刷新界面。</li>
+<li>顶部设置入口使用 <code>assets/ui/settings.svg</code> 纯路径齿轮图标，不依赖 Unicode <code>⚙</code> 字形；图标必须在 <code>46×46px</code> 点击区内水平、垂直居中，并使用清晰的 <code>5px</code> 深蓝描边，在 iOS、Android 和编辑器中保持一致可见。</li>
+<li>顶部帮助入口使用 <code>assets/ui/help.svg</code> 纯路径问号图标，不依赖字体中的 <code>?</code> 字形；图标同样在 <code>46×46px</code> 点击区内居中，并使用 <code>5px</code> 深蓝描边。</li>
+<li>顶部返回首页入口使用 <code>assets/ui/home.svg</code> 纯路径房屋图标，不依赖 Unicode 房屋字符；图标必须在 <code>52×52px</code> 点击区内居中。首页、帮助和设置三个图标按钮在 iOS、Android 与编辑器中使用相同的居中规则。</li>
+<li>所有承担图形含义的功能图标必须使用独立图标资源或 Godot 绘制控件，不得用 Unicode/Emoji 字符代替；当前主页、红心、设置、教程手指、皇冠、完成勾、左右翻页、颜色方块和下一步箭头由 <code>assets/ui/*.svg</code> 提供。棋盘、角色、背景和逐帧动画等贴图/纹理可继续使用适合的现有格式，不因本规则强制转换为 SVG；普通文字、数字、标点和数学符号也不受此限制。</li>
 <li>用户主动选择的语言保存到存档，后续启动优先使用已保存语言，不再覆盖为系统语言。</li>
 <li>所有运行时界面文案由 <code>scripts/localization_controller.gd</code> 注册、格式化并统一刷新控件树；页面脚本不得通过硬编码中文绕过本地化控制器。工具栏、状态胶囊、Tooltip、帮助页 Tab 和统一弹窗都必须随当前语言即时更新。</li>
 <li>阿拉伯语启用 RTL 页面方向，并使用随包发布的 Noto Sans Arabic fallback；中文继续使用 Noto Sans SC，英语、法语和拉丁语使用同一字体的拉丁字符。</li>
@@ -798,7 +809,7 @@ figcaption {
 <ul>
 <li><code>LocalizationController</code> 负责系统语言识别、五语言翻译资源注册、动态文案格式化和 RTL 判断。</li>
 <li><code>scripts/dialogs/settings_dialog_content.gd</code> 统一承载语言、音乐、音效和震动反馈设置。三项开关均使用“左侧本地化标签＋右侧 On/Off 状态按钮”的独立行，按钮高度不得小于 <code>44px</code>，开启和关闭状态必须同时通过文字、颜色和边框表达，不能依赖 Android 下会丢失轨道或 pressed 字体颜色的默认 <code>CheckButton</code> 主题。<code>main.gd</code> 负责设置入口、布局方向切换以及 <code>selectedLanguage / musicEnabled / sfxEnabled / hapticsEnabled</code> 的存取；旧存档缺失任一音频或震动字段时默认开启。音乐开关当前控制 EXCELLENT 结算的欢快庆祝音乐，音效开关独立控制飞币、数字滚轮及其它操作反馈。</li>
-<li><code>assets/ui/</code> 中由游戏运行时加载的金币、拼块底砖、小狮子头像和结算逐帧动画统一使用真实 SVG 路径素材；不得保留 PNG 运行时副本，也不得在 SVG 中嵌入 base64 位图。Godot 代码和场景只能引用 <code>.svg</code> 源文件，确保不同 DPI 和缩放比例下边缘稳定。<code>docs/prd_screenshots/</code> 中用于产品验收的运行截图不属于游戏素材，可以继续保留 PNG。</li>
+<li><code>assets/ui/</code> 中承担按钮或状态含义的图标使用独立资源，避免字体缺字导致空白；金币、拼块底砖、小狮子头像、背景及结算逐帧动画属于贴图/纹理，可按画质、包体和性能需要使用 SVG、PNG、WebP 等合适格式。<code>docs/prd_screenshots/</code> 中用于产品验收的运行截图不属于游戏运行素材。</li>
 </ul>
 <p>回归测试重点：</p>
 <ul>
@@ -820,30 +831,42 @@ figcaption {
 <li>皇冠直找使用独立的“木质确认 + 轻金属 + 金色闪光”揭示音，不与普通正确皇冠完全相同。</li>
 <li>通关音效使用与棋盘 2.3 秒庆祝时间轴同步的上行旋律、扫光闪烁和最终和弦，不得刺耳或产生削波；普通 UI 点击音只用于重要按钮，避免每个页面动作都播放声音。</li>
 <li>拼块阶段必须覆盖完整交互链：方块超过拖动阈值后播放拿起音；进入新的合法吸附点播放轻量吸附音；成功放置按照块包含的 cell 数使用小、中、大三档落位音；完成颜色区域时保留对应落块重量并叠加区域完成上行音；无效释放、返回托盘、颜色区域完成、死局、复活、全部清除和整盘压平转换均使用独立语义反馈。托盘连续横滑不循环播放声音。</li>
-<li>拼块整盘完成音效与 <code>AssemblyView.play_flatten_transition()</code> 同时开始，包含落位、沉降和转换闪光层；最终直找补齐整盘时同样必须执行该完成音效。</li>
+<li>拼块整盘完成音效与 <code>AssemblyView.play_flatten_transition()</code> 同时开始，包含落位、沉降和转换闪光层；最终直找补齐整盘时同样必须执行该完成音效。压平 Tween 由 <code>AssemblyView</code> 独占，重新配置、离开页面或切换玩法时必须取消；主流程只在 Tween 正常完成且仍处于 <code>transition</code> 阶段时进入皇冠阶段。</li>
 <li>第一轮素材位于 <code>assets/audio/candidates/</code>，映射说明位于 <code>assets/audio/README.md</code>，可由 <code>tools/generate_audio_sfx.py</code> 确定性重新生成。</li>
 <li><code>scripts/audio_controller.gd</code> 统一管理音量、随机变体、滑动标记/擦除/拼块吸附节流和并发播放；页面脚本只调用语义化播放方法，不直接散落加载与播放逻辑。运行时使用普通操作、UI、庆祝三组独立播放器池，优先复用空闲播放器，避免高频操作截断庆祝尾音；庆祝音播放期间普通操作总线暂时降低约 3.5 dB，并在尾音结束后平滑恢复。Master 总线运行时安装 <code>-1 dB</code> ceiling 的 Limiter，避免组合音效产生削波。</li>
 <li>当前接入事件包括普通 X、取消 X、滑动批量标记与取消、进度化正确皇冠、错误皇冠与红心合并反馈、提示、清除、皇冠直找、通关，以及拼块拿起、吸附、落位、拒绝、退回、区域完成、死局、复活、整盘清除和压平转换。</li>
 </ul>
-<p>候选素材技术规格：<code>44.1 kHz / 16-bit / mono WAV</code>，所有文件必须保留峰值余量且不得削波。</p>
+<p>候选素材技术规格：<code>44.1 kHz / 16-bit / mono WAV</code>，所有文件必须保留峰值余量且不得削波。点击、标记、擦除、拼块、皇冠、提示、金币及通关短音效统一以未压缩 PCM（Godot WAV 导入 <code>compress/mode=0</code>）进入运行包，避免短促瞬态经过有损压缩后在不同手机扬声器上出现颗粒或噪声；较长的 EXCELLENT 结算音乐 <code>result_cheerful.wav</code> 保留 QOA（<code>compress/mode=2</code>）以控制包体。外部有损压缩不得用于替代短音效 PCM。</p>
 <p>音效回归测试重点：</p>
 <ul>
 <li>快速连续画 X 时声音允许节流，但不得削波或截断正在播放的庆祝音效。</li>
+<li>iOS、Android 和编辑器中的短促操作音效不得出现由有损导入导致的砂噪、前回声或瞬态变形；发布包需确认除 <code>result_cheerful.wav</code> 外的候选 WAV 均以 PCM 导入，结算音乐继续使用 QOA。</li>
 <li>拼块只有在越过拖动阈值后播放拿起音；同一吸附点停留不重复播放，切换到新合法点才播放下一次。</li>
 <li>小、中、大块落位能够听出重量差异；非法释放、返回托盘、死局与复活语义互不混淆。</li>
 <li>最后一块手动落位和皇冠直找自动补齐均播放完整转换音，并与 0.88 秒压平动画同步。</li>
 <li>正确皇冠的音高随进度轻微上升；最后一只小狮子的短确认音可与 2.3 秒通关乐句衔接，错误时不得再同时叠加独立扣心声。</li>
-<li>正确选择皇冠时，小狮子执行约 <code>0.72s</code> 的两段开心弹起并出现短暂金色亮点；弹起过程中头像由普通微笑平滑过渡到弯月笑眼、嘴角上扬的开心表情，短暂停留后回到稳定皇冠头像，不得闪切。错误选择时，已有委屈表情必须在红色 X 上方清晰停留后淡出，并以约 <code>0.82s</code> 的进入、下沉、退场节奏和扣心反馈同步，不能只显示红 X 或只左右抖动。</li>
-<li>EXCELLENT 结算播放延迟加载的柔和欢快音乐 <code>result_cheerful.wav</code>，旋律使用低亮度木质与卡林巴音色，禁止尖锐玻璃高频；GOOD 结算不播放该音乐。EXCELLENT 使用 32 枚花瓣、总时长约 <code>4.8s</code>。结算页显示后必须等待嵌套 Container 完成布局，再以小狮子的实际全局中心建立落点；花瓣从屏幕顶部持续向下飘落，穿过标题区域时保持清晰可见，只在最后约 <code>14%</code> 路程、已经进入小狮子主体附近后逐渐淡出消失，不再把标题或金币图标作为散花落点。最后一枚花瓣结束后不得增加人工停顿，立即开始从小狮子到金币图标的飞币动画；金币到账使用低频、短尾音的阻尼落槽声，禁止高频双金属长鸣。最后一枚金币到达后立即启动数字滚筒，滚轮不再播放固定时长的连续棘轮录音，而是由数字动画在每个真实可视步结束时发出一次短促、柔和的系统选择器式刻度音，刻度间隔跟随 Tween 逐步减速；最终一格由独立的低频锁定音收尾，不与刻度音叠加。三段视觉动作严格按“撒花 → 飞币 → 数字滚动”串行衔接，音乐本身在撒花后主动降低编配密度，为金币音效留出空间。页面提前关闭时统一取消尚未开始的阶段、正在运行的 Tween 和音乐。所有素材由 <code>tools/generate_audio_sfx.py</code> 使用固定种子确定性生成，不依赖外部版权资源。</li>
+<li>正确选择皇冠时，小狮子在“微笑双弹”和“微笑摇摆庆祝”中随机选择一种约 <code>0.72s</code> 的连续动作并出现短暂金色亮点；位移、缩放和旋转按每个渲染帧插值，头像由普通微笑平滑过渡到弯月笑眼、嘴角上扬的开心表情，短暂停留后回到稳定皇冠头像，不得闪切。错误选择时，已有委屈表情必须在红色 X 上方清晰停留后淡出，并以约 <code>0.82s</code> 的进入、歪头下沉、退场节奏和扣心反馈同步，不能只显示红 X 或只左右抖动。</li>
+<li>EXCELLENT 结算播放延迟加载的柔和欢快音乐 <code>result_cheerful.wav</code>，旋律使用低亮度木质与卡林巴音色，禁止尖锐玻璃高频；GOOD 结算不播放该音乐。EXCELLENT 使用 32 枚花瓣、总时长约 <code>4.8s</code>。花瓣统一使用可运行时染色的白色中性矢量素材 <code>assets/ui/petal_neutral.svg</code>，素材通过浅灰明暗、中心叶脉、柔和高光，以及右侧和底部逐渐加深的局部边缘阴影保留轻微真实厚度；阴影不能形成整圈深色描边。每轮动画随机打乱完整多色花瓣色板，不能退化为单色或固定颜色顺序。结算页显示后必须等待嵌套 Container 完成布局，再以小狮子的实际全局中心建立落点；花瓣从屏幕顶部持续向下飘落，位置始终沿现有二次贝塞尔曲线推进，并只用横向缩放模拟柔和翻面，不得让翻面偏移曲线路径。花瓣穿过标题区域时保持清晰可见，只在最后约 <code>14%</code> 路程、已经进入小狮子主体附近后逐渐淡出消失，不再把标题或金币图标作为散花落点。花瓣结束前约 <code>0.34s</code> 可让小狮子提前开始捧币蓄力，但装饰金币、真实奖励金币和到账音效均须等花瓣完全结束后再触发；最后一枚花瓣结束后不得增加人工停顿。金币到账使用低频、短尾音的阻尼落槽声，禁止高频双金属长鸣。最后一枚金币到达后立即启动数字滚筒，滚轮不再播放固定时长的连续棘轮录音，而是由数字动画在每个真实可视步结束时发出一次短促、柔和的系统选择器式刻度音，刻度间隔跟随 Tween 逐步减速；最终一格由独立的低频锁定音收尾，不与刻度音叠加。视觉阶段按“撒花（尾段允许角色蓄力）→ 金币释放与飞入 → 数字滚动”衔接，音乐本身在撒花后主动降低编配密度，为金币音效留出空间。页面提前关闭时统一取消尚未开始的阶段、正在运行的 Tween 和音乐。所有音频素材由 <code>tools/generate_audio_sfx.py</code> 使用固定种子确定性生成，不依赖外部版权资源。</li>
+<li><code>result_cheerful.wav</code> 使用较轻的暖色铺底、短尾卡林巴主旋律、低音量大三度回应和强弱交替的低木质节拍形成轻快弹跳感；不叠加沙锤、刷奏、擦奏或带通噪声打击层，花瓣阶段不得出现周期性的高频摩擦声。</li>
 </ul>
 <h2>7. 关键参数</h2>
-<div class="table-wrap"><table><thead><tr><th>参数</th><th>当前值</th><th>位置</th><th>说明</th></tr></thead><tbody><tr><td>初始金币</td><td>10</td><td><code>INITIAL_COIN_COUNT</code></td><td>新存档默认金币；已有存档保留原金币余额</td></tr><tr><td>初始免费提示</td><td>5</td><td><code>INITIAL_HINT_COUNT</code></td><td>新存档默认提示次数；旧存档保留原有剩余数量</td></tr><tr><td>初始皇冠直找</td><td>3</td><td><code>INITIAL_CROWN_FIND_COUNT</code></td><td>新存档默认直找皇冠次数</td></tr><tr><td>展示关卡基础奖励</td><td>1 / 2 / 3 / 4 / 5</td><td><code>CoinRewardPolicy.base_reward_for_display_level()</code>、<code>SIZE_UNLOCK_DISPLAY_LEVELS</code></td><td>对应第 1 / 11 / 80 / 160 / 240 关起的阶段</td></tr><tr><td>Excellent 奖励</td><td><code>ceil(base × 1.3)</code></td><td><code>CoinRewardPolicy.EXCELLENT_REWARD_MULTIPLIER</code></td><td>仅初始体力大于 1 且零体力损失时触发，同时播放花瓣动画</td></tr><tr><td>Good 奖励</td><td><code>base</code></td><td><code>CoinRewardPolicy.completion_reward()</code></td><td>单体力关卡或发生过体力损失，无花瓣动画</td></tr><tr><td>逻辑提示价格</td><td>最近 3 关实际奖励之和</td><td><code>HINT_REWARD_WINDOW</code></td><td>免费提示耗尽后核销；不足记录用历史关卡 base 补齐</td></tr><tr><td>皇冠直找价格</td><td>最近 6 关实际奖励之和</td><td><code>CROWN_FIND_REWARD_WINDOW</code></td><td>免费直找耗尽后核销；不足记录用历史关卡 base 补齐</td></tr><tr><td>清除价格</td><td>0</td><td><code>_clear_board()</code></td><td>永久免费，清理普通 X、普通皇冠和错误红色 X，保留两类提示皇冠</td></tr><tr><td>保盘复活价格</td><td>2 × 本关奖励基数</td><td><code>TOOL_REVIVE</code></td><td>红心耗尽后恢复 1 颗红心</td></tr><tr><td>每关红心</td><td>1-10 关为 3；11-30 关为 2；31 关起为 1</td><td><code>_heart_limit_for_display_level()</code></td><td>正式关卡每次进入/重试时按展示关卡序号重置</td></tr><tr><td>关卡红心动效</td><td>静态显示</td><td><code>LevelPageBase.set_hearts()</code>、<code>_update_heart_label()</code></td><td>局内不创建持续循环 Tween；失去的红心立即变灰，全部红心始终保持正常大小</td></tr><tr><td>默认棋盘尺寸</td><td>5x5-9x9</td><td><code>data/levels.json</code></td><td>由关卡导演按进度解锁</td></tr><tr><td>普通玩法组合推荐</td><td>Dirichlet + Beta-Bernoulli + Thompson Sampling</td><td><code>scripts/level_director.gd</code></td><td>反馈信号包括通关、失败、下一关开启和次日留存</td></tr><tr><td>新 size 冷启动</td><td>新 size Dirichlet 加成，优先 Medium</td><td><code>LevelDirector._apply_size_release_policy()</code></td><td>新 size 开放时衰减旧 size 的历史探索权重</td></tr><tr><td>最低曝光配额</td><td>size 12 局；组合 6 局</td><td><code>MIN_SIZE_EXPOSURE</code>、<code>MIN_COMBO_EXPOSURE</code></td><td>未充分探索的层级优先补足</td></tr><tr><td>无道具难度压力</td><td>连续 3 局未使用道具后提高难度</td><td><code>NO_TOOL_DIFFICULTY_STREAK</code></td><td>最近最大 size 的探测优先 Hard</td></tr><tr><td>道具使用策略</td><td>直找 15%；提示 25%；收益权重 0.08 / 0.28</td><td><code>TOOL_*_PROBABILITY</code>、<code>TOOL_REWARD_*</code></td><td>没有未探测组合后使用最高道具收益权重</td></tr><tr><td>复合拼块最小尺寸</td><td>6x6</td><td><code>LevelDirector.assemblyEnabled</code></td><td>5x5 不进入复合拼块玩法</td></tr><tr><td>复合拼块触发</td><td>10 的整数倍里程碑且尺寸 ≥6</td><td><code>LevelDirector._make_schedule()</code></td><td>其它挑战关和普通关卡直接进入皇冠阶段</td></tr><tr><td>首页拼块入口</td><td>完成新人流程后常驻；第 11 关解锁</td><td><code>_start_home_composite_flow()</code>、<code>LevelDirector.minimum_display_for_size()</code>、<code>CompositeLevelDirector</code></td><td>未满足普通关卡 6x6 size 条件时点击弹窗提示所需关卡且不创建现场；解锁后由普通导演先推荐 size/difficulty class，再按该 size 的独立多项后验采样 Simple/Medium/Hard；退出后恢复主线现场并保留拼块金币净变化</td></tr><tr><td>拼块每日免费</td><td>每日本地日期前 3 个新局</td><td><code>CompositeCoinPolicy.DAILY_FREE_ROUNDS</code></td><td>恢复未完成局和重玩当前局不重复计数或收费；本地日期变化后重置</td></tr><tr><td>拼块付费入场</td><td>固定 2 金币</td><td><code>CompositeCoinPolicy.PAID_ENTRY_COST</code></td><td>当日第 4 个新局起收取；共享结算页按钮预显价格，点击后弹窗确认，进入新关卡页才播放扣币动画；余额不足不创建现场</td></tr><tr><td>拼块 Good 奖励</td><td>2 金币</td><td><code>CompositeCoinPolicy.GOOD_COMPLETION_REWARD</code></td><td>皇冠阶段发生过错误放置；付费局结算后净变化为 0</td></tr><tr><td>拼块 Excellent 奖励</td><td>4 金币</td><td><code>CompositeCoinPolicy.EXCELLENT_COMPLETION_REWARD</code></td><td>皇冠阶段没有错误放置；付费局结算后净增加 2 金币并播放 Excellent 庆祝</td></tr><tr><td>拼块开局 pattern</td><td>第 1-4 局：S/M/S/M</td><td><code>CompositeLevelDirector.OPENING_PATTERN_CYCLE</code></td><td>前四局禁止 Hard；首局固定为恰好 2 个可移动拼块，并能演示真实错误断连与正确同色邻接</td></tr><tr><td>拼块 pattern 探索率</td><td>第 5 局起 50% → 20%</td><td><code>CompositeLevelDirector.exploration_probability()</code></td><td>总样本 30 且每档至少 6 次视为充分；探索时均匀随机，非探索时按后验权重采样</td></tr><tr><td>复合拼块施工颜色</td><td>Simple 1-2；Medium 2；Hard 3</td><td><code>data/composite_levels.json</code>、<code>CompositeLevelStore</code>、<code>tools/generate_composite_levels.py</code></td><td>6x6-9x9 每个基础关卡预生成三档；普通区域至少 3 格，极端分布使用带标记的 2 格小区域回退；每种颜色保留 1 个锁定原色线索格</td></tr><tr><td>复合拼块数量</td><td><code>ceil((C / 2) × factor)</code></td><td><code>scripts/composite_level.gd</code></td><td>factor：Simple 0.5、Medium 0.6、Hard 0.8；正常避免单位块</td></tr><tr><td>复合拼块旋转</td><td>生成时允许 0/90/180/270 度</td><td><code>scripts/composite_level.gd</code></td><td>第一版玩家不主动旋转或镜像</td></tr><tr><td>拼块待放置区</td><td>顶部单行横向，单屏约 3-4 个块，未放置优先、已完成靠后</td><td><code>AssemblyView._tray_slot_layout()</code>、<code>CompositeLevel.sanitize_tray_slots()</code></td><td>超出承载区时左右滚动；slot 使用所属颜色加粗发光边框；释放回收块后自动重新排序并播放轻量 slot 回弹反馈</td></tr><tr><td>拼块直找</td><td>当前颜色剩余最少区域一次填满</td><td><code>_use_assembly_direct_find()</code></td><td>沿用 <code>INITIAL_CROWN_FIND_COUNT</code> 与 <code>TOOL_CROWN_FIND</code> 金币核销</td></tr><tr><td>拼块提示</td><td>未放置合法空位优先，之后提示已放错块</td><td><code>_use_assembly_hint()</code>、<code>AssemblyView.show_piece_hint()</code></td><td>棋盘高亮 + 浮窗显示正确颜色块和位置，不直接修改状态</td></tr><tr><td>拼块转换动画</td><td>0.88 秒，规范允许 0.8-1.4 秒</td><td><code>AssemblyView.play_flatten_transition()</code></td><td>输入锁定，顶部待放置区退出并保留底部工具栏</td></tr><tr><td>默认关卡数</td><td>3270</td><td><code>data/levels.json</code></td><td>MVP 内置关卡；当前包含新增的 6x6、7x7 四档难度扩展</td></tr><tr><td>动态提示皇冠</td><td>非挑战普通关默认显示，实际挑战关屏蔽</td><td><code>LevelDirector.is_challenge_display()</code>、<code>LevelDirector._make_schedule()</code></td><td>10 的整数倍固定挑战；31 关起非 10 倍数的 5 关点位 50% 概率挑战</td></tr><tr><td>启动 Splash 默认候选</td><td>方案 A：小狮子点亮棋盘，<code>0.85-1.40s</code></td><td><code>scripts/overlays/splash_overlay.gd</code>（待实现）</td><td>冷启动播放一次；方案 B 用于拼块入口，方案 C 用于低动效或老玩家变体</td></tr><tr><td>新手引导触发</td><td>新存档启动后立即进入</td><td><code>scripts/main.gd</code></td><td>完成后写入存档，后续不再强制触发</td></tr><tr><td>新手引导形式</td><td>单张 5x5 教程棋盘</td><td><code>TUTORIAL_LEVELS</code></td><td>用同一张棋盘图串联核心操作和规则</td></tr><tr><td>新手引导棋盘</td><td>5x5</td><td><code>TUTORIAL_LEVELS</code></td><td>教程全程不换图，让用户在同一棋盘上逐步找出全部皇冠</td></tr><tr><td>新手引导跳过</td><td>允许</td><td>顶部“跳过”按钮</td><td>二次确认后视为完成并进入第 1 关</td></tr><tr><td>新手引导跳过入口</td><td>教程中显示</td><td>顶部“跳过”按钮</td><td>正式关卡页隐藏</td></tr><tr><td>新人流程按钮</td><td>首页常驻</td><td><code>_replay_tutorial_preserving_progress()</code></td><td>保存正式现场后重新进入教程</td></tr><tr><td>教程完成反馈</td><td>找完教学地图全部皇冠后显示开始挑战或返回关卡</td><td><code>_show_tutorial_challenge_ready()</code></td><td>有正式快照时恢复原关卡，否则进入第 1 关</td></tr><tr><td>全局 UI 字体</td><td>Noto Sans SC + Noto Sans Arabic</td><td><code>assets/fonts/</code>、<code>project.godot</code></td><td>字体随项目打包，中文和阿拉伯语不依赖系统字体回退</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>参数</th><th>当前值</th><th>位置</th><th>说明</th></tr></thead><tbody><tr><td>初始金币</td><td>2</td><td><code>INITIAL_COIN_COUNT</code></td><td>新存档默认金币；已有存档保留原金币余额</td></tr><tr><td>初始免费提示</td><td>2</td><td><code>INITIAL_HINT_COUNT</code></td><td>新存档默认提示次数；旧存档保留原有剩余数量</td></tr><tr><td>初始皇冠直找</td><td>1</td><td><code>INITIAL_CROWN_FIND_COUNT</code></td><td>新存档默认直找皇冠次数；旧存档高于初始值的剩余次数不得被截断</td></tr><tr><td>展示关卡基础奖励</td><td>1 / 2 / 3 / 4 / 5</td><td><code>CoinRewardPolicy.base_reward_for_display_level()</code>、<code>SIZE_UNLOCK_DISPLAY_LEVELS</code></td><td>对应第 1 / 30 / 80 / 160 / 240 关起的阶段</td></tr><tr><td>Excellent 奖励</td><td><code>ceil(base × 1.3)</code></td><td><code>CoinRewardPolicy.EXCELLENT_REWARD_MULTIPLIER</code></td><td>仅初始体力大于 1 且零体力损失时触发，同时播放花瓣动画</td></tr><tr><td>Good 奖励</td><td><code>base</code></td><td><code>CoinRewardPolicy.completion_reward()</code></td><td>单体力关卡或发生过体力损失，无花瓣动画</td></tr><tr><td>逻辑提示价格</td><td>最近 3 关实际奖励之和</td><td><code>HINT_REWARD_WINDOW</code></td><td>免费提示耗尽后核销；不足记录用历史关卡 base 补齐</td></tr><tr><td>皇冠直找价格</td><td>最近 6 关实际奖励之和</td><td><code>CROWN_FIND_REWARD_WINDOW</code></td><td>免费直找耗尽后核销；不足记录用历史关卡 base 补齐</td></tr><tr><td>清除价格</td><td>0</td><td><code>_clear_board()</code></td><td>永久免费，清理普通 X、普通皇冠和错误红色 X，保留两类提示皇冠</td></tr><tr><td>保盘复活价格</td><td>2 × 本关奖励基数</td><td><code>TOOL_REVIVE</code></td><td>红心耗尽后恢复 1 颗红心</td></tr><tr><td>每关红心</td><td>1-10 关为 3；11-30 关为 2；31 关起为 1</td><td><code>_heart_limit_for_display_level()</code></td><td>正式关卡每次进入/重试时按展示关卡序号重置</td></tr><tr><td>关卡红心动效</td><td>静态显示</td><td><code>LevelPageBase.set_hearts()</code>、<code>_update_heart_label()</code></td><td>局内不创建持续循环 Tween；失去的红心立即变灰，全部红心始终保持正常大小</td></tr><tr><td>默认棋盘尺寸</td><td>5x5-9x9</td><td><code>data/levels.json</code></td><td>由关卡导演按进度解锁</td></tr><tr><td>普通玩法组合推荐</td><td>Dirichlet + Beta-Bernoulli + Thompson Sampling</td><td><code>scripts/level_director.gd</code></td><td>反馈信号包括通关、失败、下一关开启和次日留存</td></tr><tr><td>新 size 冷启动</td><td>新 size Dirichlet 加成，优先 Medium</td><td><code>LevelDirector._apply_size_release_policy()</code></td><td>新 size 开放时衰减旧 size 的历史探索权重</td></tr><tr><td>最低曝光配额</td><td>size 12 局；组合 6 局</td><td><code>MIN_SIZE_EXPOSURE</code>、<code>MIN_COMBO_EXPOSURE</code></td><td>未充分探索的层级优先补足</td></tr><tr><td>无道具难度压力</td><td>连续 3 局最低 Medium；连续 6 局最低 Hard；连续 10 局提高 Challenge 压力</td><td><code>NO_TOOL_*_STREAK</code>、<code>LevelDirector._recommended_arm()</code></td><td>只作用于第 10 关后的普通动态推荐；道具使用或失败中断连续计数，逢 10 关及挑战后恢复不受影响</td></tr><tr><td>6x6 解锁前难度加权</td><td>Hard ×1.75；Challenge ×2.25</td><td><code>PRE_SIZE_SIX_*_MULTIPLIER</code></td><td>只在允许尺寸不含 6 时应用；参与配额、探索和 Thompson Sampling</td></tr><tr><td>动态提示数量控制</td><td>连续 3 局无道具通关后按 size 和原提示数概率减量</td><td><code>OpeningKingHintController.adjusted_hint_count()</code></td><td>现有逻辑先决定数量，控制器只减不增；前 10 关、挑战关、挑战后恢复关保持原逻辑</td></tr><tr><td>道具使用策略</td><td>直找 15%；提示 25%；收益权重 0.08 / 0.28</td><td><code>TOOL_*_PROBABILITY</code>、<code>TOOL_REWARD_*</code></td><td>没有未探测组合后使用最高道具收益权重</td></tr><tr><td>复合拼块最小尺寸</td><td>6x6</td><td><code>LevelDirector.assemblyEnabled</code></td><td>5x5 不进入复合拼块玩法</td></tr><tr><td>复合拼块触发</td><td>10 的整数倍里程碑且尺寸 ≥6</td><td><code>LevelDirector._make_schedule()</code></td><td>其它挑战关和普通关卡直接进入皇冠阶段</td></tr><tr><td>首页拼块入口</td><td>完成新人流程后常驻；与 6x6 普通关卡同步在第 30 关解锁</td><td><code>_start_home_composite_flow()</code>、<code>LevelDirector.minimum_display_for_size()</code>、<code>CompositeLevelDirector</code></td><td>拼块入口不得拥有独立解锁阈值；未满足普通关卡 6x6 size 条件时点击弹窗提示所需关卡且不创建现场；解锁后由普通导演先推荐 size/difficulty class，再按该 size 的独立多项后验采样 Simple/Medium/Hard；退出后恢复主线现场并保留拼块金币净变化</td></tr><tr><td>拼块每日免费</td><td>每日本地日期前 3 个新局</td><td><code>CompositeCoinPolicy.DAILY_FREE_ROUNDS</code></td><td>恢复未完成局和重玩当前局不重复计数或收费；本地日期变化后重置</td></tr><tr><td>拼块付费入场</td><td>固定 2 金币</td><td><code>CompositeCoinPolicy.PAID_ENTRY_COST</code></td><td>当日第 4 个新局起收取；共享结算页按钮预显价格，点击后弹窗确认，进入新关卡页才播放扣币动画；余额不足不创建现场</td></tr><tr><td>拼块 Good 奖励</td><td>2 金币</td><td><code>CompositeCoinPolicy.GOOD_COMPLETION_REWARD</code></td><td>皇冠阶段发生过错误放置；付费局结算后净变化为 0</td></tr><tr><td>拼块 Excellent 奖励</td><td>4 金币</td><td><code>CompositeCoinPolicy.EXCELLENT_COMPLETION_REWARD</code></td><td>皇冠阶段没有错误放置；付费局结算后净增加 2 金币并播放 Excellent 庆祝</td></tr><tr><td>拼块开局 pattern</td><td>第 1-4 局：S/M/S/M</td><td><code>CompositeLevelDirector.OPENING_PATTERN_CYCLE</code></td><td>前四局禁止 Hard；首局固定为恰好 2 个可移动拼块，并能演示真实错误断连与正确同色邻接</td></tr><tr><td>拼块 pattern 探索率</td><td>第 5 局起 50% → 20%</td><td><code>CompositeLevelDirector.exploration_probability()</code></td><td>总样本 30 且每档至少 6 次视为充分；探索时均匀随机，非探索时按后验权重采样</td></tr><tr><td>复合拼块施工颜色</td><td>Simple 1-2；Medium 2；Hard 3</td><td><code>data/composite_levels.json</code>、<code>CompositeLevelStore</code>、<code>tools/generate_composite_levels.py</code></td><td>6x6-9x9 每个基础关卡预生成三档；普通区域至少 3 格，极端分布使用带标记的 2 格小区域回退；每种颜色保留 1 个锁定原色线索格</td></tr><tr><td>复合拼块数量</td><td><code>ceil((C / 2) × factor)</code></td><td><code>scripts/composite_level.gd</code></td><td>factor：Simple 0.5、Medium 0.6、Hard 0.8；正常避免单位块</td></tr><tr><td>复合拼块旋转</td><td>生成时允许 0/90/180/270 度</td><td><code>scripts/composite_level.gd</code></td><td>第一版玩家不主动旋转或镜像</td></tr><tr><td>拼块待放置区</td><td>顶部单行横向，单屏约 3-4 个块，未放置优先、已完成靠后</td><td><code>AssemblyView._tray_slot_layout()</code>、<code>CompositeLevel.sanitize_tray_slots()</code></td><td>超出承载区时左右滚动；slot 使用所属颜色加粗发光边框；释放回收块后自动重新排序并播放轻量 slot 回弹反馈</td></tr><tr><td>拼块直找</td><td>当前颜色剩余最少区域一次填满</td><td><code>_use_assembly_direct_find()</code></td><td>沿用 <code>INITIAL_CROWN_FIND_COUNT</code> 与 <code>TOOL_CROWN_FIND</code> 金币核销</td></tr><tr><td>拼块提示</td><td>未放置合法空位优先，之后提示已放错块</td><td><code>_use_assembly_hint()</code>、<code>AssemblyView.show_piece_hint()</code></td><td>棋盘高亮 + 浮窗显示正确颜色块和位置，不直接修改状态</td></tr><tr><td>拼块转换动画</td><td>0.88 秒，规范允许 0.8-1.4 秒</td><td><code>AssemblyView.play_flatten_transition()</code></td><td>输入锁定，顶部待放置区退出并保留底部工具栏</td></tr><tr><td>默认关卡数</td><td>3270</td><td><code>data/levels.json</code></td><td>MVP 内置关卡；当前包含新增的 6x6、7x7 四档难度扩展</td></tr><tr><td>动态提示皇冠</td><td>非挑战普通关默认显示，实际挑战关屏蔽</td><td><code>LevelDirector.is_challenge_display()</code>、<code>LevelDirector._make_schedule()</code></td><td>10 的整数倍固定挑战；31 关起非 10 倍数的 5 关点位 50% 概率挑战</td></tr><tr><td>启动 Splash</td><td>拼块成盘、规则汇聚、狮子戴冠，正常 <code>6.00s</code> / 低动效 <code>2.10s</code></td><td><code>scripts/overlays/splash_overlay.gd</code>、<code>assets/ui/splash/*.svg</code></td><td>冷启动播放一次；16 张纯路径 SVG，加载未完成时停在最终稳定帧；结束后才释放首页或教程路由</td></tr><tr><td>新手引导触发</td><td>新存档启动后立即进入</td><td><code>scripts/main.gd</code></td><td>完成后写入存档，后续不再强制触发</td></tr><tr><td>新手引导形式</td><td>单张 5x5 教程棋盘</td><td><code>TUTORIAL_LEVELS</code></td><td>用同一张棋盘图串联核心操作和规则</td></tr><tr><td>新手引导棋盘</td><td>5x5</td><td><code>TUTORIAL_LEVELS</code></td><td>教程全程不换图，让用户在同一棋盘上逐步找出全部皇冠</td></tr><tr><td>新手引导跳过</td><td>允许</td><td>顶部“跳过”按钮</td><td>二次确认后视为完成并进入第 1 关</td></tr><tr><td>新手引导跳过入口</td><td>教程中显示</td><td>顶部“跳过”按钮</td><td>正式关卡页隐藏</td></tr><tr><td>新人流程按钮</td><td>首页常驻</td><td><code>_replay_tutorial_preserving_progress()</code></td><td>保存正式现场后重新进入教程</td></tr><tr><td>教程完成反馈</td><td>找完教学地图全部皇冠后显示开始挑战或返回关卡</td><td><code>_show_tutorial_challenge_ready()</code></td><td>有正式快照时恢复原关卡，否则进入第 1 关</td></tr><tr><td>全局 UI 字体</td><td>Noto Sans SC + Noto Sans Arabic</td><td><code>assets/fonts/</code>、<code>project.godot</code></td><td>字体随项目打包，中文和阿拉伯语不依赖系统字体回退</td></tr></tbody></table></div>
+<h3>7.1 iPhone 导出基线</h3>
+<ul>
+<li>iOS 导出统一使用与编辑器一致的 Godot <code>4.7.1.stable</code> 官方 <code>ios.zip</code> 模板；模板安装在开发机的 Godot 用户目录，不提交到仓库。</li>
+<li>仓库提供 <code>iOS</code> 和 <code>iOS Release</code> 两个导出预设：仅面向 iPhone、只包含 <code>arm64</code>、最低系统为 iOS 15.0，Bundle ID 为 <code>com.shingosuper.colorking</code>，由 Godot 生成 Xcode 工程后交给 Xcode 自动管理签名。</li>
+<li>Godot 导出的 Xcode 工程必须先运行 <code>tools/prepare_ios_export.sh</code> 再构建；该步骤用版本化的 color king storyboard 名称替换模板默认名称，防止 SpringBoard 继续显示旧 Godot 启动快照。</li>
+<li><code>iOS</code> 保留 Debug 选关能力，仅用于内部调试；iPhone 验收测试和正式发布统一使用 <code>iOS Release</code>，排除 Debug 专用选关脚本。验收测试可以使用 Apple Development 证书签名 Release 构建。</li>
+<li>iOS 导出机必须安装完整 Xcode 和 iOS Platform；仅安装 Xcode Command Line Tools 不满足导出要求。Apple Team ID、证书和描述文件属于本机签名配置，不得提交到仓库。</li>
+<li>iOS 保持 Godot 默认 <code>Ambient</code> 音频会话类别，与 Android 共用同一套音乐、音效资源和游戏内音量配置；iPhone 侧边静音键开启时允许系统静音，不强制切换到 <code>Playback</code> 或 <code>Play and Record</code>。</li>
+<li>当前版本不声明相机、麦克风、相册、追踪、推送、Game Center 或 Wi-Fi 特殊能力；后续接入广告、统计或原生 SDK 时，必须同步更新隐私清单、权限说明和本节。</li>
+</ul>
 <h2>8. 发布前回归测试清单</h2>
 <p>每次正式发布前必须完成：</p>
 <ol>
 <li>运行核心冒烟测试。</li>
 <li>运行新手教程冒烟测试。</li>
-<li>手动验证首页“开始关卡 / 拼块玩法 / 新人流程”三个主要入口；第 10 关及以前拼块入口应显示第 11 关解锁并弹窗拦截，第 11 关起应进入 6x6 拼接阶段，返回首页后主线现场与资源不变。</li>
+<li>手动验证首页“开始关卡 / 拼块玩法 / 新人流程”三个主要入口；第 29 关及以前拼块入口应显示第 30 关解锁并弹窗拦截，第 30 关起应与 6x6 普通关卡同步开放并进入拼接阶段，返回首页后主线现场与资源不变。</li>
 <li>手动验证关卡页在目标移动端尺寸下不溢出。</li>
 <li>新存档手动验证启动后会直接进入单张 5x5 新手教程棋盘。</li>
 <li>手动验证首页“新人流程”按钮可重新进入新手引导，并在完成、跳过或教程中途重启应用后恢复原正式关卡、通关记录和未完成棋盘。</li>
@@ -852,12 +875,14 @@ figcaption {
 <li>手动验证通关结果页、下一关、主菜单。</li>
 <li>如果修改了 <code>data/levels.json</code>，必须确认每关仍唯一解且 <code>logicStatus</code> 为 <code>no_guess</code>。</li>
 <li>如果修改了 <code>data/levels.json</code> 或 <code>data/composite_levels.json</code>，必须重新运行二进制目录构建脚本，并执行 <code>tests/loading_smoke_test.gd</code>；启动时只允许加载普通关卡目录、拼块 manifest 和当前分发 size，不得恢复全量解析 6000 条拼块 JSON。</li>
+<li>如果修改应用图标，必须验证完整合成图背景不透明、自适应前景和单色层保留透明通道，并在圆形与圆角方形蒙版下确认皇冠、狮子脸和伸手动作仍可辨认；Debug 与 Release 导出预设不得回退为把完整方形图同时作为前景层。</li>
 <li>如果修改了存档结构，必须验证旧存档兼容。</li>
 <li>手动确认首页、关卡页、弹窗和关卡编辑器中的中文均正常显示，不出现缺字方框。</li>
 <li>至少完成 1 个 Simple 单/双区域、1 个 Medium 双区域和 1 个 Hard 三区域的 6x6 复合关卡，验证首次动画、Help 重播、顶部单行待放置区左右滚动、3-4 个块可见、颜色发光边框、自动排序、放置撤回、直找、提示浮窗、唯一解转换和中途恢复。</li>
 <li>同一本地日期连续新开 4 个首页拼块局：前 3 局免费；第 3 局共享结算页的“下一局”按钮显示 2 金币价格，点击后在该结算页上方弹出消费确认，取消仍停留结算页，确认后才进入第 4 局并在新关卡页播放从扣除前余额到扣除后余额的动画。中途退出恢复不重复收费。分别验证 Good 结算返还 2 金币、Excellent 结算返还 4 金币；修改为下一本地日期后再次获得 3 个免费局。</li>
 <li>更新本文档对应模块。</li>
 <li>Splash 接入后，分别验证新用户进入教程、已有存档恢复原流程、资源慢加载时不会空白或无限循环、静音/减少动画/跳过入口生效，并确认 Splash 不修改任何正式游戏存档。</li>
+<li>iOS 发布前使用 <code>iOS Release</code> 重新生成 Xcode 工程，确认 Bundle ID、版本号、iPhone-only、最低 iOS 15.0、自动签名和 App 图标均正确；至少在一个 iPhone 模拟器尺寸和一台认可真机上验证启动、触控、安全区、存档和完整通关流程。</li>
 </ol>
 <h2>9. 自动测试命令</h2>
 <p>核心冒烟测试：</p>
@@ -866,6 +891,8 @@ figcaption {
 <pre><code class="language-bash">HOME=/Users/shingo_mac/Documents/Codex/2026-06-29/du-y/work/godot_home /Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/shingo_mac/Desktop/push_sudoku_shingosuper --script res://tests/tutorial_smoke_test.gd</code></pre>
 <p>复合拼块冒烟测试：</p>
 <pre><code class="language-bash">HOME=/Users/shingo_mac/Documents/Codex/2026-06-29/du-y/work/godot_home /Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/shingo_mac/Desktop/push_sudoku_shingosuper --script res://tests/composite_smoke_test.gd</code></pre>
+<p>推荐与提示数量策略测试：</p>
+<pre><code class="language-bash">HOME=/Users/shingo_mac/Documents/Codex/2026-06-29/du-y/work/godot_home /Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/shingo_mac/Desktop/push_sudoku_shingosuper --script res://tests/recommendation_hint_policy_test.gd</code></pre>
 <h2>10. 迭代更新规则</h2>
 <p>每次迭代按以下顺序执行：</p>
 <ol>
