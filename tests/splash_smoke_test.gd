@@ -46,6 +46,7 @@ func _run() -> void:
 	var ios_prepare_source := FileAccess.get_file_as_string("res://tools/prepare_ios_export.sh")
 	assert("CURRENT_PROJECT_VERSION" in ios_prepare_source and "ColorKingLaunchScreenV$build_version" in ios_prepare_source, "iOS export preparation must derive a versioned launch-screen cache key from the build number")
 	assert("for stale_version in 0 1 2" in ios_prepare_source, "iOS export preparation must clean obsolete ColorKingLaunchScreen V0-V2 artifacts")
+	assert("CFBundleSignature NSCameraUsageDescription NSMicrophoneUsageDescription NSPhotoLibraryUsageDescription" in ios_prepare_source, "iOS export preparation must remove unused empty metadata and privacy declarations")
 	assert(splash.title_art is TextureRect, "Splash title should render as a responsive vector texture")
 	assert(splash.animation_player.has_animation(&"splash_brand_reveal"), "Splash should own one AnimationPlayer brand timeline")
 	assert(splash.animation_player.has_animation(&"splash_reduced"), "Splash should provide a reduced-motion timeline")

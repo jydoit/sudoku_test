@@ -113,12 +113,23 @@ HOME=/private/tmp/color_king_ui_capture /Applications/Godot.app/Contents/MacOS/G
 Android 真机验收需要手机开启开发者选项和 USB 调试，并连接到电脑后确认：
 
 ```bash
-/Users/shingo_mac/Documents/Codex/android_toolchain/android-sdk/platform-tools/adb devices
+adb devices
 ```
 
-如果要做自动安卓模拟器验收，需要 Android SDK 的 `emulator` 组件、一个 Android 系统镜像，并用 `avdmanager` 创建 AVD。当前本机工具链已安装 `adb`、build-tools、platform android-35、emulator、Android 30 Google APIs x86_64 系统镜像，并创建了 `color_king_api30` AVD。JDK 路径为 `/Users/shingo_mac/Documents/Codex/android_toolchain/jdk/jdk-17.0.19+10/Contents/Home`。
+如果要做自动安卓模拟器验收，需要 Android SDK 的 `platform-tools`、与 Godot 目标 SDK 对应的 Platform 和 Build-Tools、`emulator` 组件及一个 Android 系统镜像，并用 `avdmanager` 创建 AVD。Godot 编辑器设置中的 Java SDK 使用 JDK 17，Android SDK 目录必须包含 `platform-tools/adb`。
 
 本地模拟器使用 x86_64 系统镜像，Android 调试包需要同时启用 `arm64-v8a` 和 `x86_64`。真机安装主要使用 `arm64-v8a`，模拟器自动验收使用 `x86_64`。
+
+`Android Release` 只导出供 arm64 真机验收的 APK。release keystore 路径和 alias 记录在导出预设中，密码不得写入 `export_presets.cfg`；可在 Godot 导出窗口本机录入，或通过 `GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD` 环境变量提供。命令行导出示例：
+
+```bash
+read -s GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD
+export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . --export-release "Android Release" "./builds/color king.apk"
+unset GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD
+```
+
+四个移动端预设只打包运行时资源。`data/*.json`、`docs/*`、关卡编辑器场景/脚本、离线目录构建脚本、测试和工具均保留在仓库，但不会进入 Android 或 iOS 包；关卡运行时只使用 `data/runtime/*.res`。
 
 ## iPhone 导出准备
 
@@ -157,7 +168,7 @@ sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 ./tools/prepare_ios_export.sh ./builds/ios/color_king_release
 ```
 
-`prepare_ios_export.sh` 会读取 Xcode 工程的 build number，把 Godot 模板固定使用的 `Launch Screen` 名称替换为 color king 专用的版本化名称。修改 iOS 原生启动素材时，需要递增两个 iOS 预设的 build number，脚本会随之生成新的缓存键，避免真机继续显示系统缓存的旧 Godot 启动快照。
+`prepare_ios_export.sh` 会读取 Xcode 工程的 build number，把 Godot 模板固定使用的 `Launch Screen` 名称替换为 color king 专用的版本化名称，同时清理旧 storyboard 引用以及当前未使用的空相机、麦克风、相册隐私说明和空 Bundle Signature。修改 iOS 原生启动素材时，需要递增两个 iOS 预设的 build number，脚本会随之生成新的缓存键，避免真机继续显示系统缓存的旧 Godot 启动快照。
 
 启动当前自动验收模拟器：
 
