@@ -111,7 +111,10 @@ def process(master_path: Path, source_dir: Path, vector_dir: Path) -> None:
 		canvas.alpha_composite(transparent, (3 + COLUMN_REGISTRATION_X[column], 3))
 		canvas = _clean_panel_bleed(canvas, frame_index)
 		if frame_index == 14:
+			# Frame 14 is byte-identical to the approved final frame. Keep it only
+			# in memory so regeneration emits one runtime/source asset at index 15.
 			stable_final_board = canvas.copy()
+			continue
 		elif frame_index == 15 and stable_final_board is not None:
 			# ImageGen cropped the mascot at the last storyboard boundary. Keep the
 			# final board stable; runtime composes the canonical vector mascot above it.

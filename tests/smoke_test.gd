@@ -78,6 +78,7 @@ func _run() -> void:
 	assert(export_config.count("splash_screen/disable_godot_boot_splash=true") == 2, "Both Android presets must suppress the Godot template splash")
 	assert(export_config.count("exclude_filter=\"scripts/dialogs/level_select_dialog_content.gd,") == 2, "Both mobile release presets must exclude the Debug level selector")
 	assert(export_config.count("tests/*,tools/*") == 4, "Every mobile export preset should exclude test and asset-generation sources")
+	assert(export_config.count("docs/prd_screenshots/*") == 4, "Every mobile export preset should exclude documentation screenshots")
 	assert("export_path=\"./builds/color king.apk\"" in export_config, "Release APKs should be written to the ignored builds directory")
 	assert(export_config.count("platform=\"iOS\"") == 2, "Debug and release iOS export presets should both exist")
 	assert(export_config.count("application/targeted_device_family=0") == 2, "iOS exports should target iPhone only")
@@ -172,9 +173,7 @@ func _run() -> void:
 	var ui_asset_directory := DirAccess.open("res://assets/ui")
 	assert(ui_asset_directory != null, "Runtime UI asset directory should be readable")
 	if ui_asset_directory:
-		var allowed_raster_animation_frames := {}
-		for full_wave_frame_index in range(7):
-			allowed_raster_animation_frames["lion_king_center_full_wave_%02d.png" % full_wave_frame_index] = true
+		var allowed_raster_animation_frames := {"lion_king_center_full_wave_00.png": true}
 		for coin_toss_frame_index in range(7):
 			allowed_raster_animation_frames["lion_king_center_coin_toss_%02d.png" % coin_toss_frame_index] = true
 		for ui_asset_name in ui_asset_directory.get_files():
@@ -970,6 +969,11 @@ func _run() -> void:
 		assert(toss_image.get_used_rect().size.x > 200 and toss_image.get_used_rect().size.y > 340, "Every toss key must contain one complete lion, never isolated hands")
 	assert(FileAccess.file_exists("res://docs/animation_sources/lion_center_full_wave_model_sheet.png"), "The complete-lion image-model source sheet should remain available for reproducible extraction")
 	assert(FileAccess.file_exists("res://tools/extract_lion_center_full_wave_frames.gd"), "The offline complete-frame extraction tool should remain with the model source")
+	for retired_wave_frame_index in range(1, 7):
+		assert(not FileAccess.file_exists("res://assets/ui/lion_king_center_full_wave_%02d.png" % retired_wave_frame_index), "Retired complete-lion wave frames must stay deleted")
+	for retired_arm_frame_index in range(13):
+		assert(not FileAccess.file_exists("res://assets/ui/lion_king_center_arm_%02d.svg" % retired_arm_frame_index), "Retired composited arm frames must stay deleted")
+	assert(not FileAccess.file_exists("res://assets/ui/lion_king_center_landing.svg"), "Retired composited landing pose must stay deleted")
 	assert(FileAccess.file_exists("res://docs/animation_sources/lion_center_coin_toss_model_sheet.png"), "The two-handed coin-toss model sheet should remain available for reproducible extraction")
 	assert(FileAccess.file_exists("res://tools/extract_lion_center_coin_toss_frames.gd"), "The two-handed coin-toss extraction tool should remain with its source")
 	assert(not result_lion_frames.animation_player.has_animation("wave"), "The retired wave must not remain callable at runtime")
