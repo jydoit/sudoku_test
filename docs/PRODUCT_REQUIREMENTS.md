@@ -881,7 +881,14 @@ Splash 验收标准：
 - `iOS` 保留 Debug 选关能力，仅用于内部调试；iPhone 验收测试和正式发布统一使用 `iOS Release`，排除 Debug 专用选关脚本。验收测试可以使用 Apple Development 证书签名 Release 构建。
 - iOS 导出机必须安装完整 Xcode 和 iOS Platform；仅安装 Xcode Command Line Tools 不满足导出要求。Apple Team ID、证书和描述文件属于本机签名配置，不得提交到仓库。
 - iOS 保持 Godot 默认 `Ambient` 音频会话类别，与 Android 共用同一套音乐、音效资源和游戏内音量配置；iPhone 侧边静音键开启时允许系统静音，不强制切换到 `Playback` 或 `Play and Record`。
-- 当前版本不声明相机、麦克风、相册、追踪、推送、Game Center 或 Wi-Fi 特殊能力；后续接入广告、统计或原生 SDK 时，必须同步更新隐私清单、权限说明和本节。
+- 当前版本不声明相机、麦克风、相册、追踪、推送、Game Center 或 Wi-Fi 特殊能力；`prepare_ios_export.sh` 必须从生成的 Info.plist 删除 Godot 模板写入的空相机、麦克风、相册用途说明和空 `CFBundleSignature`，避免 Xcode 展示无效权限警告。后续接入广告、统计或原生 SDK 时，必须同步更新隐私清单、权限说明和本节。
+
+### 7.2 Android 与移动端导出基线
+
+- Android Debug 预设保留 `arm64-v8a + x86_64`，分别服务 arm64 真机和本地 x86_64 模拟器；`Android Release` 只保留 `arm64-v8a`，输出用于真机验收的签名 APK。当前应用不申请 Android 运行时权限。
+- Android Release 的 keystore 路径和 alias 可以记录在导出预设中，密码只能保存在本机 `.godot/export_credentials.cfg` 或通过 `GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD` 注入，禁止写入受版本控制的 `export_presets.cfg`。历史上已经暴露的签名材料必须在进入正式商店签名前完成轮换和离线备份。
+- Android、Android Release、iOS 和 iOS Release 四个预设都使用空 `include_filter`，不得强制加入非资源源文件；统一排除 `data/*.json`、`docs/*`、`scenes/level_editor.tscn`、`scripts/level_editor.gd`、`scripts/tools/*`、`tests/*` 和 `tools/*`。Release 预设另外排除 Debug 选关实现。运行时关卡只能来自 `data/runtime/*.res`，不得把约 6000 条拼块源 JSON 或编辑器代码打进移动包。
+- 当前 `Android Release` 为 APK 真机验收流程；提交 Google Play 前必须另建 Gradle/AAB 商店预设，不得把 APK 验收产物直接当作商店交付物。
 
 ## 8. 发布前回归测试清单
 

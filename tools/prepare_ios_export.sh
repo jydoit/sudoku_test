@@ -56,6 +56,11 @@ elif [ ! -f "$new_storyboard" ]; then
 fi
 
 /usr/libexec/PlistBuddy -c "Set :UILaunchStoryboardName $launch_storyboard_name" "$info_plist"
+for unused_info_key in CFBundleSignature NSCameraUsageDescription NSMicrophoneUsageDescription NSPhotoLibraryUsageDescription; do
+	if /usr/libexec/PlistBuddy -c "Print :$unused_info_key" "$info_plist" >/dev/null 2>&1; then
+		/usr/libexec/PlistBuddy -c "Delete :$unused_info_key" "$info_plist"
+	fi
+done
 /usr/bin/perl -0pi -e "s/Launch Screen\\.storyboard/$launch_storyboard_name.storyboard/g" "$xcode_project"
 
 printf 'Prepared iOS launch screen: %s (cache key: %s)\n' "$new_storyboard" "$launch_storyboard_name"
