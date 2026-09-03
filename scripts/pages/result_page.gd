@@ -9,20 +9,7 @@ signal sound_requested(kind: String)
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const CoinRollDisplayScript = preload("res://scripts/components/coin_roll_display.gd")
 const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resource.gd")
-const LION_KING_CENTER_BODY = preload("res://assets/ui/lion_king_center_body.svg")
-const LION_KING_CENTER_ARM_00 = preload("res://assets/ui/lion_king_center_arm_00.svg")
-const LION_KING_CENTER_ARM_01 = preload("res://assets/ui/lion_king_center_arm_01.svg")
-const LION_KING_CENTER_ARM_02 = preload("res://assets/ui/lion_king_center_arm_02.svg")
-const LION_KING_CENTER_ARM_03 = preload("res://assets/ui/lion_king_center_arm_03.svg")
-const LION_KING_CENTER_ARM_04 = preload("res://assets/ui/lion_king_center_arm_04.svg")
-const LION_KING_CENTER_ARM_05 = preload("res://assets/ui/lion_king_center_arm_05.svg")
-const LION_KING_CENTER_ARM_06 = preload("res://assets/ui/lion_king_center_arm_06.svg")
-const LION_KING_CENTER_ARM_07 = preload("res://assets/ui/lion_king_center_arm_07.svg")
-const LION_KING_CENTER_ARM_08 = preload("res://assets/ui/lion_king_center_arm_08.svg")
-const LION_KING_CENTER_ARM_09 = preload("res://assets/ui/lion_king_center_arm_09.svg")
-const LION_KING_CENTER_ARM_10 = preload("res://assets/ui/lion_king_center_arm_10.svg")
-const LION_KING_CENTER_ARM_11 = preload("res://assets/ui/lion_king_center_arm_11.svg")
-const LION_KING_CENTER_ARM_12 = preload("res://assets/ui/lion_king_center_arm_12.svg")
+const ResultLionFrameAnimatorScript = preload("res://scripts/components/result_lion_frame_animator.gd")
 const LION_BOTTOM_ENTRY_00 = preload("res://assets/ui/lion_bottom_entry_00.svg")
 const LION_BOTTOM_ENTRY_01 = preload("res://assets/ui/lion_bottom_entry_01.svg")
 const LION_BOTTOM_ENTRY_02 = preload("res://assets/ui/lion_bottom_entry_02.svg")
@@ -78,13 +65,12 @@ const LION_RIGHT_ENTRY_15 = preload("res://assets/ui/lion_right_entry_15.svg")
 const LION_BOTTOM_PEEK_BLINK = preload("res://assets/ui/lion_bottom_peek_blink.svg")
 const LION_LEFT_PEEK_BLINK = preload("res://assets/ui/lion_left_peek_blink.svg")
 const LION_RIGHT_PEEK_BLINK = preload("res://assets/ui/lion_right_peek_blink.svg")
-const LION_KING_CENTER_LANDING = preload("res://assets/ui/lion_king_center_landing.svg")
 const RESULT_PETAL_TEXTURE = preload("res://assets/ui/petal_neutral.svg")
 const HEART_ICON: Texture2D = preload("res://assets/ui/heart.svg")
 const WARNING_ICON: Texture2D = preload("res://assets/ui/warning.svg")
 const CARD := UITokensScript.SURFACE_CARD
 const INK := UITokensScript.INK
-const RESULT_COIN_START_DELAY := 0.00
+const RESULT_COIN_START_DELAY := 0.37
 const RESULT_COIN_MIN_DURATION := 2.15
 const RESULT_COIN_MAX_DURATION := 3.30
 const RESULT_COIN_FLIGHT_DURATION := 0.72
@@ -93,6 +79,13 @@ const RESULT_COIN_FLIGHT_MAX_STAGGER := 0.16
 const RESULT_COIN_REEL_DURATION := 1.00
 const RESULT_COIN_REEL_SETTLE_HOLD := 0.08
 const RESULT_COIN_FLYER_SIZE := Vector2(29, 29)
+const RESULT_COIN_SCATTER_COUNT := 12
+const RESULT_COIN_SCATTER_SIZE := Vector2(20, 20)
+const RESULT_COIN_SCATTER_DURATION := 0.54
+const RESULT_COIN_SCATTER_STAGGER_MAX := 0.08
+const RESULT_COIN_SCATTER_HEIGHT_VARIANCE := 58.0
+const RESULT_LION_COIN_TOSS_DURATION := 0.84
+const RESULT_LION_COIN_TOSS_PETAL_LEAD := 0.34
 const RESULT_COIN_BALANCE_GAP := 28.0
 const RESULT_PETAL_COUNT := 32
 const RESULT_PETAL_DELAY_MAX := 0.55
@@ -192,43 +185,6 @@ const RESULT_LION_BOTTOM_JUMP_FRAMES := [
 	LION_BOTTOM_JUMP_07,
 	LION_BOTTOM_JUMP_08,
 ]
-const RESULT_LION_WAVE_ARM_FRAMES := [
-	LION_KING_CENTER_ARM_00,
-	LION_KING_CENTER_ARM_01,
-	LION_KING_CENTER_ARM_02,
-	LION_KING_CENTER_ARM_03,
-	LION_KING_CENTER_ARM_04,
-	LION_KING_CENTER_ARM_05,
-	LION_KING_CENTER_ARM_06,
-	LION_KING_CENTER_ARM_07,
-	LION_KING_CENTER_ARM_08,
-	LION_KING_CENTER_ARM_09,
-	LION_KING_CENTER_ARM_10,
-	LION_KING_CENTER_ARM_11,
-	LION_KING_CENTER_ARM_12,
-	LION_KING_CENTER_ARM_11,
-	LION_KING_CENTER_ARM_10,
-	LION_KING_CENTER_ARM_09,
-	LION_KING_CENTER_ARM_08,
-	LION_KING_CENTER_ARM_07,
-	LION_KING_CENTER_ARM_06,
-	LION_KING_CENTER_ARM_05,
-	LION_KING_CENTER_ARM_04,
-	LION_KING_CENTER_ARM_03,
-	LION_KING_CENTER_ARM_02,
-	LION_KING_CENTER_ARM_01,
-	LION_KING_CENTER_ARM_00,
-]
-const RESULT_LION_WAVE_DURATIONS := [
-	0.10,
-	0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04,
-	0.13,
-	0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04,
-	0.13,
-]
-const RESULT_LION_WAVE_LOOP_PAUSE := 0.12
-const RESULT_LION_IDLE_MIN_DURATION := 1.50
-const RESULT_LION_IDLE_MAX_DURATION := 2.70
 const RESULT_PETAL_COLORS := [
 	Color("#FFD45F"),
 	Color("#FF8D9F"),
@@ -244,7 +200,7 @@ var completion_title: Label
 var reward_label: Label
 var result_status_icon: TextureRect
 var result_piece_icon: TextureRect
-var result_lion_arm_icon: TextureRect
+var result_lion_frame_animation: ResultLionFrameAnimator
 var result_reward_label: Label
 var result_coin_roll_row: HBoxContainer
 var result_coin_roll_display: HBoxContainer
@@ -263,7 +219,6 @@ var overlay_mode := "success"
 var result_coin_pulse_tween: Tween
 var result_page_fade_tween: Tween
 var result_lion_tween: Tween
-var result_lion_wave_tween: Tween
 var result_coin_tween: Tween
 var result_lion_coin_arm_tween: Tween
 var result_success_sequence_tween: Tween
@@ -273,7 +228,6 @@ var result_lion_animation_name := ""
 var result_lion_entry_name := ""
 var result_lion_entry_active := false
 var result_lion_celebration_variant := 0
-var result_lion_last_animation_index := -1
 var result_lion_generation := 0
 var result_coin_arrival_sound_values: Dictionary = {}
 var result_is_excellent := false
@@ -380,14 +334,16 @@ func configure(localizer: Callable = Callable()) -> void:
 	showcase_column.add_theme_constant_override("separation", 10)
 	showcase.add_child(showcase_column)
 
-	result_piece_icon = _piece_texture_rect(Vector2(164, 164), LION_KING_CENTER_BODY)
+	# This node owns layout only. The child displays one fully baked lion frame;
+	# there is never a separate body texture underneath it at runtime.
+	result_piece_icon = _piece_texture_rect(Vector2(164, 164), null)
 	showcase_column.add_child(result_piece_icon)
-	result_lion_arm_icon = _piece_texture_rect(Vector2.ZERO, LION_KING_CENTER_ARM_00)
-	result_lion_arm_icon.name = "ResultLionArm"
-	result_piece_icon.add_child(result_lion_arm_icon)
-	result_lion_arm_icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	result_lion_arm_icon.show_behind_parent = true
-	result_lion_arm_icon.hide()
+	result_lion_frame_animation = ResultLionFrameAnimatorScript.new()
+	result_lion_frame_animation.name = "ResultLionFrameAnimator"
+	result_piece_icon.add_child(result_lion_frame_animation)
+	result_lion_frame_animation.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	result_lion_frame_animation.show_behind_parent = false
+	result_lion_frame_animation.hide()
 
 	result_status_icon = TextureRect.new()
 	result_status_icon.name = "ResultStatusIcon"
@@ -668,7 +624,7 @@ func play_coin_animation(reward: int, balance_before: int, balance_after: int) -
 	result_reward_coin_icon.pivot_offset = result_reward_coin_icon.size * 0.5
 	var source := _control_point_in_flight_layer(
 		result_piece_icon,
-		Vector2(result_piece_icon.size.x * 0.70, result_piece_icon.size.y * 0.50 + 4.0)
+		Vector2(result_piece_icon.size.x * 0.50, result_piece_icon.size.y * 0.07)
 	)
 	var target := _control_center_in_flight_layer(result_reward_coin_icon)
 	var stagger := RESULT_COIN_FLIGHT_MAX_STAGGER
@@ -693,9 +649,10 @@ func play_coin_animation(reward: int, balance_before: int, balance_after: int) -
 		+ RESULT_COIN_REEL_DURATION
 	)
 	var completion_hold := maxf(RESULT_COIN_REEL_SETTLE_HOLD, RESULT_COIN_MIN_DURATION - sequence_duration)
-	_start_result_lion_coin_arm_toss(flight_sequence_duration)
+	_start_result_lion_coin_arm_toss()
 	result_coin_tween = create_tween()
 	result_coin_tween.tween_interval(RESULT_COIN_START_DELAY)
+	result_coin_tween.tween_callback(_launch_result_coin_scatter.bind(source))
 	for index in range(reward):
 		result_coin_tween.tween_callback(
 			_launch_result_coin_flyer.bind(index, reward, balance_after, source, target)
@@ -707,7 +664,7 @@ func play_coin_animation(reward: int, balance_before: int, balance_after: int) -
 	result_coin_tween.tween_callback(func() -> void:
 		result_coin_roll_display.set_value(balance_after)
 		result_reward_coin_icon.scale = Vector2.ONE
-		_start_random_result_lion_animation()
+		_set_result_lion_idle_pose()
 	)
 
 
@@ -756,6 +713,84 @@ func _launch_result_coin_flyer(index: int, reward: int, balance_after: int, sour
 	flight_tween.tween_callback(_on_result_coin_flyer_arrived.bind(flyer, index + 1, reward, balance_after))
 
 
+func _launch_result_coin_scatter(source: Vector2) -> void:
+	if not result_coin_flight_layer or not self.visible or overlay_mode != "success":
+		return
+	for index in range(RESULT_COIN_SCATTER_COUNT):
+		var coin := TextureRect.new()
+		coin.name = "ResultCoinScatter%02d" % index
+		coin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		coin.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		coin.texture = CoinIconResourceScript.texture()
+		coin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		coin.custom_minimum_size = RESULT_COIN_SCATTER_SIZE
+		result_coin_flight_layer.add_child(coin)
+		coin.size = RESULT_COIN_SCATTER_SIZE
+		coin.pivot_offset = RESULT_COIN_SCATTER_SIZE * 0.5
+		var spread := inverse_lerp(0.0, float(RESULT_COIN_SCATTER_COUNT - 1), float(index))
+		# A coprime permutation distributes near/far timing across the whole fan,
+		# instead of making adjacent coins rise as one level row.
+		var depth_rank := (index * 5) % RESULT_COIN_SCATTER_COUNT
+		var depth := inverse_lerp(0.0, float(RESULT_COIN_SCATTER_COUNT - 1), float(depth_rank))
+		var launch_delay := depth * RESULT_COIN_SCATTER_STAGGER_MAX
+		var flight_duration := RESULT_COIN_SCATTER_DURATION * lerpf(0.88, 1.12, 1.0 - depth)
+		var height_offset := lerpf(
+			-RESULT_COIN_SCATTER_HEIGHT_VARIANCE * 0.5,
+			RESULT_COIN_SCATTER_HEIGHT_VARIANCE * 0.5,
+			depth
+		)
+		var start := source + Vector2(lerpf(-28.0, 28.0, spread), lerpf(7.0, -7.0, spread))
+		var edge_factor := absf(spread - 0.5) * 2.0
+		var end := start + Vector2(
+			lerpf(-145.0, 145.0, spread),
+			lerpf(35.0, 70.0, edge_factor) + height_offset * 0.42
+		)
+		var curve := start + Vector2(
+			lerpf(-82.0, 82.0, spread),
+			lerpf(-190.0, -135.0, edge_factor) + height_offset
+		)
+		coin.position = start - RESULT_COIN_SCATTER_SIZE * 0.5
+		coin.scale = Vector2.ONE * lerpf(0.24, 0.42, 1.0 - depth)
+		coin.z_index = depth_rank % 3
+		coin.modulate.a = 0.0
+		var scatter_tween := coin.create_tween()
+		result_coin_flight_tweens.append(scatter_tween)
+		scatter_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		scatter_tween.tween_method(
+			_set_result_coin_scatter_progress.bind(coin, start, curve, end, index),
+			0.0,
+			1.0,
+			flight_duration
+		).set_delay(launch_delay)
+		scatter_tween.parallel().tween_property(coin, "modulate:a", 0.92, 0.08).set_delay(launch_delay)
+		scatter_tween.parallel().tween_property(
+			coin,
+			"scale",
+			Vector2.ONE * lerpf(0.68, 1.08, 1.0 - depth),
+			0.16
+		).set_delay(launch_delay).set_ease(Tween.EASE_OUT)
+		scatter_tween.parallel().tween_property(coin, "modulate:a", 0.0, 0.20).set_delay(
+			launch_delay + flight_duration - 0.20
+		)
+		scatter_tween.tween_callback(coin.queue_free)
+
+
+func _set_result_coin_scatter_progress(
+	progress: float,
+	coin: TextureRect,
+	start: Vector2,
+	curve: Vector2,
+	end: Vector2,
+	index: int
+) -> void:
+	if not is_instance_valid(coin):
+		return
+	var inverse := 1.0 - progress
+	var center := inverse * inverse * start + 2.0 * inverse * progress * curve + progress * progress * end
+	coin.position = center - RESULT_COIN_SCATTER_SIZE * 0.5
+	coin.rotation = progress * TAU * (1.0 + float(index) * 0.16)
+
+
 func _set_result_coin_flyer_progress(progress: float, flyer: TextureRect, start: Vector2, curve: Vector2, target: Vector2) -> void:
 	if not is_instance_valid(flyer):
 		return
@@ -786,29 +821,19 @@ func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int, 
 		_start_result_balance_reel(balance_after)
 
 
-func _start_result_lion_coin_arm_toss(duration: float) -> void:
+func _start_result_lion_coin_arm_toss() -> void:
 	if result_lion_coin_arm_tween and result_lion_coin_arm_tween.is_valid():
 		result_lion_coin_arm_tween.kill()
+	_show_center_result_lion_idle()
+	if result_lion_frame_animation:
+		result_lion_frame_animation.play_action("coin_toss", RESULT_LION_COIN_TOSS_DURATION)
+	result_lion_animation_name = "coin_toss"
 	result_lion_coin_arm_tween = create_tween()
-	result_lion_coin_arm_tween.set_trans(Tween.TRANS_LINEAR).set_ease(Tween.EASE_IN_OUT)
-	result_lion_coin_arm_tween.tween_method(
-		_set_result_lion_coin_arm_progress,
-		0.0,
-		1.0,
-		maxf(0.28, duration)
-	)
+	result_lion_coin_arm_tween.tween_interval(RESULT_LION_COIN_TOSS_DURATION)
 	result_lion_coin_arm_tween.tween_callback(func() -> void:
 		result_lion_coin_arm_tween = null
-		_set_result_lion_arm_frame(LION_KING_CENTER_ARM_00)
+		_set_result_lion_idle_pose()
 	)
-
-
-func _set_result_lion_coin_arm_progress(progress: float) -> void:
-	# One complete outward-and-return gesture owns the entire group of flying
-	# coins. It remains smooth even when a reward contains only two coins.
-	var gesture := sin(clampf(progress, 0.0, 1.0) * PI)
-	var frame_index := clampi(roundi(gesture * 12.0), 0, 12)
-	_set_result_lion_arm_frame(RESULT_LION_WAVE_ARM_FRAMES[frame_index])
 
 
 func _start_result_balance_reel(balance_after: int) -> void:
@@ -855,11 +880,19 @@ func play_success_sequence(excellent: bool, reward: int, balance_before: int, ba
 	if excellent:
 		play_petals()
 		result_success_sequence_tween = create_tween()
-		result_success_sequence_tween.tween_interval(RESULT_PETAL_SEQUENCE_DURATION)
-		result_success_sequence_tween.tween_callback(_finish_petals_phase)
 		if reward > 0:
+			# Begin the two-paw anticipation under the final petal fade. The actual
+			# coin release remains after the petals, removing the idle-looking gap
+			# without visually mixing both reward bursts.
+			result_success_sequence_tween.tween_interval(
+				RESULT_PETAL_SEQUENCE_DURATION - RESULT_LION_COIN_TOSS_PETAL_LEAD
+			)
 			result_success_sequence_tween.tween_callback(_release_pending_result_coin_animation)
+			result_success_sequence_tween.tween_interval(RESULT_LION_COIN_TOSS_PETAL_LEAD)
+			result_success_sequence_tween.tween_callback(_finish_petals_phase)
 		else:
+			result_success_sequence_tween.tween_interval(RESULT_PETAL_SEQUENCE_DURATION)
+			result_success_sequence_tween.tween_callback(_finish_petals_phase)
 			result_success_sequence_tween.tween_callback(func() -> void: music_stop_requested.emit())
 		return
 	if reward > 0:
@@ -929,7 +962,7 @@ func stop_coin_animation() -> void:
 	if result_coin_roll_row:
 		result_coin_roll_row.hide()
 	if result_piece_icon and result_piece_icon.visible:
-		_set_result_lion_arm_frame(LION_KING_CENTER_ARM_00)
+		_show_center_result_lion_idle()
 
 
 func _coin_arrival_sound_milestones(reward: int) -> Dictionary:
@@ -965,7 +998,7 @@ func play_lion_animation() -> void:
 		return
 	result_lion_tween = create_tween()
 	result_lion_tween.tween_property(result_piece_icon, "modulate:a", 1.0, 0.32).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	result_lion_tween.tween_callback(_start_random_result_lion_animation)
+	result_lion_tween.tween_callback(_set_result_lion_idle_pose)
 
 
 func _start_random_result_lion_entry(generation: int) -> void:
@@ -988,12 +1021,12 @@ func _start_random_result_lion_entry(generation: int) -> void:
 	result_lion_runner.pivot_offset = runner_size * 0.5
 	result_lion_runner.modulate = Color.WHITE
 	result_lion_runner.material = null
-	var runner_arm := _piece_texture_rect(Vector2.ZERO, LION_KING_CENTER_ARM_00)
-	runner_arm.name = "ResultLionRunnerArm"
-	result_lion_runner.add_child(runner_arm)
-	runner_arm.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	runner_arm.show_behind_parent = true
-	runner_arm.hide()
+	var runner_frame_animation: ResultLionFrameAnimator = ResultLionFrameAnimatorScript.new()
+	runner_frame_animation.name = "ResultLionRunnerFrameAnimation"
+	result_lion_runner.add_child(runner_frame_animation)
+	runner_frame_animation.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	runner_frame_animation.show_behind_parent = false
+	runner_frame_animation.hide()
 	var peek_blink := _piece_texture_rect(
 		Vector2.ZERO,
 		_result_lion_peek_blink_texture(result_lion_entry_name)
@@ -1151,7 +1184,7 @@ func _set_result_lion_edge_frame(
 	if not is_instance_valid(runner):
 		return
 	runner.texture = texture
-	_set_result_lion_runner_arm_visible(runner, false)
+	_set_result_lion_runner_frame_visible(runner, false)
 	_set_result_lion_peek_blink_visible(runner, false)
 	match variant:
 		"peek_left":
@@ -1222,7 +1255,7 @@ func _set_result_lion_entry_jump_progress(
 		frames.size() - 1
 	)
 	runner.texture = frames[frame_index]
-	_set_result_lion_runner_arm_visible(runner, false)
+	_set_result_lion_runner_frame_visible(runner, false)
 	_set_result_lion_peek_blink_visible(runner, false)
 	var registration_ratio: Vector2 = RESULT_LION_JUMP_REGISTRATION_OFFSETS.get(variant, Vector2.ZERO)
 	var registration_release := 1.0 - smoothstep(
@@ -1251,50 +1284,38 @@ func _set_result_lion_land_progress(
 	runner.position = target - runner.size * 0.5 + Vector2(0.0, settle)
 	runner.scale = Vector2.ONE * lerpf(1.0, target_scale, smoothstep(0.0, 1.0, clamped))
 	runner.rotation = 0.0
-	var landing_frames := _result_lion_landing_frames(variant)
-	var frame_index := mini(
-		int(floor(clamped * float(landing_frames.size()))),
-		landing_frames.size() - 1
-	)
-	runner.texture = landing_frames[frame_index]
-	_set_result_lion_runner_arm_visible(runner, false)
+	# From this point onward the child owns the only visible texture and every
+	# frame already contains the complete body and arm.
+	runner.texture = null
+	_set_result_lion_runner_frame_visible(runner, true)
+	var runner_frame_animation := _result_lion_runner_frame_animation(runner)
+	if runner_frame_animation:
+		runner_frame_animation.set_idle_pose()
 	_set_result_lion_peek_blink_visible(runner, false)
 	runner.self_modulate = Color.WHITE
 	runner.material = null
-
-
-func _result_lion_landing_frames(_variant: String) -> Array:
-	# Landing is a transform-only settle on one opaque registered pose. Morphing
-	# directional art into the centre lion baked a translucent second arm/tail
-	# into intermediate textures and read as a flash. Direction only controls the
-	# preceding jump; after contact every route converges on this same pose.
-	return [LION_KING_CENTER_LANDING]
-
-
 func _result_lion_runner_target_scale(runner: TextureRect) -> float:
 	if not is_instance_valid(runner) or runner.size.y <= 1.0 or not result_piece_icon:
 		return 1.0
 	return clampf(result_piece_icon.size.y / runner.size.y, 0.1, 1.0)
 
 
-func _set_result_lion_arrival_progress(progress: float, runner: TextureRect, target: Vector2, celebration_variant: int) -> void:
+func _set_result_lion_arrival_progress(progress: float, runner: TextureRect, target: Vector2, _celebration_variant: int) -> void:
 	if not is_instance_valid(runner):
 		return
 	var clamped := clampf(progress, 0.0, 1.0)
 	var target_scale := _result_lion_runner_target_scale(runner)
 	# Landing owns the only positional settle. Once the runner reaches the showcase,
-	# keep its transform identical to the centered lion and celebrate with the
-	# independently registered arm frames only. This prevents a second up/down arc
+	# keep its transform identical to the centered lion and switch complete
+	# registered lion frames only. This prevents a second up/down arc
 	# from reading as a late position jump immediately before ownership handoff.
 	runner.position = target - runner.size * 0.5
 	runner.scale = Vector2.ONE * target_scale
 	runner.rotation = 0.0
 	_set_result_lion_runner_center_pose(runner)
-	var runner_arm := runner.get_node_or_null("ResultLionRunnerArm") as TextureRect
-	if runner_arm:
-		runner_arm.texture = RESULT_LION_WAVE_ARM_FRAMES[
-			_result_lion_arrival_arm_frame_index(clamped, celebration_variant)
-		]
+	var runner_frame_animation := _result_lion_runner_frame_animation(runner)
+	if runner_frame_animation:
+		runner_frame_animation.set_idle_pose()
 	# Hand ownership over only on the exact final frame. Even an opaque runner over
 	# a fading duplicate changes antialiased outline pixels and produces a halo.
 	runner.modulate.a = 0.0 if clamped >= 1.0 else 1.0
@@ -1302,33 +1323,28 @@ func _set_result_lion_arrival_progress(progress: float, runner: TextureRect, tar
 		result_piece_icon.modulate.a = 1.0 if clamped >= 1.0 else 0.0
 
 
-func _result_lion_arrival_arm_frame_index(progress: float, celebration_variant: int) -> int:
-	var peak_frame: int = [12, 10, 8][clampi(celebration_variant, 0, 2)]
-	var clamped := clampf(progress, 0.0, 1.0)
-	if clamped <= 0.32:
-		return clampi(roundi(lerpf(12.0, 0.0, smoothstep(0.0, 0.32, clamped))), 0, 12)
-	if clamped <= 0.66:
-		return clampi(roundi(lerpf(0.0, float(peak_frame), smoothstep(0.32, 0.66, clamped))), 0, peak_frame)
-	return clampi(roundi(lerpf(float(peak_frame), 0.0, smoothstep(0.66, 1.0, clamped))), 0, peak_frame)
-
-
 func _set_result_lion_runner_center_pose(runner: TextureRect) -> void:
 	if not is_instance_valid(runner):
 		return
 	_set_result_lion_peek_blink_visible(runner, false)
 	runner.self_modulate = Color.WHITE
-	runner.texture = LION_KING_CENTER_BODY
-	var runner_arm := runner.get_node_or_null("ResultLionRunnerArm") as TextureRect
-	if runner_arm:
-		runner_arm.texture = LION_KING_CENTER_ARM_00
-		runner_arm.show()
+	runner.texture = null
+	var runner_frame_animation := _result_lion_runner_frame_animation(runner)
+	if runner_frame_animation:
+		runner_frame_animation.show()
 
-func _set_result_lion_runner_arm_visible(runner: TextureRect, is_visible: bool) -> void:
+
+func _result_lion_runner_frame_animation(runner: TextureRect) -> ResultLionFrameAnimator:
+	if not is_instance_valid(runner):
+		return null
+	return runner.get_node_or_null("ResultLionRunnerFrameAnimation") as ResultLionFrameAnimator
+
+func _set_result_lion_runner_frame_visible(runner: TextureRect, is_visible: bool) -> void:
 	if not is_instance_valid(runner):
 		return
-	var runner_arm := runner.get_node_or_null("ResultLionRunnerArm") as TextureRect
-	if runner_arm:
-		runner_arm.visible = is_visible
+	var runner_frame_animation := _result_lion_runner_frame_animation(runner)
+	if runner_frame_animation:
+		runner_frame_animation.visible = is_visible
 
 
 func _set_result_lion_peek_blink_visible(runner: TextureRect, is_visible: bool) -> void:
@@ -1357,88 +1373,13 @@ func _finish_result_lion_entry(generation: int) -> void:
 		if not pending_result_coin_request.is_empty():
 			result_lion_animation_name = "waiting_for_reward"
 		elif result_coin_tween and result_coin_tween.is_valid():
-			result_lion_animation_name = "coin_toss"
+			result_lion_animation_name = "idle"
 		else:
-			_start_random_result_lion_animation()
+			_set_result_lion_idle_pose()
 
 
 func _pause_result_lion_for_coins() -> void:
-	if result_lion_wave_tween and result_lion_wave_tween.is_valid():
-		result_lion_wave_tween.kill()
-	result_lion_wave_tween = null
-	result_lion_animation_name = "coin_toss"
-	_show_center_result_lion_idle()
-
-
-func _start_random_result_lion_animation() -> void:
-	if not visible or (overlay_mode != "success" and overlay_mode != "tutorial") or not result_piece_icon:
-		return
-	if result_lion_wave_tween and result_lion_wave_tween.is_valid():
-		result_lion_wave_tween.kill()
-	result_lion_wave_tween = null
-	var animation_index := randi_range(0, 2)
-	if animation_index == result_lion_last_animation_index:
-		animation_index = (animation_index + randi_range(1, 2)) % 3
-	result_lion_last_animation_index = animation_index
-	if animation_index == 0:
-		_start_result_lion_arm_sequence(
-			RESULT_LION_WAVE_ARM_FRAMES,
-			RESULT_LION_WAVE_DURATIONS,
-			RESULT_LION_WAVE_LOOP_PAUSE
-		)
-	elif animation_index == 1:
-		_start_result_lion_cheer_sequence()
-	else:
-		_start_result_lion_playful_sequence()
-
-
-func _start_result_lion_arm_sequence(frames: Array, durations: Array, pause: float) -> void:
-	result_lion_animation_name = "wave"
-	_show_center_result_lion_idle()
-	result_lion_wave_tween = create_tween()
-	for frame_index in range(frames.size()):
-		result_lion_wave_tween.tween_callback(_set_result_lion_arm_frame.bind(frames[frame_index]))
-		result_lion_wave_tween.tween_interval(float(durations[frame_index]))
-	result_lion_wave_tween.tween_interval(pause)
-	_append_result_lion_idle_restart(result_lion_wave_tween)
-
-
-func _start_result_lion_cheer_sequence() -> void:
-	result_lion_animation_name = "cheer"
-	_show_center_result_lion_idle()
-	result_lion_wave_tween = create_tween()
-	result_lion_wave_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	result_lion_wave_tween.tween_method(_set_result_lion_cheer_progress, 0.0, 1.0, 0.82)
-	_append_result_lion_idle_restart(result_lion_wave_tween)
-
-
-func _start_result_lion_playful_sequence() -> void:
-	result_lion_animation_name = "playful"
-	_show_center_result_lion_idle()
-	result_lion_wave_tween = create_tween()
-	result_lion_wave_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	result_lion_wave_tween.tween_method(_set_result_lion_playful_progress, 0.0, 1.0, 0.96)
-	_append_result_lion_idle_restart(result_lion_wave_tween)
-
-
-func _set_result_lion_cheer_progress(progress: float) -> void:
-	var clamped := clampf(progress, 0.0, 1.0)
-	var outward := 1.0 - absf(clamped * 2.0 - 1.0)
-	var frame_index := clampi(roundi(outward * 12.0), 0, 12)
-	_set_result_lion_arm_frame(RESULT_LION_WAVE_ARM_FRAMES[frame_index])
-
-
-func _set_result_lion_playful_progress(progress: float) -> void:
-	var clamped := clampf(progress, 0.0, 1.0)
-	var gesture := sin(clamped * PI)
-	var frame_index := clampi(roundi(gesture * 7.0), 0, 7)
-	_set_result_lion_arm_frame(RESULT_LION_WAVE_ARM_FRAMES[frame_index])
-
-
-func _append_result_lion_idle_restart(tween: Tween) -> void:
-	tween.tween_callback(_set_result_lion_idle_pose)
-	tween.tween_interval(randf_range(RESULT_LION_IDLE_MIN_DURATION, RESULT_LION_IDLE_MAX_DURATION))
-	tween.tween_callback(_restart_result_lion_animation_cycle)
+	_set_result_lion_idle_pose()
 
 
 func _set_result_lion_idle_pose() -> void:
@@ -1446,28 +1387,15 @@ func _set_result_lion_idle_pose() -> void:
 	result_lion_animation_name = "idle"
 
 
-func _restart_result_lion_animation_cycle() -> void:
-	result_lion_wave_tween = null
-	_start_random_result_lion_animation()
-
-
 func _show_center_result_lion_idle() -> void:
 	if result_piece_icon:
-		result_piece_icon.texture = LION_KING_CENTER_BODY
+		result_piece_icon.texture = null
 		result_piece_icon.pivot_offset = result_piece_icon.size * 0.5
 		result_piece_icon.scale = Vector2.ONE
 		result_piece_icon.rotation = 0.0
-	if result_lion_arm_icon:
-		result_lion_arm_icon.texture = LION_KING_CENTER_ARM_00
-		result_lion_arm_icon.show()
-
-
-func _set_result_lion_arm_frame(frame: Texture2D) -> void:
-	if result_piece_icon:
-		result_piece_icon.texture = LION_KING_CENTER_BODY
-	if result_lion_arm_icon:
-		result_lion_arm_icon.texture = frame
-		result_lion_arm_icon.show()
+	if result_lion_frame_animation:
+		result_lion_frame_animation.show()
+		result_lion_frame_animation.set_idle_pose()
 
 
 func stop_lion_animation() -> void:
@@ -1475,9 +1403,6 @@ func stop_lion_animation() -> void:
 	if result_lion_tween and result_lion_tween.is_valid():
 		result_lion_tween.kill()
 	result_lion_tween = null
-	if result_lion_wave_tween and result_lion_wave_tween.is_valid():
-		result_lion_wave_tween.kill()
-	result_lion_wave_tween = null
 	if result_lion_entry_layer:
 		for child in result_lion_entry_layer.get_children():
 			child.queue_free()
@@ -1485,7 +1410,6 @@ func stop_lion_animation() -> void:
 	result_lion_animation_name = ""
 	result_lion_entry_name = ""
 	result_lion_entry_active = false
-	result_lion_last_animation_index = -1
 	if result_piece_icon:
 		_show_center_result_lion_idle()
 		result_piece_icon.scale = Vector2.ONE

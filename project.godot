@@ -17,10 +17,9 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 config/name="color king"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7")
-config/icon="res://assets/icon.svg"
 boot_splash/bg_color=Color(0.176471, 0.490196, 0.733333, 1)
 boot_splash/show_image=false
-boot_splash/minimum_display_time=0
+config/icon="res://assets/icon.svg"
 
 [display]
 
