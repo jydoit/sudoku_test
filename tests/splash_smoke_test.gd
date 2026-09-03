@@ -1,6 +1,9 @@
 extends SceneTree
 
 const SplashOverlayScript = preload("res://scripts/overlays/splash_overlay.gd")
+const SPLASH_SOURCE_FRAME_INDICES := [
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15,
+]
 
 
 func _init() -> void:
@@ -11,7 +14,8 @@ func _run() -> void:
 	var splash = SplashOverlayScript.new()
 	root.add_child(splash)
 	splash.configure()
-	assert(splash.SPLASH_FRAMES.size() == 16, "Splash should expose all sixteen ImageGen keyframes")
+	assert(splash.SPLASH_FRAMES.size() == 15, "Splash should expose fifteen unique ImageGen keyframes")
+	assert(SPLASH_SOURCE_FRAME_INDICES.size() == splash.SPLASH_FRAMES.size(), "Runtime splash frames should map to their retained source indices")
 	assert(splash.SPLASH_FRAME_TIMES.size() == splash.SPLASH_FRAMES.size(), "Every splash frame should own one timeline key")
 	var normal_total: float = splash.SPLASH_REVEAL_DURATION + splash.SPLASH_FINISH_DURATION
 	var reduced_total: float = splash.SPLASH_REDUCED_DURATION + splash.SPLASH_FINISH_DURATION
@@ -21,12 +25,15 @@ func _run() -> void:
 	for frame_index in range(splash.SPLASH_FRAMES.size()):
 		var image: Image = splash.SPLASH_FRAMES[frame_index].get_image()
 		assert(not image.is_empty() and image.get_size() == Vector2i(320, 320), "Every splash keyframe should keep the registered 320px canvas")
-		var svg_path := "res://assets/ui/splash/splash_assembly_%02d.svg" % frame_index
+		var source_frame_index: int = SPLASH_SOURCE_FRAME_INDICES[frame_index]
+		var svg_path := "res://assets/ui/splash/splash_assembly_%02d.svg" % source_frame_index
 		var svg_source := FileAccess.get_file_as_string(svg_path)
 		assert("<path" in svg_source and "<image" not in svg_source, "Every runtime splash keyframe must be a pure-path SVG")
-		assert(not FileAccess.file_exists("res://assets/ui/splash/splash_assembly_%02d.png" % frame_index), "Runtime splash assets must not retain raster keyframes")
+		assert(not FileAccess.file_exists("res://assets/ui/splash/splash_assembly_%02d.png" % source_frame_index), "Runtime splash assets must not retain raster keyframes")
 		if frame_index > 0:
 			assert(splash.SPLASH_FRAME_TIMES[frame_index] > splash.SPLASH_FRAME_TIMES[frame_index - 1], "Splash frame times must advance monotonically")
+	assert(not FileAccess.file_exists("res://assets/ui/splash/splash_assembly_14.svg"), "Duplicate splash frame 14 must stay removed")
+	assert(FileAccess.file_exists("res://assets/ui/splash/splash_assembly_15.svg"), "Approved final splash frame 15 must remain")
 	var lion_svg_source := FileAccess.get_file_as_string("res://assets/ui/lion_king_center_body.svg")
 	assert("<path" in lion_svg_source and "<image" not in lion_svg_source, "Final mascot must remain a pure-path SVG")
 	var title_svg_source := FileAccess.get_file_as_string("res://assets/ui/splash/color_king_title.svg")
@@ -38,13 +45,14 @@ func _run() -> void:
 	assert(export_presets_source.count("storyboard/custom_image@3x=\"res://assets/ui/ios_launch_blank.svg\"") == 2, "Both iOS presets must override the template 3x Godot splash")
 	var ios_prepare_source := FileAccess.get_file_as_string("res://tools/prepare_ios_export.sh")
 	assert("CURRENT_PROJECT_VERSION" in ios_prepare_source and "ColorKingLaunchScreenV$build_version" in ios_prepare_source, "iOS export preparation must derive a versioned launch-screen cache key from the build number")
+	assert("for stale_version in 0 1 2" in ios_prepare_source, "iOS export preparation must clean obsolete ColorKingLaunchScreen V0-V2 artifacts")
 	assert(splash.title_art is TextureRect, "Splash title should render as a responsive vector texture")
 	assert(splash.animation_player.has_animation(&"splash_brand_reveal"), "Splash should own one AnimationPlayer brand timeline")
 	assert(splash.animation_player.has_animation(&"splash_reduced"), "Splash should provide a reduced-motion timeline")
 	assert(splash.animation_player.has_animation(&"splash_finish"), "Splash should own its input-releasing fade")
 
-	splash.preview_frame(15)
-	assert(splash.current_frame_index() == 15, "Splash preview should reach the lion-and-crown fusion frame")
+	splash.preview_frame(splash.SPLASH_FRAMES.size() - 1)
+	assert(splash.current_frame_index() == 14, "Splash preview should reach the retained lion-and-crown fusion frame")
 	assert(splash.lion_rect.modulate.a > 0.99, "Final splash preview should include the canonical vector mascot")
 	assert(splash.title_art.modulate.a > 0.99, "Final splash preview should include the vector wordmark")
 	var finish_count := [0]
@@ -66,5 +74,5 @@ func _run() -> void:
 	assert(finish_count[0] == 1, "Splash must release startup routing exactly once")
 	assert(not splash.root.visible, "Finished splash should stop blocking the target page")
 	splash.queue_free()
-	print("SPLASH SMOKE TEST PASSED: 16 frames, reduced motion and one-shot routing")
+	print("SPLASH SMOKE TEST PASSED: 15 unique frames, reduced motion and one-shot routing")
 	quit()

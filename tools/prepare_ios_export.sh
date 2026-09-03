@@ -31,6 +31,23 @@ esac
 launch_storyboard_name="ColorKingLaunchScreenV$build_version"
 new_storyboard="$export_dir/$launch_storyboard_name.storyboard"
 
+# V0-V2 were temporary cache-busting launch screens. Remove their generated
+# files and PBX references once a newer build is prepared so Xcode cannot pick
+# an obsolete storyboard from a previously exported project.
+for stale_version in 0 1 2; do
+	stale_storyboard_name="ColorKingLaunchScreenV$stale_version.storyboard"
+	if [ "$stale_storyboard_name" = "$launch_storyboard_name.storyboard" ]; then
+		continue
+	fi
+	stale_storyboard="$export_dir/$stale_storyboard_name"
+	if [ -f "$stale_storyboard" ]; then
+		rm -- "$stale_storyboard"
+	fi
+	STALE_LAUNCH_STORYBOARD="$stale_storyboard_name" /usr/bin/perl -0pi -e '
+		s/^.*\Q$ENV{STALE_LAUNCH_STORYBOARD}\E.*\n//mg
+	' "$xcode_project"
+done
+
 if [ -f "$old_storyboard" ]; then
 	mv "$old_storyboard" "$new_storyboard"
 elif [ ! -f "$new_storyboard" ]; then

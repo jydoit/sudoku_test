@@ -22,7 +22,6 @@ const SPLASH_FRAME_10 = preload("res://assets/ui/splash/splash_assembly_10.svg")
 const SPLASH_FRAME_11 = preload("res://assets/ui/splash/splash_assembly_11.svg")
 const SPLASH_FRAME_12 = preload("res://assets/ui/splash/splash_assembly_12.svg")
 const SPLASH_FRAME_13 = preload("res://assets/ui/splash/splash_assembly_13.svg")
-const SPLASH_FRAME_14 = preload("res://assets/ui/splash/splash_assembly_14.svg")
 const SPLASH_FRAME_15 = preload("res://assets/ui/splash/splash_assembly_15.svg")
 const SPLASH_LION = preload("res://assets/ui/lion_king_center_body.svg")
 const SPLASH_TITLE = preload("res://assets/ui/splash/color_king_title.svg")
@@ -42,14 +41,13 @@ const SPLASH_FRAMES := [
 	SPLASH_FRAME_11,
 	SPLASH_FRAME_12,
 	SPLASH_FRAME_13,
-	SPLASH_FRAME_14,
 	SPLASH_FRAME_15,
 ]
 const SPLASH_FRAME_TIMES := [
 	0.00, 0.28, 0.56, 0.84,
 	1.12, 1.40, 1.68, 1.96,
 	2.24, 2.52, 2.80, 3.08,
-	3.42, 3.76, 4.10, 4.38,
+	3.42, 3.76, 4.10,
 ]
 const SPLASH_REVEAL_DURATION := 5.55
 const SPLASH_REDUCED_DURATION := 1.65
@@ -239,7 +237,7 @@ func _reduced_animation() -> Animation:
 	_add_frame_track(
 		animation,
 		[0.00, 0.55, 1.05],
-		[0, 12, 15]
+		[0, 12, 14]
 	)
 	_add_root_fade_in_track(animation, 0.24)
 	_add_title_track(animation, 1.00, 1.30)

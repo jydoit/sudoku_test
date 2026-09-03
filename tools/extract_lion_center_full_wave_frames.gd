@@ -1,7 +1,7 @@
 extends SceneTree
 
-## Converts the image-model source sheet into complete registered lion frames.
-## Each runtime PNG contains one fully baked lion; no body/arm compositing occurs.
+## Converts the image-model source sheet into the complete registered idle lion.
+## The runtime PNG contains one fully baked lion; no body/arm compositing occurs.
 
 const SOURCE_PATH := "res://docs/animation_sources/lion_center_full_wave_model_sheet.png"
 const OUTPUT_TEMPLATE := "res://assets/ui/lion_king_center_full_wave_%02d.png"
@@ -9,17 +9,10 @@ const CANVAS_SIZE := Vector2i(400, 400)
 const DESTINATION_CROWN_X := 200
 const DESTINATION_TOP_Y := 22
 
-# Each crop includes two pixels of safety margin. Registration uses the crown
-# centre rather than the changing silhouette bounds so the fixed body does not
-# drift as the waving paw travels horizontally.
+# The crop includes two pixels of safety margin. Registration uses the crown
+# centre so regenerating the approved idle pose preserves its runtime position.
 const FRAME_SPECS := [
 	{"rect": Rect2i(30, 228, 245, 356), "crown_x": 131.5},
-	{"rect": Rect2i(300, 228, 253, 356), "crown_x": 139.5},
-	{"rect": Rect2i(567, 229, 262, 355), "crown_x": 149.25},
-	{"rect": Rect2i(847, 229, 256, 355), "crown_x": 144.4},
-	{"rect": Rect2i(1109, 229, 255, 355), "crown_x": 144.71},
-	{"rect": Rect2i(1371, 229, 253, 355), "crown_x": 143.5},
-	{"rect": Rect2i(1634, 229, 250, 355), "crown_x": 141.15},
 ]
 
 
@@ -53,7 +46,7 @@ func _initialize() -> void:
 			quit(1)
 			return
 
-	print("Generated %d complete registered lion wave frames." % FRAME_SPECS.size())
+	print("Generated the complete registered lion idle frame.")
 	quit()
 
 
