@@ -396,6 +396,7 @@ func _build_coin_delta_feedback() -> void:
 
 func _build_top_bar(initial_coins: int) -> Control:
 	var panel := PanelContainer.new()
+	panel.name = "LevelTopBar"
 	panel.custom_minimum_size.y = 72
 	panel.add_theme_stylebox_override("panel", _card_style(CARD, 18, true))
 	var margin := MarginContainer.new()
@@ -408,7 +409,7 @@ func _build_top_bar(initial_coins: int) -> Control:
 	row.add_theme_constant_override("separation", 5)
 	margin.add_child(row)
 
-	top_home_button = _small_button("", Vector2(52, 52), 28)
+	top_home_button = _small_button("", Vector2(62, 52), 28)
 	top_home_button.icon = HOME_ICON
 	top_home_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	top_home_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -444,14 +445,7 @@ func _build_top_bar(initial_coins: int) -> Control:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(spacer)
-	help_button = _small_button("", Vector2(46, 46), 24)
-	help_button.icon = HELP_ICON
-	help_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	help_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	help_button.tooltip_text = "查看消除规则"
-	help_button.pressed.connect(func() -> void: help_requested.emit())
-	row.add_child(help_button)
-	settings_button = _small_button("", Vector2(46, 46), 22)
+	settings_button = _small_button("", Vector2(58, 52), 22)
 	settings_button.icon = SETTINGS_ICON
 	settings_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	settings_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -468,7 +462,9 @@ func _build_top_bar(initial_coins: int) -> Control:
 
 func _build_level_header() -> Control:
 	var row := HBoxContainer.new()
+	row.name = "LevelHeader"
 	row.custom_minimum_size.y = 46
+	row.add_theme_constant_override("separation", 8)
 	level_label = Label.new()
 	level_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	level_label.add_theme_color_override("font_color", INK)
@@ -477,6 +473,13 @@ func _build_level_header() -> Control:
 	level_label.clip_text = true
 	level_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	row.add_child(level_label)
+	help_button = _small_button("", Vector2(58, 46), 24)
+	help_button.icon = HELP_ICON
+	help_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	help_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	help_button.tooltip_text = "查看消除规则"
+	help_button.pressed.connect(func() -> void: help_requested.emit())
+	row.add_child(help_button)
 	return row
 
 

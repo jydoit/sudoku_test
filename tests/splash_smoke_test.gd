@@ -2,7 +2,7 @@ extends SceneTree
 
 const SplashOverlayScript = preload("res://scripts/overlays/splash_overlay.gd")
 const SPLASH_SOURCE_FRAME_INDICES := [
-	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15,
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
 ]
 
 
@@ -14,7 +14,7 @@ func _run() -> void:
 	var splash = SplashOverlayScript.new()
 	root.add_child(splash)
 	splash.configure()
-	assert(splash.SPLASH_FRAMES.size() == 15, "Splash should expose fifteen unique ImageGen keyframes")
+	assert(splash.SPLASH_FRAMES.size() == 13, "Splash should retain the thirteen consistent assembly keyframes")
 	assert(SPLASH_SOURCE_FRAME_INDICES.size() == splash.SPLASH_FRAMES.size(), "Runtime splash frames should map to their retained source indices")
 	assert(splash.SPLASH_FRAME_TIMES.size() == splash.SPLASH_FRAMES.size(), "Every splash frame should own one timeline key")
 	var normal_total: float = splash.SPLASH_REVEAL_DURATION + splash.SPLASH_FINISH_DURATION
@@ -32,8 +32,12 @@ func _run() -> void:
 		assert(not FileAccess.file_exists("res://assets/ui/splash/splash_assembly_%02d.png" % source_frame_index), "Runtime splash assets must not retain raster keyframes")
 		if frame_index > 0:
 			assert(splash.SPLASH_FRAME_TIMES[frame_index] > splash.SPLASH_FRAME_TIMES[frame_index - 1], "Splash frame times must advance monotonically")
+	assert(splash.SPLASH_FRAMES[-1] == splash.SPLASH_FRAME_12, "The placed blocks must remain unchanged in the final board")
+	assert(not FileAccess.file_exists("res://assets/ui/splash/splash_assembly_13.svg"), "The inconsistent redrawn transition frame must stay retired")
 	assert(not FileAccess.file_exists("res://assets/ui/splash/splash_assembly_14.svg"), "Duplicate splash frame 14 must stay removed")
-	assert(FileAccess.file_exists("res://assets/ui/splash/splash_assembly_15.svg"), "Approved final splash frame 15 must remain")
+	assert(not FileAccess.file_exists("res://assets/ui/splash/splash_assembly_15.svg"), "The inconsistent redrawn terminal frame must stay retired")
+	var splash_processor_source := FileAccess.get_file_as_string("res://tools/process_splash_sprite_sheet.py")
+	assert("RUNTIME_FRAME_COUNT = 13" in splash_processor_source, "Offline splash regeneration must not restore inconsistent frames 13-15")
 	var lion_svg_source := FileAccess.get_file_as_string("res://assets/ui/lion_king_center_body.svg")
 	assert("<path" in lion_svg_source and "<image" not in lion_svg_source, "Final mascot must remain a pure-path SVG")
 	var title_svg_source := FileAccess.get_file_as_string("res://assets/ui/splash/color_king_title.svg")
@@ -53,7 +57,8 @@ func _run() -> void:
 	assert(splash.animation_player.has_animation(&"splash_finish"), "Splash should own its input-releasing fade")
 
 	splash.preview_frame(splash.SPLASH_FRAMES.size() - 1)
-	assert(splash.current_frame_index() == 14, "Splash preview should reach the retained lion-and-crown fusion frame")
+	assert(splash.current_frame_index() == 12, "Splash preview should end on the same board assembled by the incoming pieces")
+	assert(splash.brand_coin_rect.texture.resource_path == "res://assets/ui/coin.svg" and splash.brand_coin_rect.modulate.a > 0.99, "Final splash preview should overlay the canonical crown coin without redrawing the board")
 	assert(splash.lion_rect.modulate.a > 0.99, "Final splash preview should include the canonical vector mascot")
 	assert(splash.title_art.modulate.a > 0.99, "Final splash preview should include the vector wordmark")
 	var finish_count := [0]
@@ -75,5 +80,5 @@ func _run() -> void:
 	assert(finish_count[0] == 1, "Splash must release startup routing exactly once")
 	assert(not splash.root.visible, "Finished splash should stop blocking the target page")
 	splash.queue_free()
-	print("SPLASH SMOKE TEST PASSED: 15 unique frames, reduced motion and one-shot routing")
+	print("SPLASH SMOKE TEST PASSED: consistent assembly frames, reduced motion and one-shot routing")
 	quit()

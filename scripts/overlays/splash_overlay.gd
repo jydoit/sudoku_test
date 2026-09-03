@@ -21,8 +21,7 @@ const SPLASH_FRAME_09 = preload("res://assets/ui/splash/splash_assembly_09.svg")
 const SPLASH_FRAME_10 = preload("res://assets/ui/splash/splash_assembly_10.svg")
 const SPLASH_FRAME_11 = preload("res://assets/ui/splash/splash_assembly_11.svg")
 const SPLASH_FRAME_12 = preload("res://assets/ui/splash/splash_assembly_12.svg")
-const SPLASH_FRAME_13 = preload("res://assets/ui/splash/splash_assembly_13.svg")
-const SPLASH_FRAME_15 = preload("res://assets/ui/splash/splash_assembly_15.svg")
+const SPLASH_BRAND_COIN = preload("res://assets/ui/coin.svg")
 const SPLASH_LION = preload("res://assets/ui/lion_king_center_body.svg")
 const SPLASH_TITLE = preload("res://assets/ui/splash/color_king_title.svg")
 
@@ -40,14 +39,11 @@ const SPLASH_FRAMES := [
 	SPLASH_FRAME_10,
 	SPLASH_FRAME_11,
 	SPLASH_FRAME_12,
-	SPLASH_FRAME_13,
-	SPLASH_FRAME_15,
 ]
 const SPLASH_FRAME_TIMES := [
 	0.00, 0.28, 0.56, 0.84,
 	1.12, 1.40, 1.68, 1.96,
-	2.24, 2.52, 2.80, 3.08,
-	3.42, 3.76, 4.10,
+	2.24, 2.52, 2.80, 3.08, 3.42,
 ]
 const SPLASH_REVEAL_DURATION := 5.55
 const SPLASH_REDUCED_DURATION := 1.65
@@ -63,6 +59,7 @@ var root: Control
 var background: TextureRect
 var lion_rect: TextureRect
 var frame_rect: TextureRect
+var brand_coin_rect: TextureRect
 var title_art: TextureRect
 var animation_player: AnimationPlayer
 var _ready_to_enter := false
@@ -95,6 +92,8 @@ func begin(reduced_motion: bool = false) -> void:
 	root.grab_focus()
 	frame_rect.texture = SPLASH_FRAME_00
 	frame_rect.scale = Vector2.ONE
+	brand_coin_rect.modulate = Color(1, 1, 1, 0)
+	brand_coin_rect.scale = Vector2.ONE * 0.72
 	lion_rect.modulate = Color(1, 1, 1, 0)
 	title_art.modulate = Color(1, 1, 1, 0)
 	boot_started.emit()
@@ -112,8 +111,11 @@ func preview_frame(frame_index: int) -> void:
 		configure()
 	var resolved_index := clampi(frame_index, 0, SPLASH_FRAMES.size() - 1)
 	frame_rect.texture = SPLASH_FRAMES[resolved_index]
-	lion_rect.modulate = Color.WHITE if resolved_index == SPLASH_FRAMES.size() - 1 else Color(1, 1, 1, 0)
-	title_art.modulate = Color.WHITE if resolved_index == SPLASH_FRAMES.size() - 1 else Color(1, 1, 1, 0)
+	var is_final := resolved_index == SPLASH_FRAMES.size() - 1
+	brand_coin_rect.modulate = Color.WHITE if is_final else Color(1, 1, 1, 0)
+	brand_coin_rect.scale = Vector2.ONE
+	lion_rect.modulate = Color.WHITE if is_final else Color(1, 1, 1, 0)
+	title_art.modulate = Color.WHITE if is_final else Color(1, 1, 1, 0)
 	root.modulate = Color.WHITE
 	root.show()
 
@@ -169,6 +171,21 @@ func _build_ui() -> void:
 	frame_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(frame_rect)
 
+	brand_coin_rect = TextureRect.new()
+	brand_coin_rect.name = "SplashBrandCoin"
+	brand_coin_rect.texture = SPLASH_BRAND_COIN
+	brand_coin_rect.set_anchors_preset(Control.PRESET_CENTER)
+	brand_coin_rect.offset_left = -32
+	brand_coin_rect.offset_top = -14
+	brand_coin_rect.offset_right = 32
+	brand_coin_rect.offset_bottom = 50
+	brand_coin_rect.pivot_offset = Vector2(32, 32)
+	brand_coin_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	brand_coin_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	brand_coin_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	brand_coin_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(brand_coin_rect)
+
 	title_art = TextureRect.new()
 	title_art.name = "SplashTitle"
 	title_art.texture = SPLASH_TITLE
@@ -211,8 +228,9 @@ func _brand_reveal_animation() -> Animation:
 	animation.loop_mode = Animation.LOOP_NONE
 	_add_frame_track(animation, SPLASH_FRAME_TIMES, range(SPLASH_FRAMES.size()))
 	_add_root_fade_in_track(animation, 0.24)
-	_add_title_track(animation, 4.08, 4.58)
-	_add_lion_track(animation, 4.08, 4.58)
+	_add_brand_coin_track(animation, 3.52, 4.12)
+	_add_title_track(animation, 3.90, 4.48)
+	_add_lion_track(animation, 3.90, 4.48)
 	var scale_track := animation.add_track(Animation.TYPE_VALUE)
 	animation.track_set_path(scale_track, NodePath("SplashRoot/SplashFrame:scale"))
 	animation.track_set_interpolation_type(scale_track, Animation.INTERPOLATION_CUBIC)
@@ -225,7 +243,7 @@ func _brand_reveal_animation() -> Animation:
 	_add_method_key(animation, 1.68, &"_animation_sound", ["snap"])
 	_add_method_key(animation, 3.08, &"_animation_sound", ["snap_final"])
 	_add_method_key(animation, 3.42, &"_animation_sound", ["assembly_complete"])
-	_add_method_key(animation, 4.38, &"_animation_sound", ["crown"])
+	_add_method_key(animation, 4.12, &"_animation_sound", ["crown"])
 	_add_method_key(animation, SPLASH_SKIP_UNLOCK_TIME, &"_unlock_skip")
 	return animation
 
@@ -236,10 +254,11 @@ func _reduced_animation() -> Animation:
 	animation.loop_mode = Animation.LOOP_NONE
 	_add_frame_track(
 		animation,
-		[0.00, 0.55, 1.05],
-		[0, 12, 14]
+		[0.00, 0.55, 0.90],
+		[0, 11, 12]
 	)
 	_add_root_fade_in_track(animation, 0.24)
+	_add_brand_coin_track(animation, 0.90, 1.24)
 	_add_title_track(animation, 1.00, 1.30)
 	_add_lion_track(animation, 1.00, 1.30)
 	_add_method_key(animation, 0.55, &"_animation_sound", ["assembly_complete"])
@@ -279,6 +298,21 @@ func _add_root_fade_in_track(animation: Animation, end_time: float) -> void:
 	animation.track_set_interpolation_type(fade_track, Animation.INTERPOLATION_LINEAR)
 	animation.track_insert_key(fade_track, 0.00, Color(1, 1, 1, 0))
 	animation.track_insert_key(fade_track, end_time, Color.WHITE)
+
+
+func _add_brand_coin_track(animation: Animation, start_time: float, end_time: float) -> void:
+	var modulate_track := animation.add_track(Animation.TYPE_VALUE)
+	animation.track_set_path(modulate_track, NodePath("SplashRoot/SplashBrandCoin:modulate"))
+	animation.track_set_interpolation_type(modulate_track, Animation.INTERPOLATION_LINEAR)
+	animation.track_insert_key(modulate_track, 0.00, Color(1, 1, 1, 0))
+	animation.track_insert_key(modulate_track, start_time, Color(1, 1, 1, 0))
+	animation.track_insert_key(modulate_track, end_time, Color.WHITE)
+	var scale_track := animation.add_track(Animation.TYPE_VALUE)
+	animation.track_set_path(scale_track, NodePath("SplashRoot/SplashBrandCoin:scale"))
+	animation.track_set_interpolation_type(scale_track, Animation.INTERPOLATION_CUBIC)
+	animation.track_insert_key(scale_track, 0.00, Vector2.ONE * 0.72)
+	animation.track_insert_key(scale_track, start_time, Vector2.ONE * 0.72)
+	animation.track_insert_key(scale_track, end_time, Vector2.ONE)
 
 
 func _add_title_track(animation: Animation, start_time: float, end_time: float) -> void:
@@ -367,8 +401,10 @@ func _start_finish() -> void:
 
 func _show_stable_final() -> void:
 	animation_player.stop()
-	frame_rect.texture = SPLASH_FRAME_15
+	frame_rect.texture = SPLASH_FRAME_12
 	frame_rect.scale = Vector2.ONE
+	brand_coin_rect.modulate = Color.WHITE
+	brand_coin_rect.scale = Vector2.ONE
 	lion_rect.offset_top = LION_FINAL_TOP
 	lion_rect.offset_bottom = LION_FINAL_BOTTOM
 	lion_rect.modulate = Color.WHITE

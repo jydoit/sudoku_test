@@ -18,6 +18,7 @@ import vtracer
 
 GRID_SIZE = 4
 FRAME_CANVAS = 320
+RUNTIME_FRAME_COUNT = 13
 # ImageGen kept the board geometry stable but offset each storyboard column by
 # a repeatable amount. Register all four columns on the same x = 160 centre.
 COLUMN_REGISTRATION_X = (-13, 1, 0, 15)
@@ -98,8 +99,10 @@ def process(master_path: Path, source_dir: Path, vector_dir: Path) -> None:
 	master = Image.open(master_path).convert("RGB")
 	source_dir.mkdir(parents=True, exist_ok=True)
 	vector_dir.mkdir(parents=True, exist_ok=True)
-	stable_final_board: Image.Image | None = None
-	for frame_index in range(GRID_SIZE * GRID_SIZE):
+	# Frames 13-15 redraw already placed pieces and cannot be part of a
+	# continuous assembly. The runtime finishes on frame 12 and overlays its
+	# canonical crown, mascot and wordmark independently.
+	for frame_index in range(RUNTIME_FRAME_COUNT):
 		row, column = divmod(frame_index, GRID_SIZE)
 		left = round(column * master.width / GRID_SIZE)
 		top = round(row * master.height / GRID_SIZE)
@@ -110,15 +113,6 @@ def process(master_path: Path, source_dir: Path, vector_dir: Path) -> None:
 		canvas = Image.new("RGBA", (FRAME_CANVAS, FRAME_CANVAS), (0, 0, 0, 0))
 		canvas.alpha_composite(transparent, (3 + COLUMN_REGISTRATION_X[column], 3))
 		canvas = _clean_panel_bleed(canvas, frame_index)
-		if frame_index == 14:
-			# Frame 14 is byte-identical to the approved final frame. Keep it only
-			# in memory so regeneration emits one runtime/source asset at index 15.
-			stable_final_board = canvas.copy()
-			continue
-		elif frame_index == 15 and stable_final_board is not None:
-			# ImageGen cropped the mascot at the last storyboard boundary. Keep the
-			# final board stable; runtime composes the canonical vector mascot above it.
-			canvas = stable_final_board.copy()
 		basename = f"splash_assembly_{frame_index:02d}"
 		canvas.save(source_dir / f"{basename}_source.png", optimize=True)
 		(vector_dir / f"{basename}.svg").write_text(_trace_svg(canvas), encoding="utf-8")

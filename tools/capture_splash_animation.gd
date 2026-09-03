@@ -1,7 +1,7 @@
 extends SceneTree
 
 const SplashOverlayScript = preload("res://scripts/overlays/splash_overlay.gd")
-const CAPTURE_TIMES := [0.35, 0.85, 1.42, 2.04, 2.50, 3.00, 3.65]
+const CAPTURE_TIMES := [0.35, 0.85, 1.42, 2.04, 2.50, 3.00, 3.65, 4.25, 4.85]
 
 
 func _init() -> void:
