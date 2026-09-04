@@ -11,6 +11,7 @@ const SPLASH_TILE_TEXTURES := [
 	preload("res://assets/ui/splash/splash_tile_orange.png"),
 ]
 const SPLASH_EMPTY_TILE: Texture2D = preload("res://assets/ui/splash/splash_tile_empty.png")
+const SPLASH_CRYSTAL_TILE: Texture2D = preload("res://assets/ui/splash/splash_crystal_tile_neutral.png")
 const LION_TEXTURE: Texture2D = preload("res://assets/ui/lion_king.svg")
 const HAPPY_LION_TEXTURE: Texture2D = preload("res://assets/ui/lion_king_happy.svg")
 
@@ -47,28 +48,28 @@ const ANIMATED_PLACEMENT_ORDER := [1, 0]
 const INSTANT_FILL_ORDER := [3, 4, 2]
 const KING_SOLUTION := [[0, 3], [1, 0], [2, 2], [3, 4], [4, 1], [5, 5]]
 
-const BOARD_CELL_SIZE := 44.0
-const PIECE_START_CELL_SIZE := 39.0
+const BOARD_CELL_SIZE := 50.0
+const PIECE_START_CELL_SIZE := 41.0
 const BOARD_TOP := 48.0
-const PIECE_ARC_HEIGHT := 34.0
+const PIECE_ARC_HEIGHT := 38.0
 const SPLASH_BOARD_SURFACE := Color("#FFF8EE")
 const CRYSTAL_SURFACE := Color(0.70, 0.90, 0.97, 0.46)
 const CRYSTAL_EDGE := Color(0.43, 0.78, 0.91, 0.82)
 const CRYSTAL_HIGHLIGHT := Color(1.0, 1.0, 1.0, 0.92)
 const CRYSTAL_SHADOW := Color(0.12, 0.43, 0.64, 0.20)
-const CRYSTAL_REFRACTION := Color(0.82, 0.96, 1.0, 0.64)
+const CRYSTAL_REFRACTION := Color(0.82, 0.96, 1.0, 0.34)
+const CRYSTAL_TILE_ALPHA := 1.0
+const CRYSTAL_TILE_SHADOW := Color(0.05, 0.26, 0.40, 0.30)
+const CRYSTAL_HAZE := Color(0.91, 0.98, 1.0, 0.13)
 const ANIME_ACTION_INK := Color("#365A8A")
 const ANIME_ACTION_LIGHT := Color("#FFF7C9")
 const ANIME_STREAK_COUNT := 3
 const ANIME_IMPACT_RAY_COUNT := 10
-const WOOD_GRAIN_ALPHA := 0.13
-const WOOD_EDGE_LIGHT_ALPHA := 0.58
-const WOOD_EDGE_SHADE_ALPHA := 0.38
 # The two demonstrated real pieces sit below the board like the original
 # illustrated Splash. There is no game-like tray or list of the other pieces.
 const PIECE_START_CENTERS := [
-	Vector2(125.0, 363.0),
-	Vector2(315.0, 363.0),
+	Vector2(112.0, 390.0),
+	Vector2(328.0, 390.0),
 ]
 const VICTORY_SPARK_POINTS := [
 	Vector2(0.05, 0.12), Vector2(0.28, 0.04), Vector2(0.58, 0.06),
@@ -165,6 +166,8 @@ func _draw() -> void:
 			var waiting_piece := _piece_by_id(int(ANIMATED_PLACEMENT_ORDER[waiting_index]))
 			_draw_piece_centered(waiting_piece, PIECE_START_CENTERS[waiting_index], PIECE_START_CELL_SIZE, 1.0)
 	_draw_landing_effects(board_origin)
+	_draw_upper_crystal_haze(board_rect)
+	_draw_material_transition(board_rect)
 
 	_draw_kings(board_origin)
 	_draw_victory(board_rect)
@@ -198,38 +201,21 @@ func _draw_board_base(board_rect: Rect2) -> void:
 
 
 func _draw_crystal_facets(frame_rect: Rect2) -> void:
+	# Short, uneven refraction fragments read as crystal. Uniform full-length
+	# lines looked like UI guides and made the frame too busy.
 	var top_y := frame_rect.position.y + 3.0
 	var bottom_y := frame_rect.end.y - 3.0
 	var left_x := frame_rect.position.x + 3.0
 	var right_x := frame_rect.end.x - 3.0
-	draw_line(
-		Vector2(frame_rect.position.x + 22.0, top_y),
-		Vector2(frame_rect.end.x - 58.0, top_y),
-		CRYSTAL_HIGHLIGHT,
-		3.0,
-		true
-	)
-	draw_line(
-		Vector2(left_x, frame_rect.position.y + 22.0),
-		Vector2(left_x, frame_rect.end.y - 62.0),
-		Color(1.0, 1.0, 1.0, 0.68),
-		2.4,
-		true
-	)
-	draw_line(
-		Vector2(frame_rect.position.x + 70.0, bottom_y),
-		Vector2(frame_rect.end.x - 20.0, bottom_y),
-		Color(0.31, 0.70, 0.86, 0.46),
-		3.0,
-		true
-	)
-	draw_line(
-		Vector2(right_x, frame_rect.position.y + 64.0),
-		Vector2(right_x, frame_rect.end.y - 24.0),
-		Color(0.31, 0.70, 0.86, 0.42),
-		2.4,
-		true
-	)
+	_draw_refraction_segment(Vector2(frame_rect.position.x + 22.0, top_y), Vector2(frame_rect.position.x + 82.0, top_y), Color(1, 1, 1, 0.54), 2.4)
+	_draw_refraction_segment(Vector2(frame_rect.position.x + 108.0, top_y), Vector2(frame_rect.position.x + 151.0, top_y), Color(1, 1, 1, 0.36), 2.1)
+	_draw_refraction_segment(Vector2(frame_rect.end.x - 58.0, top_y), Vector2(frame_rect.end.x - 24.0, top_y), Color(1, 1, 1, 0.48), 2.3)
+	_draw_refraction_segment(Vector2(left_x, frame_rect.position.y + 24.0), Vector2(left_x, frame_rect.position.y + 83.0), Color(1, 1, 1, 0.40), 2.1)
+	_draw_refraction_segment(Vector2(left_x, frame_rect.position.y + 112.0), Vector2(left_x, frame_rect.position.y + 153.0), Color(1, 1, 1, 0.27), 1.8)
+	_draw_refraction_segment(Vector2(frame_rect.position.x + 70.0, bottom_y), Vector2(frame_rect.position.x + 131.0, bottom_y), Color(0.31, 0.70, 0.86, 0.30), 2.2)
+	_draw_refraction_segment(Vector2(frame_rect.end.x - 91.0, bottom_y), Vector2(frame_rect.end.x - 20.0, bottom_y), Color(0.31, 0.70, 0.86, 0.34), 2.2)
+	_draw_refraction_segment(Vector2(right_x, frame_rect.position.y + 65.0), Vector2(right_x, frame_rect.position.y + 111.0), Color(0.31, 0.70, 0.86, 0.30), 2.0)
+	_draw_refraction_segment(Vector2(right_x, frame_rect.end.y - 69.0), Vector2(right_x, frame_rect.end.y - 24.0), Color(0.31, 0.70, 0.86, 0.24), 1.8)
 	var upper_facet := PackedVector2Array([
 		Vector2(frame_rect.end.x - 50.0, frame_rect.position.y + 1.0),
 		Vector2(frame_rect.end.x - 24.0, frame_rect.position.y + 1.0),
@@ -242,6 +228,10 @@ func _draw_crystal_facets(frame_rect: Rect2) -> void:
 		Vector2(frame_rect.position.x + 47.0, frame_rect.end.y - 9.0),
 	])
 	draw_colored_polygon(lower_facet, Color(0.52, 0.85, 0.95, 0.42))
+
+
+func _draw_refraction_segment(from: Vector2, to: Vector2, color: Color, width: float) -> void:
+	draw_line(from, to, color, width, true)
 
 
 func _draw_well(rect: Rect2) -> void:
@@ -257,89 +247,72 @@ func _draw_block(
 ) -> void:
 	var gap := maxf(0.2, cell_size * 0.006)
 	var tile_rect := rect.grow(-gap)
-	var texture: Texture2D = SPLASH_TILE_TEXTURES[posmod(region_id - 1, SPLASH_TILE_TEXTURES.size())]
-	var raised_alpha := 1.0 - flatten_amount
-	var shadow_alpha := 0.22 if movable else 0.16
-	shadow_alpha *= lerpf(0.82, 1.0, raised_alpha)
-	draw_texture_rect(
-		texture,
-		Rect2(tile_rect.position + Vector2(0, cell_size * 0.052), tile_rect.size),
-		false,
-		Color(0.12, 0.065, 0.035, shadow_alpha * alpha)
-	)
-	draw_texture_rect(texture, tile_rect, false, Color(1, 1, 1, alpha))
-	_draw_wood_grain(tile_rect, region_id, alpha, cell_size)
-	_draw_wood_bevel(tile_rect, region_id, alpha, cell_size)
-
-
-func _draw_wood_grain(tile_rect: Rect2, region_id: int, alpha: float, cell_size: float) -> void:
 	var palette_color: Color = UITokensScript.REGION_COLORS[
 		posmod(region_id - 1, UITokensScript.REGION_COLORS.size())
 	]
-	var grain_color := palette_color.darkened(0.42)
-	grain_color.a = WOOD_GRAIN_ALPHA * alpha
-	var inset := maxf(5.0, cell_size * 0.12)
-	var usable_width := tile_rect.size.x - inset * 2.0
-	var phase_seed := fmod(tile_rect.position.x * 0.071 + tile_rect.position.y * 0.053, 1.0)
-	var grain_y := tile_rect.position.y + tile_rect.size.y * (0.48 + (phase_seed - 0.5) * 0.12)
-	var wave_height := cell_size * 0.040
-	var points := PackedVector2Array([
-		Vector2(tile_rect.position.x + inset, grain_y),
-		Vector2(tile_rect.position.x + inset + usable_width * 0.50, grain_y + wave_height),
-		Vector2(tile_rect.end.x - inset, grain_y - wave_height * 0.38),
-	])
-	draw_polyline(points, grain_color, maxf(0.8, cell_size * 0.020), true)
+	var crystal_alpha := (1.0 - smoothstep(0.08, 0.86, flatten_amount)) * alpha
+	var normal_alpha := smoothstep(0.18, 1.0, flatten_amount) * alpha
+	if crystal_alpha > 0.001:
+		var crystal_tint := palette_color.lightened(0.04)
+		crystal_tint.a = crystal_alpha * CRYSTAL_TILE_ALPHA
+		var crystal_shadow := CRYSTAL_TILE_SHADOW
+		crystal_shadow.a *= crystal_alpha * (1.12 if movable else 0.82)
+		draw_texture_rect(
+			SPLASH_CRYSTAL_TILE,
+			Rect2(tile_rect.position + Vector2(0, cell_size * 0.045), tile_rect.size),
+			false,
+			crystal_shadow
+		)
+		draw_texture_rect(SPLASH_CRYSTAL_TILE, tile_rect.grow(cell_size * 0.012), false, crystal_tint)
+	if normal_alpha > 0.001:
+		var normal_texture: Texture2D = SPLASH_TILE_TEXTURES[posmod(region_id - 1, SPLASH_TILE_TEXTURES.size())]
+		var normal_shadow := Color(0.12, 0.065, 0.035, 0.16 * normal_alpha)
+		draw_texture_rect(
+			normal_texture,
+			Rect2(tile_rect.position + Vector2(0, cell_size * 0.035), tile_rect.size),
+			false,
+			normal_shadow
+		)
+		draw_texture_rect(normal_texture, tile_rect, false, Color(1, 1, 1, normal_alpha))
 
-	var cell_hash := int(floor(tile_rect.position.x / cell_size)) + int(floor(tile_rect.position.y / cell_size)) * 3
-	if posmod(cell_hash, 6) == 0:
-		var knot_center := tile_rect.position + tile_rect.size * Vector2(0.68, 0.58)
-		var knot_radius := maxf(2.0, cell_size * 0.055)
-		draw_arc(knot_center, knot_radius, 0.0, TAU, 14, grain_color, maxf(0.8, cell_size * 0.020), true)
+
+func _draw_upper_crystal_haze(board_rect: Rect2) -> void:
+	var crystal_amount := 1.0 - smoothstep(0.12, 0.88, flatten_amount)
+	if crystal_amount <= 0.001:
+		return
+	# Four feathered strips soften only the far/top fifth of the board. Lion
+	# markers are rendered afterwards so gameplay information remains readable.
+	var strip_height := board_rect.size.y * 0.055
+	for strip_index in range(4):
+		var haze := CRYSTAL_HAZE
+		haze.a *= crystal_amount * (1.0 - float(strip_index) * 0.22)
+		var strip_rect := Rect2(
+			board_rect.position + Vector2(0, float(strip_index) * strip_height),
+			Vector2(board_rect.size.x, strip_height + 1.0)
+		)
+		draw_rect(strip_rect, haze)
 
 
-func _draw_wood_bevel(tile_rect: Rect2, region_id: int, alpha: float, cell_size: float) -> void:
-	var palette_color: Color = UITokensScript.REGION_COLORS[
-		posmod(region_id - 1, UITokensScript.REGION_COLORS.size())
-	]
-	var bevel := maxf(2.4, cell_size * 0.065)
-	var corner_inset := maxf(3.6, cell_size * 0.095)
-	var top_light := palette_color.lightened(0.72)
-	top_light.a = WOOD_EDGE_LIGHT_ALPHA * alpha
-	var left_light := palette_color.lightened(0.52)
-	left_light.a = WOOD_EDGE_LIGHT_ALPHA * 0.62 * alpha
-	var bottom_shade := palette_color.darkened(0.58)
-	bottom_shade.a = WOOD_EDGE_SHADE_ALPHA * alpha
-	var right_shade := palette_color.darkened(0.48)
-	right_shade.a = WOOD_EDGE_SHADE_ALPHA * 0.78 * alpha
-
-	var top_bevel := PackedVector2Array([
-		tile_rect.position + Vector2(corner_inset, 1.0),
-		Vector2(tile_rect.end.x - corner_inset, tile_rect.position.y + 1.0),
-		Vector2(tile_rect.end.x - corner_inset - bevel, tile_rect.position.y + bevel),
-		tile_rect.position + Vector2(corner_inset + bevel, bevel),
-	])
-	var left_bevel := PackedVector2Array([
-		tile_rect.position + Vector2(1.0, corner_inset),
-		tile_rect.position + Vector2(bevel, corner_inset + bevel),
-		Vector2(tile_rect.position.x + bevel, tile_rect.end.y - corner_inset - bevel),
-		Vector2(tile_rect.position.x + 1.0, tile_rect.end.y - corner_inset),
-	])
-	var bottom_bevel := PackedVector2Array([
-		Vector2(tile_rect.position.x + corner_inset, tile_rect.end.y - 1.0),
-		tile_rect.end - Vector2(corner_inset, 1.0),
-		tile_rect.end - Vector2(corner_inset + bevel, bevel),
-		Vector2(tile_rect.position.x + corner_inset + bevel, tile_rect.end.y - bevel),
-	])
-	var right_bevel := PackedVector2Array([
-		Vector2(tile_rect.end.x - 1.0, tile_rect.position.y + corner_inset),
-		Vector2(tile_rect.end.x - 1.0, tile_rect.end.y - corner_inset),
-		tile_rect.end - Vector2(bevel, corner_inset + bevel),
-		Vector2(tile_rect.end.x - bevel, tile_rect.position.y + corner_inset + bevel),
-	])
-	draw_colored_polygon(top_bevel, top_light)
-	draw_colored_polygon(left_bevel, left_light)
-	draw_colored_polygon(bottom_bevel, bottom_shade)
-	draw_colored_polygon(right_bevel, right_shade)
+func _draw_material_transition(board_rect: Rect2) -> void:
+	if flatten_amount <= 0.001 or flatten_amount >= 0.999:
+		return
+	# A compact diagonal light sweep masks the crystal-to-normal crossfade while
+	# keeping the board silhouette fixed and readable.
+	var sweep := smoothstep(0.0, 1.0, flatten_amount)
+	var center_x := lerpf(board_rect.position.x - board_rect.size.x * 0.18, board_rect.end.x + board_rect.size.x * 0.18, sweep)
+	var top_center := Vector2(center_x - board_rect.size.y * 0.24, board_rect.position.y)
+	var bottom_center := Vector2(center_x + board_rect.size.y * 0.24, board_rect.end.y)
+	for band_index in range(3, -1, -1):
+		var half_width := 4.0 + float(band_index) * 6.0
+		var normal := Vector2(bottom_center.y - top_center.y, top_center.x - bottom_center.x).normalized()
+		var polygon := PackedVector2Array([
+			top_center - normal * half_width,
+			top_center + normal * half_width,
+			bottom_center + normal * half_width,
+			bottom_center - normal * half_width,
+		])
+		var band_color := Color(1.0, 0.97, 0.80, 0.10 + (3.0 - float(band_index)) * 0.08)
+		draw_colored_polygon(polygon, band_color)
 
 
 func _draw_moving_piece(stage_index: int, board_origin: Vector2) -> void:

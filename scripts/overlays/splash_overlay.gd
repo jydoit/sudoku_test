@@ -9,7 +9,7 @@ signal sound_requested(kind: String)
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const SplashAssemblyBoardScript = preload("res://scripts/overlays/splash_assembly_board.gd")
-const SPLASH_LION = preload("res://assets/ui/lion_king_center_body.svg")
+const SPLASH_LION = preload("res://assets/ui/splash/splash_lion_peek.png")
 const SPLASH_TITLE = preload("res://assets/ui/splash/color_king_title.svg")
 
 const SPLASH_REVEAL_DURATION := 5.55
@@ -21,10 +21,10 @@ const SPLASH_ANIMATED_PIECE_COUNT := 2
 const SPLASH_KING_COUNT := 6
 const PREVIEW_STAGE_COUNT := 7
 const ASSEMBLY_SIZE := Vector2(440, 440)
-const LION_FINAL_TOP := -218.0
-const LION_FINAL_BOTTOM := -68.0
-const LION_START_OFFSET := 24.0
-const TITLE_HEIGHT := 118.0
+const LION_FINAL_TOP := -306.0
+const LION_FINAL_BOTTOM := -132.0
+const LION_START_OFFSET := 42.0
+const TITLE_HEIGHT := 104.0
 const SPLASH_SKY_TOP := Color("#4A82AA")
 const SPLASH_SKY_MIDDLE := Color("#6AAED7")
 const SPLASH_SKY_HAZE := Color("#C4DFEA")
@@ -131,15 +131,16 @@ func _build_ui() -> void:
 	lion_rect = TextureRect.new()
 	lion_rect.name = "SplashLion"
 	lion_rect.set_anchors_preset(Control.PRESET_CENTER)
-	lion_rect.offset_left = -75
+	lion_rect.offset_left = -87
 	lion_rect.offset_top = LION_FINAL_TOP
-	lion_rect.offset_right = 75
+	lion_rect.offset_right = 87
 	lion_rect.offset_bottom = LION_FINAL_BOTTOM
 	lion_rect.texture = SPLASH_LION
 	lion_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	lion_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	lion_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	lion_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lion_rect.z_index = 2
 	root.add_child(lion_rect)
 
 	assembly_board = SplashAssemblyBoardScript.new()
@@ -150,6 +151,7 @@ func _build_ui() -> void:
 	assembly_board.offset_right = ASSEMBLY_SIZE.x * 0.5
 	assembly_board.offset_bottom = ASSEMBLY_SIZE.y * 0.5 + 18
 	assembly_board.pivot_offset = ASSEMBLY_SIZE * 0.5
+	assembly_board.z_index = 1
 	root.add_child(assembly_board)
 
 	title_art = TextureRect.new()
@@ -162,6 +164,7 @@ func _build_ui() -> void:
 	title_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	title_art.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	title_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_art.z_index = 3
 	root.add_child(title_art)
 	_apply_safe_layout()
 
@@ -196,7 +199,7 @@ func _apply_safe_layout() -> void:
 	if not root or not title_art:
 		return
 	var safe := UITokensScript.display_safe_insets(root.size)
-	title_art.offset_top = maxf(78.0, safe.y + 38.0)
+	title_art.offset_top = maxf(60.0, safe.y + 24.0)
 	title_art.offset_bottom = title_art.offset_top + TITLE_HEIGHT
 
 
@@ -251,8 +254,8 @@ func _brand_reveal_animation() -> Animation:
 	animation.track_insert_key(scale_track, 2.17, Vector2.ONE * 1.025)
 	animation.track_insert_key(scale_track, 2.37, Vector2.ONE * 0.992)
 	animation.track_insert_key(scale_track, 2.55, Vector2.ONE)
-	_add_method_key(animation, 1.12, &"_animation_sound", ["snap"])
-	_add_method_key(animation, 2.00, &"_animation_sound", ["snap_final"])
+	_add_method_key(animation, 1.12, &"_animation_sound", ["crystal_place"])
+	_add_method_key(animation, 2.00, &"_animation_sound", ["crystal_place_final"])
 	_add_method_key(animation, 2.34, &"_animation_sound", ["assembly_complete"])
 	_add_method_key(animation, 3.16, &"_animation_sound", ["crown"])
 	_add_method_key(animation, SPLASH_SKIP_UNLOCK_TIME, &"_unlock_skip")
