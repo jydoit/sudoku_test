@@ -36,8 +36,16 @@ func _run() -> void:
 	assert(not FileAccess.file_exists("res://assets/ui/splash/splash_assembly_13.svg"), "The inconsistent redrawn transition frame must stay retired")
 	assert(not FileAccess.file_exists("res://assets/ui/splash/splash_assembly_14.svg"), "Duplicate splash frame 14 must stay removed")
 	assert(not FileAccess.file_exists("res://assets/ui/splash/splash_assembly_15.svg"), "The inconsistent redrawn terminal frame must stay retired")
+	for terminal_frame_index in [11, 12]:
+		var terminal_svg_source := FileAccess.get_file_as_string(
+			"res://assets/ui/splash/splash_assembly_%02d.svg" % terminal_frame_index
+		)
+		assert("id=\"terminal-pink-l-footprint\"" in terminal_svg_source, "Both completed-board frames must preserve the incoming pink L footprint")
+		assert("data-terminal-cells=\"4,5 5,4 5,5\"" in terminal_svg_source, "The terminal pink region must contain all three cells of the incoming L piece")
 	var splash_processor_source := FileAccess.get_file_as_string("res://tools/process_splash_sprite_sheet.py")
 	assert("RUNTIME_FRAME_COUNT = 13" in splash_processor_source, "Offline splash regeneration must not restore inconsistent frames 13-15")
+	assert("INCOMING_PIECE_FOOTPRINTS" in splash_processor_source and "TERMINAL_REGION_CELLS" in splash_processor_source, "Offline splash regeneration must validate every incoming piece against its same-color terminal region")
+	assert("_validate_terminal_piece_geometry()" in splash_processor_source, "Offline splash generation must enforce piece-to-region geometry before writing frames")
 	var lion_svg_source := FileAccess.get_file_as_string("res://assets/ui/lion_king_center_body.svg")
 	assert("<path" in lion_svg_source and "<image" not in lion_svg_source, "Final mascot must remain a pure-path SVG")
 	var title_svg_source := FileAccess.get_file_as_string("res://assets/ui/splash/color_king_title.svg")
@@ -80,5 +88,5 @@ func _run() -> void:
 	assert(finish_count[0] == 1, "Splash must release startup routing exactly once")
 	assert(not splash.root.visible, "Finished splash should stop blocking the target page")
 	splash.queue_free()
-	print("SPLASH SMOKE TEST PASSED: consistent assembly frames, reduced motion and one-shot routing")
+	print("SPLASH SMOKE TEST PASSED: preserved piece footprints, consistent terminal frames, reduced motion and one-shot routing")
 	quit()
