@@ -17,8 +17,9 @@ const SPLASH_REDUCED_DURATION := 1.65
 const SPLASH_FINISH_DURATION := 0.45
 const SPLASH_SKIP_UNLOCK_TIME := 3.94
 const SPLASH_PIECE_COUNT := 5
+const SPLASH_ANIMATED_PIECE_COUNT := 2
 const SPLASH_KING_COUNT := 6
-const PREVIEW_STAGE_COUNT := 10
+const PREVIEW_STAGE_COUNT := 7
 const ASSEMBLY_SIZE := Vector2(440, 440)
 const LION_FINAL_TOP := -218.0
 const LION_FINAL_BOTTOM := -68.0
@@ -79,17 +80,17 @@ func preview_stage(stage_index: int) -> void:
 		configure()
 	var resolved := clampi(stage_index, 0, PREVIEW_STAGE_COUNT - 1)
 	assembly_board.reset_visuals()
-	if resolved <= SPLASH_PIECE_COUNT:
+	if resolved <= SPLASH_ANIMATED_PIECE_COUNT:
 		assembly_board.assembly_progress = float(resolved)
 	else:
-		assembly_board.assembly_progress = float(SPLASH_PIECE_COUNT)
-	if resolved >= 6:
+		assembly_board.assembly_progress = float(SPLASH_ANIMATED_PIECE_COUNT)
+	if resolved >= 3:
 		assembly_board.flatten_amount = 1.0
-	if resolved == 7:
+	if resolved == 4:
 		assembly_board.king_reveal_progress = 3.0
-	elif resolved >= 8:
+	elif resolved >= 5:
 		assembly_board.king_reveal_progress = float(SPLASH_KING_COUNT)
-	if resolved >= 8:
+	if resolved >= 5:
 		assembly_board.victory_progress = 1.0
 	var show_brand := resolved == PREVIEW_STAGE_COUNT - 1
 	lion_rect.offset_top = LION_FINAL_TOP
@@ -101,7 +102,7 @@ func preview_stage(stage_index: int) -> void:
 
 
 func current_placed_piece_count() -> int:
-	return mini(int(floor(float(assembly_board.assembly_progress) + 0.0001)), SPLASH_PIECE_COUNT)
+	return assembly_board.completed_piece_count()
 
 
 func _build_ui() -> void:
@@ -191,46 +192,45 @@ func _brand_reveal_animation() -> Animation:
 	_add_value_track(
 		animation,
 		NodePath("SplashRoot/SplashAssembly:assembly_progress"),
-		[0.00, 0.24, 2.84],
-		[0.0, 0.0, float(SPLASH_PIECE_COUNT)],
+		[0.00, 0.24, 2.00],
+		[0.0, 0.0, float(SPLASH_ANIMATED_PIECE_COUNT)],
 		Animation.INTERPOLATION_LINEAR
 	)
 	_add_value_track(
 		animation,
 		NodePath("SplashRoot/SplashAssembly:flatten_amount"),
-		[0.00, 2.84, 3.18],
+		[0.00, 2.00, 2.34],
 		[0.0, 0.0, 1.0],
 		Animation.INTERPOLATION_CUBIC
 	)
 	_add_value_track(
 		animation,
 		NodePath("SplashRoot/SplashAssembly:king_reveal_progress"),
-		[0.00, 3.20, 3.82],
+		[0.00, 2.36, 3.16],
 		[0.0, 0.0, float(SPLASH_KING_COUNT)],
 		Animation.INTERPOLATION_LINEAR
 	)
 	_add_value_track(
 		animation,
 		NodePath("SplashRoot/SplashAssembly:victory_progress"),
-		[0.00, 3.82, 4.48],
+		[0.00, 3.16, 3.86],
 		[0.0, 0.0, 1.0],
 		Animation.INTERPOLATION_LINEAR
 	)
-	_add_title_track(animation, 3.88, 4.48)
-	_add_lion_track(animation, 3.88, 4.48)
+	_add_title_track(animation, 3.22, 3.86)
+	_add_lion_track(animation, 3.22, 3.86)
 	var scale_track := animation.add_track(Animation.TYPE_VALUE)
 	animation.track_set_path(scale_track, NodePath("SplashRoot/SplashAssembly:scale"))
 	animation.track_set_interpolation_type(scale_track, Animation.INTERPOLATION_CUBIC)
 	animation.track_insert_key(scale_track, 0.00, Vector2.ONE)
-	animation.track_insert_key(scale_track, 2.84, Vector2.ONE)
-	animation.track_insert_key(scale_track, 3.04, Vector2.ONE * 1.025)
-	animation.track_insert_key(scale_track, 3.24, Vector2.ONE * 0.992)
-	animation.track_insert_key(scale_track, 3.44, Vector2.ONE)
-	for placement_time in [0.76, 1.28, 1.80, 2.32]:
-		_add_method_key(animation, placement_time, &"_animation_sound", ["snap"])
-	_add_method_key(animation, 2.84, &"_animation_sound", ["snap_final"])
-	_add_method_key(animation, 3.18, &"_animation_sound", ["assembly_complete"])
-	_add_method_key(animation, 3.82, &"_animation_sound", ["crown"])
+	animation.track_insert_key(scale_track, 2.00, Vector2.ONE)
+	animation.track_insert_key(scale_track, 2.17, Vector2.ONE * 1.025)
+	animation.track_insert_key(scale_track, 2.37, Vector2.ONE * 0.992)
+	animation.track_insert_key(scale_track, 2.55, Vector2.ONE)
+	_add_method_key(animation, 1.12, &"_animation_sound", ["snap"])
+	_add_method_key(animation, 2.00, &"_animation_sound", ["snap_final"])
+	_add_method_key(animation, 2.34, &"_animation_sound", ["assembly_complete"])
+	_add_method_key(animation, 3.16, &"_animation_sound", ["crown"])
 	_add_method_key(animation, SPLASH_SKIP_UNLOCK_TIME, &"_unlock_skip")
 	return animation
 
@@ -244,7 +244,7 @@ func _reduced_animation() -> Animation:
 		animation,
 		NodePath("SplashRoot/SplashAssembly:assembly_progress"),
 		[0.00, 0.52],
-		[0.0, float(SPLASH_PIECE_COUNT)]
+		[0.0, float(SPLASH_ANIMATED_PIECE_COUNT)]
 	)
 	_add_value_track(
 		animation,

@@ -2,6 +2,15 @@ class_name SplashAssemblyBoard
 extends Control
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
+const SPLASH_TILE_TEXTURES := [
+	preload("res://assets/ui/splash/splash_tile_blue.png"),
+	preload("res://assets/ui/splash/splash_tile_red.png"),
+	preload("res://assets/ui/splash/splash_tile_green.png"),
+	preload("res://assets/ui/splash/splash_tile_yellow.png"),
+	preload("res://assets/ui/splash/splash_tile_purple.png"),
+	preload("res://assets/ui/splash/splash_tile_orange.png"),
+]
+const SPLASH_EMPTY_TILE: Texture2D = preload("res://assets/ui/splash/splash_tile_empty.png")
 const LION_TEXTURE: Texture2D = preload("res://assets/ui/lion_king.svg")
 const HAPPY_LION_TEXTURE: Texture2D = preload("res://assets/ui/lion_king_happy.svg")
 
@@ -34,29 +43,23 @@ const PIECES := [
 	{"pieceId": 4, "regionId": 6, "cells": [[0, 0], [1, 0]], "origin": [4, 3]},
 ]
 const PLACEMENT_ORDER := [1, 0, 3, 4, 2]
+const ANIMATED_PLACEMENT_ORDER := [1, 0]
+const INSTANT_FILL_ORDER := [3, 4, 2]
 const KING_SOLUTION := [[0, 3], [1, 0], [2, 2], [3, 4], [4, 1], [5, 5]]
 
 const BOARD_CELL_SIZE := 44.0
 const PIECE_START_CELL_SIZE := 39.0
 const BOARD_TOP := 48.0
-const PIECE_ARC_HEIGHT := 42.0
-const MOTION_TRAIL_SEGMENTS := 7
-const MOTION_TRAIL_LAG := 0.060
-const MOTION_TRAIL_MAX_ALPHA := 0.30
-const SPLASH_BOARD_SURFACE := Color("#FFF8EA")
-const SPLASH_BOARD_EDGE := Color("#E8A943")
-const SPLASH_BOARD_GLOW := Color("#FFD76A")
-const SPLASH_BOARD_SHADOW := Color(0.11, 0.20, 0.31, 0.18)
-const SPLASH_WELL_SURFACE := Color("#FFFDF7")
-const SPLASH_WELL_EDGE := Color("#E9D8BE")
-# One entry per placement stage. Every center sits outside the board, so only
-# the current piece enters the composition; there is no pending-piece tray.
+const PIECE_ARC_HEIGHT := 34.0
+const SPLASH_BOARD_SURFACE := Color("#FFF8EE")
+const SPLASH_BOARD_EDGE := Color("#E8C49D")
+const SPLASH_BOARD_INNER_EDGE := Color("#FFFDF8")
+const SPLASH_BOARD_SHADOW := Color(0.34, 0.21, 0.12, 0.14)
+# The two demonstrated real pieces sit below the board like the original
+# illustrated Splash. There is no game-like tray or list of the other pieces.
 const PIECE_START_CENTERS := [
-	Vector2(43.0, 224.0),
-	Vector2(397.0, 103.0),
-	Vector2(397.0, 278.0),
-	Vector2(220.0, 399.0),
-	Vector2(43.0, 330.0),
+	Vector2(125.0, 363.0),
+	Vector2(315.0, 363.0),
 ]
 const VICTORY_SPARK_POINTS := [
 	Vector2(0.05, 0.12), Vector2(0.28, 0.04), Vector2(0.58, 0.06),
@@ -66,7 +69,7 @@ const VICTORY_SPARK_POINTS := [
 
 var assembly_progress := 0.0:
 	set(value):
-		assembly_progress = clampf(value, 0.0, float(PIECES.size()))
+		assembly_progress = clampf(value, 0.0, float(ANIMATED_PLACEMENT_ORDER.size()))
 		queue_redraw()
 
 var flatten_amount := 0.0:
@@ -101,6 +104,8 @@ static func fixture_data() -> Dictionary:
 		"constructionCells": CONSTRUCTION_CELLS.duplicate(true),
 		"pieces": PIECES.duplicate(true),
 		"placementOrder": PLACEMENT_ORDER.duplicate(),
+		"animatedPlacementOrder": ANIMATED_PLACEMENT_ORDER.duplicate(),
+		"instantFillOrder": INSTANT_FILL_ORDER.duplicate(),
 		"solution": KING_SOLUTION.duplicate(true),
 	}
 
@@ -114,7 +119,7 @@ func reset_visuals() -> void:
 
 
 func show_stable_final() -> void:
-	assembly_progress = float(PIECES.size())
+	assembly_progress = float(ANIMATED_PLACEMENT_ORDER.size())
 	flatten_amount = 1.0
 	king_reveal_progress = float(KING_SOLUTION.size())
 	victory_progress = 1.0
@@ -133,146 +138,76 @@ func _draw() -> void:
 			if construction.has(cell):
 				_draw_well(rect)
 			else:
-				_draw_block(rect, _region_color(int(BASE_REGIONS[row][col])), false)
+				_draw_block(rect, int(BASE_REGIONS[row][col]), false)
 
-	var placed_count := mini(int(floor(assembly_progress + 0.0001)), PIECES.size())
+	var placed_count := mini(int(floor(assembly_progress + 0.0001)), ANIMATED_PLACEMENT_ORDER.size())
 	for stage_index in range(placed_count):
-		var piece := _piece_by_id(int(PLACEMENT_ORDER[stage_index]))
+		var piece := _piece_by_id(int(ANIMATED_PLACEMENT_ORDER[stage_index]))
 		_draw_piece_at_origin(piece, board_origin)
+	if placed_count == ANIMATED_PLACEMENT_ORDER.size():
+		for piece_id in INSTANT_FILL_ORDER:
+			_draw_piece_at_origin(_piece_by_id(int(piece_id)), board_origin)
 
-	if placed_count < PIECES.size():
+	if placed_count < ANIMATED_PLACEMENT_ORDER.size():
+		# Keep both selected examples visible before their turn, matching the
+		# composition of the first Splash instead of a gameplay inventory.
 		_draw_moving_piece(placed_count, board_origin)
+		for waiting_index in range(placed_count + 1, ANIMATED_PLACEMENT_ORDER.size()):
+			var waiting_piece := _piece_by_id(int(ANIMATED_PLACEMENT_ORDER[waiting_index]))
+			_draw_piece_centered(waiting_piece, PIECE_START_CENTERS[waiting_index], PIECE_START_CELL_SIZE, 1.0)
 
 	_draw_kings(board_origin)
 	_draw_victory(board_rect)
 
 
 func _draw_board_base(board_rect: Rect2) -> void:
-	draw_circle(board_rect.get_center(), board_rect.size.x * 0.66, Color(1, 1, 1, 0.075))
-	for glow_step in range(3, 0, -1):
-		var glow_frame := StyleBoxFlat.new()
-		glow_frame.bg_color = Color.TRANSPARENT
-		glow_frame.border_color = Color(SPLASH_BOARD_GLOW, 0.055 + float(4 - glow_step) * 0.045)
-		glow_frame.set_border_width_all(4 + glow_step * 2)
-		glow_frame.set_corner_radius_all(18 + glow_step * 3)
-		draw_style_box(glow_frame, board_rect.grow(8.0 + float(glow_step) * 4.0))
 	var board_base := StyleBoxFlat.new()
 	board_base.bg_color = SPLASH_BOARD_SURFACE
 	board_base.border_color = SPLASH_BOARD_EDGE
-	board_base.set_border_width_all(7)
-	board_base.set_corner_radius_all(16)
+	board_base.set_border_width_all(3)
+	board_base.set_corner_radius_all(13)
 	board_base.shadow_color = SPLASH_BOARD_SHADOW
-	board_base.shadow_size = 10
-	board_base.shadow_offset = Vector2(0, 6)
-	draw_style_box(board_base, board_rect.grow(7.0))
+	board_base.shadow_size = 6
+	board_base.shadow_offset = Vector2(0, 4)
+	draw_style_box(board_base, board_rect.grow(8.0))
 	var inner_ring := StyleBoxFlat.new()
 	inner_ring.bg_color = Color.TRANSPARENT
-	inner_ring.border_color = Color(1, 1, 1, 0.72)
+	inner_ring.border_color = SPLASH_BOARD_INNER_EDGE
 	inner_ring.set_border_width_all(2)
-	inner_ring.set_corner_radius_all(13)
+	inner_ring.set_corner_radius_all(9)
 	draw_style_box(inner_ring, board_rect.grow(2.0))
 
 
 func _draw_well(rect: Rect2) -> void:
-	var well_style := StyleBoxFlat.new()
-	well_style.bg_color = SPLASH_WELL_SURFACE
-	well_style.border_color = SPLASH_WELL_EDGE
-	well_style.set_border_width_all(1)
-	well_style.set_corner_radius_all(7)
-	draw_style_box(well_style, rect.grow(-2.4))
+	draw_texture_rect(SPLASH_EMPTY_TILE, rect.grow(-0.25), false, Color.WHITE)
 
 
-func _draw_block(rect: Rect2, color: Color, movable: bool, cell_size: float = BOARD_CELL_SIZE) -> void:
-	var gap := maxf(1.8, cell_size * 0.052)
+func _draw_block(
+	rect: Rect2,
+	region_id: int,
+	movable: bool,
+	alpha: float = 1.0,
+	cell_size: float = BOARD_CELL_SIZE
+) -> void:
+	var gap := maxf(0.2, cell_size * 0.006)
 	var tile_rect := rect.grow(-gap)
-	var material_alpha := color.a
+	var texture: Texture2D = SPLASH_TILE_TEXTURES[posmod(region_id - 1, SPLASH_TILE_TEXTURES.size())]
 	var raised_alpha := 1.0 - flatten_amount
-	var corner_radius := maxi(4, int(round(cell_size * 0.16)))
-	if raised_alpha > 0.001:
-		var shadow_style := StyleBoxFlat.new()
-		shadow_style.bg_color = Color(0.08, 0.12, 0.18, (0.18 if movable else 0.12) * material_alpha * raised_alpha)
-		shadow_style.set_corner_radius_all(corner_radius)
-		draw_style_box(shadow_style, Rect2(tile_rect.position + Vector2(0, cell_size * 0.065), tile_rect.size))
-		var tile_style := StyleBoxFlat.new()
-		var tile_color := color.lightened(0.035)
-		tile_color.a = material_alpha * raised_alpha
-		tile_style.bg_color = tile_color
-		var edge_color := color.darkened(0.14)
-		edge_color.a = material_alpha * raised_alpha
-		tile_style.border_color = edge_color
-		tile_style.set_border_width_all(2)
-		tile_style.set_corner_radius_all(corner_radius)
-		draw_style_box(tile_style, tile_rect)
-		var highlight := Color(1, 1, 1, 0.30 * material_alpha * raised_alpha)
-		draw_line(
-			tile_rect.position + Vector2(corner_radius, 2.0),
-			Vector2(tile_rect.end.x - corner_radius, tile_rect.position.y + 2.0),
-			highlight,
-			1.4,
-			true
+	if movable and raised_alpha > 0.001:
+		draw_texture_rect(
+			texture,
+			Rect2(tile_rect.position + Vector2(0, cell_size * 0.035), tile_rect.size),
+			false,
+			Color(0.18, 0.10, 0.16, 0.17 * alpha * raised_alpha)
 		)
-	if flatten_amount > 0.001:
-		var flat_style := StyleBoxFlat.new()
-		var flat_color := color.lightened(0.015)
-		flat_color.a = material_alpha * flatten_amount
-		flat_style.bg_color = flat_color
-		flat_style.set_corner_radius_all(maxi(3, corner_radius - 2))
-		draw_style_box(flat_style, tile_rect)
+	draw_texture_rect(texture, tile_rect, false, Color(1, 1, 1, alpha))
 
 
 func _draw_moving_piece(stage_index: int, board_origin: Vector2) -> void:
-	var piece := _piece_by_id(int(PLACEMENT_ORDER[stage_index]))
+	var piece := _piece_by_id(int(ANIMATED_PLACEMENT_ORDER[stage_index]))
 	var local_progress := clampf(assembly_progress - float(stage_index), 0.0, 1.0)
-	if local_progress <= 0.001:
-		return
-	_draw_piece_tail(piece, stage_index, local_progress, board_origin)
-	var main_alpha := smoothstep(0.0, 0.09, local_progress)
-	_draw_piece_motion_sample(piece, stage_index, local_progress, board_origin, main_alpha)
-
-
-func _draw_piece_tail(piece: Dictionary, stage_index: int, progress: float, board_origin: Vector2) -> void:
-	var trail_strength := sin(progress * PI)
-	if trail_strength <= 0.001:
-		return
-	var trail_color := _region_color(int(piece["regionId"])).lightened(0.08)
-	for segment_index in range(MOTION_TRAIL_SEGMENTS, 0, -1):
-		var head_progress := progress - MOTION_TRAIL_LAG * float(segment_index - 1)
-		if head_progress <= 0.001:
-			continue
-		var tail_progress := maxf(0.0, progress - MOTION_TRAIL_LAG * float(segment_index))
-		var head := _piece_motion_center(piece, stage_index, head_progress, board_origin)
-		var tail := _piece_motion_center(piece, stage_index, tail_progress, board_origin)
-		var nearness := 1.0 - float(segment_index - 1) / float(MOTION_TRAIL_SEGMENTS)
-		var segment_alpha := MOTION_TRAIL_MAX_ALPHA * trail_strength * lerpf(0.18, 1.0, nearness)
-		var outer_color := trail_color
-		outer_color.a = segment_alpha
-		draw_line(tail, head, outer_color, lerpf(12.0, 36.0, nearness), true)
-		var core_color := Color(1, 1, 1, segment_alpha * 0.40)
-		draw_line(tail, head, core_color, lerpf(3.0, 9.0, nearness), true)
-
-
-func _piece_motion_center(
-	piece: Dictionary,
-	stage_index: int,
-	progress: float,
-	board_origin: Vector2
-) -> Vector2:
-	var state := _piece_motion_state(piece, stage_index, progress, board_origin)
-	var bounds := _piece_bounds(piece)
-	var top_left: Vector2 = state["top_left"]
-	var cell_size := float(state["cell_size"])
-	return top_left + Vector2(bounds.x, bounds.y) * cell_size * 0.5
-
-
-func _draw_piece_motion_sample(
-	piece: Dictionary,
-	stage_index: int,
-	progress: float,
-	board_origin: Vector2,
-	alpha: float
-) -> void:
-	var state := _piece_motion_state(piece, stage_index, progress, board_origin)
-	_draw_piece(piece, state["top_left"], float(state["cell_size"]), alpha, float(state["scale"]))
+	var state := _piece_motion_state(piece, stage_index, local_progress, board_origin)
+	_draw_piece(piece, state["top_left"], float(state["cell_size"]), 1.0, float(state["scale"]))
 
 
 func _piece_motion_state(
@@ -298,6 +233,10 @@ func _draw_piece_at_origin(piece: Dictionary, board_origin: Vector2) -> void:
 	_draw_piece(piece, top_left, BOARD_CELL_SIZE, 1.0, 1.0)
 
 
+func _draw_piece_centered(piece: Dictionary, center: Vector2, cell_size: float, alpha: float) -> void:
+	_draw_piece(piece, _piece_top_left_for_center(piece, center, cell_size), cell_size, alpha, 1.0)
+
+
 func _draw_piece(piece: Dictionary, top_left: Vector2, cell_size: float, alpha: float, scale_value: float) -> void:
 	var bounds := _piece_bounds(piece)
 	var piece_center := top_left + Vector2(bounds.x, bounds.y) * cell_size * 0.5
@@ -305,9 +244,7 @@ func _draw_piece(piece: Dictionary, top_left: Vector2, cell_size: float, alpha: 
 	for raw_cell in piece.get("cells", []):
 		var local_cell := Vector2(float(raw_cell[1]), float(raw_cell[0]))
 		var rect := Rect2(top_left - piece_center + local_cell * cell_size, Vector2.ONE * cell_size)
-		var color := _region_color(int(piece["regionId"]))
-		color.a = alpha
-		_draw_block(rect, color, true, cell_size)
+		_draw_block(rect, int(piece["regionId"]), true, alpha, cell_size)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
@@ -382,5 +319,6 @@ func _piece_top_left_for_center(piece: Dictionary, center: Vector2, cell_size: f
 	return center - Vector2(bounds.x, bounds.y) * cell_size * 0.5
 
 
-func _region_color(region_id: int) -> Color:
-	return UITokensScript.REGION_COLORS[posmod(region_id - 1, UITokensScript.REGION_COLORS.size())]
+func completed_piece_count() -> int:
+	var animated_count := mini(int(floor(assembly_progress + 0.0001)), ANIMATED_PLACEMENT_ORDER.size())
+	return PIECES.size() if animated_count == ANIMATED_PLACEMENT_ORDER.size() else animated_count

@@ -17,13 +17,16 @@ func _run() -> void:
 	assert(is_equal_approx(normal_total, 6.0), "Normal splash should keep the approved six-second pacing")
 	assert(splash.SPLASH_REVEAL_DURATION - splash.SPLASH_SKIP_UNLOCK_TIME >= 1.0, "The completed board and mascot should hold before fading")
 	assert(is_equal_approx(reduced_total, 2.1), "Reduced-motion splash should remain readable without piece flight")
-	assert(splash.SPLASH_PIECE_COUNT >= 3, "Splash must demonstrate a real assembly with at least three movable pieces")
+	assert(splash.SPLASH_PIECE_COUNT == 5, "The real Splash fixture should retain all five source pieces")
+	assert(splash.SPLASH_ANIMATED_PIECE_COUNT == 2, "Only two representative pieces should visibly fly into place")
 	assert(splash.SPLASH_KING_COUNT == 6, "The final 6x6 board should reveal every lion in its crown solution")
 
 	var fixture: Dictionary = SplashAssemblyBoardScript.fixture_data()
 	assert(str(fixture["sourceEntryKey"]) == "103:hard", "Splash should identify its baked real composite source entry")
 	assert(fixture["pieces"].size() == splash.SPLASH_PIECE_COUNT, "The timeline piece count must match the fixture")
 	assert(fixture["placementOrder"].size() == fixture["pieces"].size(), "Every fixture piece should appear exactly once in the placement timeline")
+	assert(fixture["animatedPlacementOrder"].size() == splash.SPLASH_ANIMATED_PIECE_COUNT, "Exactly two real source pieces should be selected for visible placement")
+	assert(fixture["animatedPlacementOrder"] + fixture["instantFillOrder"] == fixture["placementOrder"], "The two animated pieces and instant fill must preserve the real solution order")
 	assert(fixture["solution"].size() == splash.SPLASH_KING_COUNT, "Every final lion reveal must come from the fixture solution")
 	_validate_fixture_geometry(fixture)
 	_validate_fixture_against_runtime_catalog(fixture)
@@ -33,12 +36,14 @@ func _run() -> void:
 	assert(not FileAccess.file_exists("res://tools/process_splash_sprite_sheet.py"), "The retired hand-drawn frame processor must not return")
 	var assembly_source := FileAccess.get_file_as_string("res://scripts/overlays/splash_assembly_board.gd")
 	assert("SOURCE_ENTRY_KEY := \"103:hard\"" in assembly_source, "The data-driven Splash must keep its real catalog provenance visible")
-	assert("BLOCK_TILE_TEXTURE" not in assembly_source and "SPLASH_BOARD_SURFACE" in assembly_source, "Splash should use its original warm illustration styling instead of the live-game block texture")
+	for tile_name in ["blue", "red", "green", "yellow", "purple", "orange", "empty"]:
+		assert(FileAccess.file_exists("res://assets/ui/splash/splash_tile_%s.png" % tile_name), "Every original-style Splash tile should be exported as its own clean-color texture")
+	assert("SPLASH_TILE_TEXTURES" in assembly_source and "SPLASH_EMPTY_TILE" in assembly_source, "Splash should render with the original full-color illustration tiles instead of tinting one neutral material")
+	assert(not FileAccess.file_exists("res://assets/ui/splash/splash_tile_original_style.png"), "The muddy neutral-tint Splash texture must stay removed")
 	assert("HAPPY_LION_TEXTURE" in assembly_source, "The completed board should reveal the canonical happy lion markers")
 	assert("func _draw_dock" not in assembly_source and "ASSEMBLY_TRAY" not in assembly_source, "Splash must not show a lower pending-piece tray")
-	assert("MOTION_TRAIL_SEGMENTS := 7" in assembly_source and "func _draw_piece_tail" in assembly_source, "Every active piece should receive a visible tapered light trail")
-	assert("SPLASH_BOARD_GLOW" in assembly_source and "set_border_width_all(7)" in assembly_source, "The illustrated board should keep its thick glowing frame")
-	assert("PIECE_START_CENTERS" in assembly_source, "Each active piece should enter one by one from outside the board")
+	assert("MOTION_TRAIL_SEGMENTS" not in assembly_source and "SPLASH_BOARD_GLOW" not in assembly_source, "The reverted first-edition art must not keep the later realistic glow and ribbon effects")
+	assert("PIECE_START_CENTERS" in assembly_source and "_draw_piece_centered" in assembly_source, "Exactly two selected real pieces should be presented below the board before placement")
 
 	var lion_svg_source := FileAccess.get_file_as_string("res://assets/ui/lion_king_center_body.svg")
 	assert("<path" in lion_svg_source and "<image" not in lion_svg_source, "Final mascot must remain a pure-path SVG")
@@ -59,9 +64,10 @@ func _run() -> void:
 	assert(splash.animation_player.has_animation(&"splash_reduced"), "Splash should provide a reduced-motion timeline")
 	assert(splash.animation_player.has_animation(&"splash_finish"), "Splash should own its input-releasing fade")
 
-	for placed_piece_count in range(splash.SPLASH_PIECE_COUNT + 1):
-		splash.preview_stage(placed_piece_count)
-		assert(splash.current_placed_piece_count() == placed_piece_count, "Every preview stage must preserve all earlier placements")
+	for animated_stage in range(splash.SPLASH_ANIMATED_PIECE_COUNT + 1):
+		splash.preview_stage(animated_stage)
+		var expected_count: int = splash.SPLASH_PIECE_COUNT if animated_stage == splash.SPLASH_ANIMATED_PIECE_COUNT else animated_stage
+		assert(splash.current_placed_piece_count() == expected_count, "The first placement must persist and the second must atomically complete the real board")
 		assert(is_zero_approx(float(splash.assembly_board.king_reveal_progress)), "Lion markers must wait until the same board is fully assembled")
 	splash.preview_stage(splash.PREVIEW_STAGE_COUNT - 1)
 	assert(splash.current_placed_piece_count() == splash.SPLASH_PIECE_COUNT, "Final preview should retain every piece placed by the same timeline")
@@ -91,7 +97,7 @@ func _run() -> void:
 	assert(finish_count[0] == 1, "Splash must release startup routing exactly once")
 	assert(not splash.root.visible, "Finished splash should stop blocking the target page")
 	splash.queue_free()
-	print("SPLASH SMOKE TEST PASSED: real five-piece assembly, exact terminal coverage, all-lion reveal and one-shot routing")
+	print("SPLASH SMOKE TEST PASSED: two illustrated placements, atomic real-layout completion, all-lion reveal and one-shot routing")
 	quit()
 
 
