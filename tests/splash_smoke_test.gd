@@ -44,6 +44,8 @@ func _run() -> void:
 	assert("func _draw_dock" not in assembly_source and "ASSEMBLY_TRAY" not in assembly_source, "Splash must not show a lower pending-piece tray")
 	assert("MOTION_TRAIL_SEGMENTS" not in assembly_source and "SPLASH_BOARD_GLOW" not in assembly_source, "The reverted first-edition art must not keep the later realistic glow and ribbon effects")
 	assert("PIECE_START_CENTERS" in assembly_source and "_draw_piece_centered" in assembly_source, "Exactly two selected real pieces should be presented below the board before placement")
+	assert("ANIME_STREAK_COUNT := 3" in assembly_source and "ANIME_IMPACT_RAY_COUNT := 10" in assembly_source, "The two demonstrated pieces should use restrained anime motion accents")
+	assert("func _draw_anime_motion_streaks" in assembly_source and "func _draw_anime_impact_burst" in assembly_source, "Anime accents should remain deterministic code-driven effects")
 
 	var lion_svg_source := FileAccess.get_file_as_string("res://assets/ui/lion_king_center_body.svg")
 	assert("<path" in lion_svg_source and "<image" not in lion_svg_source, "Final mascot must remain a pure-path SVG")

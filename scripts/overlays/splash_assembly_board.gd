@@ -55,6 +55,10 @@ const SPLASH_BOARD_SURFACE := Color("#FFF8EE")
 const SPLASH_BOARD_EDGE := Color("#E8C49D")
 const SPLASH_BOARD_INNER_EDGE := Color("#FFFDF8")
 const SPLASH_BOARD_SHADOW := Color(0.34, 0.21, 0.12, 0.14)
+const ANIME_ACTION_INK := Color("#365A8A")
+const ANIME_ACTION_LIGHT := Color("#FFF7C9")
+const ANIME_STREAK_COUNT := 3
+const ANIME_IMPACT_RAY_COUNT := 10
 # The two demonstrated real pieces sit below the board like the original
 # illustrated Splash. There is no game-like tray or list of the other pieces.
 const PIECE_START_CENTERS := [
@@ -155,6 +159,7 @@ func _draw() -> void:
 		for waiting_index in range(placed_count + 1, ANIMATED_PLACEMENT_ORDER.size()):
 			var waiting_piece := _piece_by_id(int(ANIMATED_PLACEMENT_ORDER[waiting_index]))
 			_draw_piece_centered(waiting_piece, PIECE_START_CENTERS[waiting_index], PIECE_START_CELL_SIZE, 1.0)
+	_draw_landing_effects(board_origin)
 
 	_draw_kings(board_origin)
 	_draw_victory(board_rect)
@@ -207,7 +212,15 @@ func _draw_moving_piece(stage_index: int, board_origin: Vector2) -> void:
 	var piece := _piece_by_id(int(ANIMATED_PLACEMENT_ORDER[stage_index]))
 	var local_progress := clampf(assembly_progress - float(stage_index), 0.0, 1.0)
 	var state := _piece_motion_state(piece, stage_index, local_progress, board_origin)
-	_draw_piece(piece, state["top_left"], float(state["cell_size"]), 1.0, float(state["scale"]))
+	_draw_anime_motion_streaks(piece, stage_index, local_progress, board_origin, state)
+	_draw_piece(
+		piece,
+		state["top_left"],
+		float(state["cell_size"]),
+		1.0,
+		state["scale"],
+		float(state["rotation"])
+	)
 
 
 func _piece_motion_state(
@@ -221,26 +234,125 @@ func _piece_motion_state(
 	var origin: Array = piece["origin"]
 	var destination := board_origin + Vector2(float(origin[1]), float(origin[0])) * BOARD_CELL_SIZE
 	var draw_position := start_top_left.lerp(destination, eased)
-	draw_position.y -= sin(eased * PI) * PIECE_ARC_HEIGHT
+	var lift_wave := sin(eased * PI)
+	draw_position.y -= lift_wave * PIECE_ARC_HEIGHT
 	var cell_size := lerpf(PIECE_START_CELL_SIZE, BOARD_CELL_SIZE, eased)
-	var lift_scale := 1.0 + sin(eased * PI) * 0.06
-	return {"top_left": draw_position, "cell_size": cell_size, "scale": lift_scale}
+	var landing_squash := 0.0
+	if eased > 0.72:
+		landing_squash = sin(inverse_lerp(0.72, 1.0, eased) * PI)
+	var motion_scale := Vector2(
+		1.0 - lift_wave * 0.018 + landing_squash * 0.055,
+		1.0 + lift_wave * 0.045 - landing_squash * 0.045
+	)
+	var rotation_direction := -1.0 if stage_index % 2 == 0 else 1.0
+	var rotation := deg_to_rad(5.0) * lift_wave * rotation_direction
+	return {
+		"top_left": draw_position,
+		"cell_size": cell_size,
+		"scale": motion_scale,
+		"rotation": rotation,
+	}
+
+
+func _draw_anime_motion_streaks(
+	piece: Dictionary,
+	stage_index: int,
+	progress: float,
+	board_origin: Vector2,
+	state: Dictionary
+) -> void:
+	var emphasis := sin(clampf(inverse_lerp(0.06, 0.94, progress), 0.0, 1.0) * PI)
+	if emphasis <= 0.02:
+		return
+	var previous_state := _piece_motion_state(piece, stage_index, maxf(0.0, progress - 0.065), board_origin)
+	var center := _piece_center_from_state(piece, state)
+	var previous_center := _piece_center_from_state(piece, previous_state)
+	var direction := center - previous_center
+	if direction.length_squared() < 0.01:
+		return
+	direction = direction.normalized()
+	var normal := Vector2(-direction.y, direction.x)
+	var bounds := _piece_bounds(piece)
+	var trailing_radius := maxf(float(bounds.x), float(bounds.y)) * float(state["cell_size"]) * 0.38
+	for line_index in range(ANIME_STREAK_COUNT):
+		var lateral := (float(line_index) - 1.0) * 12.0
+		var line_end := center - direction * (trailing_radius + 7.0 + float(line_index) * 4.0) + normal * lateral
+		var line_start := line_end - direction * (22.0 + float(line_index) * 7.0)
+		var ink := ANIME_ACTION_INK
+		ink.a = emphasis * (0.20 - float(line_index) * 0.035)
+		draw_line(line_start + normal * 1.5, line_end + normal * 1.5, ink, 3.4, true)
+		var light := Color.WHITE
+		light.a = emphasis * (0.76 - float(line_index) * 0.10)
+		draw_line(line_start, line_end, light, 2.0, true)
+
+
+func _draw_landing_effects(board_origin: Vector2) -> void:
+	for stage_index in range(ANIMATED_PLACEMENT_ORDER.size()):
+		var strength := _landing_effect_strength(stage_index)
+		if strength <= 0.01:
+			continue
+		var piece := _piece_by_id(int(ANIMATED_PLACEMENT_ORDER[stage_index]))
+		var origin: Array = piece["origin"]
+		var top_left := board_origin + Vector2(float(origin[1]), float(origin[0])) * BOARD_CELL_SIZE
+		var bounds := _piece_bounds(piece)
+		var center := top_left + Vector2(bounds.x, bounds.y) * BOARD_CELL_SIZE * 0.5
+		_draw_anime_impact_burst(center, maxf(float(bounds.x), float(bounds.y)) * BOARD_CELL_SIZE * 0.50, strength)
+
+
+func _landing_effect_strength(stage_index: int) -> float:
+	if stage_index == 0:
+		var elapsed := assembly_progress - 1.0
+		if elapsed < 0.0 or elapsed > 0.24:
+			return 0.0
+		return 1.0 - smoothstep(0.0, 0.24, elapsed)
+	if assembly_progress < float(ANIMATED_PLACEMENT_ORDER.size()):
+		return 0.0
+	return 1.0 - smoothstep(0.0, 0.72, flatten_amount)
+
+
+func _draw_anime_impact_burst(center: Vector2, piece_radius: float, strength: float) -> void:
+	var phase := 1.0 - strength
+	var ray_origin_radius := piece_radius + lerpf(5.0, 17.0, phase)
+	var ray_length := lerpf(20.0, 7.0, phase)
+	for ray_index in range(ANIME_IMPACT_RAY_COUNT):
+		var angle := TAU * float(ray_index) / float(ANIME_IMPACT_RAY_COUNT) + PI * 0.10
+		var direction := Vector2.from_angle(angle)
+		var ray_start := center + direction * ray_origin_radius
+		var ray_end := ray_start + direction * ray_length
+		var ink := ANIME_ACTION_INK
+		ink.a = 0.22 * strength
+		draw_line(ray_start, ray_end, ink, 4.2, true)
+		var light := ANIME_ACTION_LIGHT if ray_index % 2 == 0 else Color.WHITE
+		light.a = 0.92 * strength
+		draw_line(ray_start, ray_end, light, 2.2, true)
+
+
+func _piece_center_from_state(piece: Dictionary, state: Dictionary) -> Vector2:
+	var bounds := _piece_bounds(piece)
+	return state["top_left"] + Vector2(bounds.x, bounds.y) * float(state["cell_size"]) * 0.5
 
 
 func _draw_piece_at_origin(piece: Dictionary, board_origin: Vector2) -> void:
 	var origin: Array = piece["origin"]
 	var top_left := board_origin + Vector2(float(origin[1]), float(origin[0])) * BOARD_CELL_SIZE
-	_draw_piece(piece, top_left, BOARD_CELL_SIZE, 1.0, 1.0)
+	_draw_piece(piece, top_left, BOARD_CELL_SIZE, 1.0, Vector2.ONE)
 
 
 func _draw_piece_centered(piece: Dictionary, center: Vector2, cell_size: float, alpha: float) -> void:
-	_draw_piece(piece, _piece_top_left_for_center(piece, center, cell_size), cell_size, alpha, 1.0)
+	_draw_piece(piece, _piece_top_left_for_center(piece, center, cell_size), cell_size, alpha, Vector2.ONE)
 
 
-func _draw_piece(piece: Dictionary, top_left: Vector2, cell_size: float, alpha: float, scale_value: float) -> void:
+func _draw_piece(
+	piece: Dictionary,
+	top_left: Vector2,
+	cell_size: float,
+	alpha: float,
+	scale_value: Vector2,
+	rotation: float = 0.0
+) -> void:
 	var bounds := _piece_bounds(piece)
 	var piece_center := top_left + Vector2(bounds.x, bounds.y) * cell_size * 0.5
-	draw_set_transform(piece_center, 0.0, Vector2.ONE * scale_value)
+	draw_set_transform(piece_center, rotation, scale_value)
 	for raw_cell in piece.get("cells", []):
 		var local_cell := Vector2(float(raw_cell[1]), float(raw_cell[0]))
 		var rect := Rect2(top_left - piece_center + local_cell * cell_size, Vector2.ONE * cell_size)
