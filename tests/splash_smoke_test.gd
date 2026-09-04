@@ -36,7 +36,8 @@ func _run() -> void:
 	assert("BLOCK_TILE_TEXTURE" not in assembly_source and "SPLASH_BOARD_SURFACE" in assembly_source, "Splash should use its original warm illustration styling instead of the live-game block texture")
 	assert("HAPPY_LION_TEXTURE" in assembly_source, "The completed board should reveal the canonical happy lion markers")
 	assert("func _draw_dock" not in assembly_source and "ASSEMBLY_TRAY" not in assembly_source, "Splash must not show a lower pending-piece tray")
-	assert("MOTION_TRAIL_STEPS := 3" in assembly_source and "_draw_piece_motion_sample" in assembly_source, "Only the active piece should receive a subtle sampled motion trail")
+	assert("MOTION_TRAIL_SEGMENTS := 7" in assembly_source and "func _draw_piece_tail" in assembly_source, "Every active piece should receive a visible tapered light trail")
+	assert("SPLASH_BOARD_GLOW" in assembly_source and "set_border_width_all(7)" in assembly_source, "The illustrated board should keep its thick glowing frame")
 	assert("PIECE_START_CENTERS" in assembly_source, "Each active piece should enter one by one from outside the board")
 
 	var lion_svg_source := FileAccess.get_file_as_string("res://assets/ui/lion_king_center_body.svg")

@@ -5,10 +5,11 @@ const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const LION_TEXTURE: Texture2D = preload("res://assets/ui/lion_king.svg")
 const HAPPY_LION_TEXTURE: Texture2D = preload("res://assets/ui/lion_king_happy.svg")
 
-# Baked from the real offline composite entry `103:hard`. Keeping this small
-# snapshot in the Splash avoids synchronously loading the full 6x6 bundle while
-# startup data is still being prepared. The smoke test compares it with the
-# runtime catalog and verifies that the five pieces exactly cover every well.
+# Geometry and piece selection are baked from the real offline composite entry
+# `103:hard`; only the warm illustrated rendering style comes from the original
+# Splash. Keeping this small snapshot avoids synchronously loading the full 6x6
+# bundle during startup. The smoke test compares it with the runtime catalog and
+# verifies that the five pieces exactly cover every well.
 const SOURCE_ENTRY_KEY := "103:hard"
 const ROWS := 6
 const COLS := 6
@@ -39,11 +40,12 @@ const BOARD_CELL_SIZE := 44.0
 const PIECE_START_CELL_SIZE := 39.0
 const BOARD_TOP := 48.0
 const PIECE_ARC_HEIGHT := 42.0
-const MOTION_TRAIL_STEPS := 3
-const MOTION_TRAIL_LAG := 0.045
-const MOTION_TRAIL_MAX_ALPHA := 0.14
+const MOTION_TRAIL_SEGMENTS := 7
+const MOTION_TRAIL_LAG := 0.060
+const MOTION_TRAIL_MAX_ALPHA := 0.30
 const SPLASH_BOARD_SURFACE := Color("#FFF8EA")
-const SPLASH_BOARD_EDGE := Color("#EDCFA7")
+const SPLASH_BOARD_EDGE := Color("#E8A943")
+const SPLASH_BOARD_GLOW := Color("#FFD76A")
 const SPLASH_BOARD_SHADOW := Color(0.11, 0.20, 0.31, 0.18)
 const SPLASH_WELL_SURFACE := Color("#FFFDF7")
 const SPLASH_WELL_EDGE := Color("#E9D8BE")
@@ -147,15 +149,28 @@ func _draw() -> void:
 
 func _draw_board_base(board_rect: Rect2) -> void:
 	draw_circle(board_rect.get_center(), board_rect.size.x * 0.66, Color(1, 1, 1, 0.075))
+	for glow_step in range(3, 0, -1):
+		var glow_frame := StyleBoxFlat.new()
+		glow_frame.bg_color = Color.TRANSPARENT
+		glow_frame.border_color = Color(SPLASH_BOARD_GLOW, 0.055 + float(4 - glow_step) * 0.045)
+		glow_frame.set_border_width_all(4 + glow_step * 2)
+		glow_frame.set_corner_radius_all(18 + glow_step * 3)
+		draw_style_box(glow_frame, board_rect.grow(8.0 + float(glow_step) * 4.0))
 	var board_base := StyleBoxFlat.new()
 	board_base.bg_color = SPLASH_BOARD_SURFACE
 	board_base.border_color = SPLASH_BOARD_EDGE
-	board_base.set_border_width_all(4)
+	board_base.set_border_width_all(7)
 	board_base.set_corner_radius_all(16)
 	board_base.shadow_color = SPLASH_BOARD_SHADOW
 	board_base.shadow_size = 10
 	board_base.shadow_offset = Vector2(0, 6)
 	draw_style_box(board_base, board_rect.grow(7.0))
+	var inner_ring := StyleBoxFlat.new()
+	inner_ring.bg_color = Color.TRANSPARENT
+	inner_ring.border_color = Color(1, 1, 1, 0.72)
+	inner_ring.set_border_width_all(2)
+	inner_ring.set_corner_radius_all(13)
+	draw_style_box(inner_ring, board_rect.grow(2.0))
 
 
 func _draw_well(rect: Rect2) -> void:
@@ -185,7 +200,7 @@ func _draw_block(rect: Rect2, color: Color, movable: bool, cell_size: float = BO
 		var edge_color := color.darkened(0.14)
 		edge_color.a = material_alpha * raised_alpha
 		tile_style.border_color = edge_color
-		tile_style.set_border_width_all(1)
+		tile_style.set_border_width_all(2)
 		tile_style.set_corner_radius_all(corner_radius)
 		draw_style_box(tile_style, tile_rect)
 		var highlight := Color(1, 1, 1, 0.30 * material_alpha * raised_alpha)
@@ -210,21 +225,43 @@ func _draw_moving_piece(stage_index: int, board_origin: Vector2) -> void:
 	var local_progress := clampf(assembly_progress - float(stage_index), 0.0, 1.0)
 	if local_progress <= 0.001:
 		return
-	var trail_strength := sin(local_progress * PI)
-	for trail_step in range(MOTION_TRAIL_STEPS, 0, -1):
-		var delayed_progress := local_progress - MOTION_TRAIL_LAG * float(trail_step)
-		if delayed_progress <= 0.001:
-			continue
-		var depth_alpha := 1.0 - 0.22 * float(trail_step - 1)
-		_draw_piece_motion_sample(
-			piece,
-			stage_index,
-			delayed_progress,
-			board_origin,
-			MOTION_TRAIL_MAX_ALPHA * trail_strength * depth_alpha
-		)
+	_draw_piece_tail(piece, stage_index, local_progress, board_origin)
 	var main_alpha := smoothstep(0.0, 0.09, local_progress)
 	_draw_piece_motion_sample(piece, stage_index, local_progress, board_origin, main_alpha)
+
+
+func _draw_piece_tail(piece: Dictionary, stage_index: int, progress: float, board_origin: Vector2) -> void:
+	var trail_strength := sin(progress * PI)
+	if trail_strength <= 0.001:
+		return
+	var trail_color := _region_color(int(piece["regionId"])).lightened(0.08)
+	for segment_index in range(MOTION_TRAIL_SEGMENTS, 0, -1):
+		var head_progress := progress - MOTION_TRAIL_LAG * float(segment_index - 1)
+		if head_progress <= 0.001:
+			continue
+		var tail_progress := maxf(0.0, progress - MOTION_TRAIL_LAG * float(segment_index))
+		var head := _piece_motion_center(piece, stage_index, head_progress, board_origin)
+		var tail := _piece_motion_center(piece, stage_index, tail_progress, board_origin)
+		var nearness := 1.0 - float(segment_index - 1) / float(MOTION_TRAIL_SEGMENTS)
+		var segment_alpha := MOTION_TRAIL_MAX_ALPHA * trail_strength * lerpf(0.18, 1.0, nearness)
+		var outer_color := trail_color
+		outer_color.a = segment_alpha
+		draw_line(tail, head, outer_color, lerpf(12.0, 36.0, nearness), true)
+		var core_color := Color(1, 1, 1, segment_alpha * 0.40)
+		draw_line(tail, head, core_color, lerpf(3.0, 9.0, nearness), true)
+
+
+func _piece_motion_center(
+	piece: Dictionary,
+	stage_index: int,
+	progress: float,
+	board_origin: Vector2
+) -> Vector2:
+	var state := _piece_motion_state(piece, stage_index, progress, board_origin)
+	var bounds := _piece_bounds(piece)
+	var top_left: Vector2 = state["top_left"]
+	var cell_size := float(state["cell_size"])
+	return top_left + Vector2(bounds.x, bounds.y) * cell_size * 0.5
 
 
 func _draw_piece_motion_sample(
@@ -234,6 +271,16 @@ func _draw_piece_motion_sample(
 	board_origin: Vector2,
 	alpha: float
 ) -> void:
+	var state := _piece_motion_state(piece, stage_index, progress, board_origin)
+	_draw_piece(piece, state["top_left"], float(state["cell_size"]), alpha, float(state["scale"]))
+
+
+func _piece_motion_state(
+	piece: Dictionary,
+	stage_index: int,
+	progress: float,
+	board_origin: Vector2
+) -> Dictionary:
 	var eased := smoothstep(0.0, 1.0, clampf(progress, 0.0, 1.0))
 	var start_top_left := _piece_top_left_for_center(piece, PIECE_START_CENTERS[stage_index], PIECE_START_CELL_SIZE)
 	var origin: Array = piece["origin"]
@@ -242,7 +289,7 @@ func _draw_piece_motion_sample(
 	draw_position.y -= sin(eased * PI) * PIECE_ARC_HEIGHT
 	var cell_size := lerpf(PIECE_START_CELL_SIZE, BOARD_CELL_SIZE, eased)
 	var lift_scale := 1.0 + sin(eased * PI) * 0.06
-	_draw_piece(piece, draw_position, cell_size, alpha, lift_scale)
+	return {"top_left": draw_position, "cell_size": cell_size, "scale": lift_scale}
 
 
 func _draw_piece_at_origin(piece: Dictionary, board_origin: Vector2) -> void:
