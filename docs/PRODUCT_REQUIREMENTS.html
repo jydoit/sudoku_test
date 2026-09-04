@@ -221,7 +221,7 @@ figcaption {
 </ul>
 <h3>5.1 应用启动 Splash 动画</h3>
 <p>用户目标：在读取存档、关卡目录和本地化配置时，用一个短、清楚、有 color king 识别度的动画完成启动过渡；玩家应先看到“彩色区域 + 皇冠狮子”的品牌信号，再进入首页或新手教程。</p>
-<p>当前状态：已接入运行时。<code>scripts/overlays/splash_overlay.gd</code> 在冷启动时覆盖目标页面，用一套固定装饰棋盘展示拼块玩法和普通皇冠玩法的融合；Splash 不读取或修改真实棋盘、皇冠答案、红心和金币。</p>
+<p>当前状态：已接入运行时。<code>scripts/overlays/splash_overlay.gd</code> 在冷启动时覆盖目标页面，<code>scripts/overlays/splash_assembly_board.gd</code> 使用从真实离线拼块目录固化的小型案例展示拼块玩法和普通皇冠玩法的融合；Splash 不读取或修改玩家当前棋盘、红心、金币或存档。</p>
 <p>统一约束：</p>
 <ul>
 <li>Android 12 及以上保留系统强制启动页，使用 <code>color king</code> 自适应图标和现有蓝色背景，并只停留到 Godot 主循环可用；Debug 与 Release 导出预设都必须设置 <code>splash_screen/disable_godot_boot_splash=true</code>，项目同时设置 <code>application/boot_splash/show_image=false</code> 和 <code>minimum_display_time=0</code>，禁止在系统启动页和游戏内品牌动画之间插入默认 Godot 引擎 Logo 页面。系统页结束后必须直接衔接游戏内“拼块成盘”Splash。</li>
@@ -229,7 +229,7 @@ figcaption {
 <li>仅在应用冷启动或重新启动应用时播放；首页、关卡、结果页之间的普通路由切换不重复播放。</li>
 <li>正常模式总时长控制在 <code>5.80-6.20s</code>，减少动画模式控制在 <code>2.00-2.20s</code>；资源已经准备好时仍完整展示各阶段，资源加载较慢时停留在最后一个稳定画面，不循环抖动或制造假的百分比进度。</li>
 <li>使用首页和结果页共用的蓝色主色系、明亮经典 10 色棋盘色板和戴皇冠的小狮子贴图；不得使用 Unicode 皇冠字符，不得引入与核心玩法无关的装饰角色。</li>
-<li>Splash 只负责视觉过渡，不展示关卡答案，不把装饰棋盘写入正式存档；动画结束后才解锁首页或教程输入。</li>
+<li>Splash 只负责视觉过渡；允许展示固化演示案例的皇冠答案，但不得读取或泄露玩家当前关卡答案，也不得把演示棋盘写入正式存档；动画结束后才解锁首页或教程输入。</li>
 <li>竖屏移动端以 <code>540x960</code> 为基准检查，内容位于安全区内，狮子和色块不得越过屏幕边缘；横屏或窄屏时只缩放内容，不改变动画顺序。</li>
 <li>尊重静音、音效音量和减少动画设置。减少动画模式下取消闪光、缩放回弹和色块飞行，仅保留淡入、短暂停留和淡出；允许用户在首个稳定画面后跳过。</li>
 </ul>
@@ -237,10 +237,11 @@ figcaption {
 <h4>正式方案：拼块成盘，逻辑点冠</h4>
 <p>定位：冷启动默认动画。玩家先看到缩略版真实异形拼块依次进入缺口，完整棋盘随后压平为普通皇冠玩法，同一棋盘上的行、列和颜色区域再汇聚到皇冠与小狮子，明确表达“先拼成棋盘，再在棋盘中找到皇冠”的产品融合关系。</p>
 <p>动画脚本：</p>
-<div class="table-wrap"><table><thead><tr><th>时间</th><th>画面动作</th><th>声音与节奏</th></tr></thead><tbody><tr><td><code>0.00-0.84s</code></td><td>蓝天渐变背景淡入；不完整的 6x6 装饰棋盘和三个待放异形拼块出现，第一块被拿起、沿固定路径进入缺口并吸附。</td><td><code>0.84s</code> 播放中等尺寸木质放置音。</td></tr><tr><td><code>0.84-1.68s</code></td><td>第二块被拿起、移动并吸附；棋盘、镜头与其它拼块保持同一注册位置，拼块不旋转。</td><td><code>1.68s</code> 播放第二次木质放置音。</td></tr><tr><td><code>1.68-3.08s</code></td><td>最后一块从棋盘下方升起，沿轻微曲线路径移动，在缺口上方悬停后向下落位。</td><td><code>3.08s</code> 使用稍完整的大块放置音。</td></tr><tr><td><code>3.08-3.76s</code></td><td>完整棋盘只做一次 <code>1.00 -&gt; 1.025 -&gt; 0.992 -&gt; 1.00</code> 收束回弹；终局必须继续使用前三块实际落位后的同一张棋盘，不得重画或替换任何已出现拼块。每个前序待放拼块的完整格子轮廓，在平移和 90° 旋转后都必须是终局同色连续区域的几何子集；不能只保持颜色相同，却在终局丢失小 L 等组成格。</td><td><code>3.42s</code> 播放一次拼块完成音，不叠加屏幕震动。</td></tr><tr><td><code>3.76-4.58s</code></td><td>在保持完整棋盘像素与区域位置不变的前提下，独立叠加中央皇冠金币；标准小狮子从棋盘后方上升，<code>color king</code> 标题同步淡入。</td><td><code>4.12s</code> 使用现有皇冠揭示短音。</td></tr><tr><td><code>4.58-5.55s</code></td><td>棋盘、皇冠、小狮子和标题完全静止；资源未就绪时停在此稳定画面。</td><td>保持静音，不循环。</td></tr><tr><td><code>5.55-6.00s</code></td><td>目标页面已准备好时，整个 Splash 统一淡出并释放输入。</td><td>不新增离场音。</td></tr></tbody></table></div>
-<p>关键帧资源：图像生成模型产出的 4x4 位图母版仅保存在 <code>docs/animation_sources/splash/</code>，由 <code>tools/process_splash_sprite_sheet.py</code> 去除烘焙棋盘格、统一注册并逐帧矢量追踪；运行时只加载 <code>assets/ui/splash/splash_assembly_00.svg</code> 至 <code>12.svg</code>，共 <code>13</code> 张同一拼装过程的纯路径 SVG。处理脚本同时登记蓝色阶梯块、青色小 L 和粉色小 L 的相对格子轮廓及终局同色区域，并在每次生成前校验包含关系；第 <code>11–12</code> 帧用确定性的纯路径补齐粉色小 L 的第三格，避免重新生成素材后再次退化为两格。原 <code>13–15</code> 终局帧会重新绘制并改变已落位色块，已经废弃删除；最终稳定帧固定复用第 <code>12</code> 帧，并独立叠加标准 <code>coin.svg</code>、<code>lion_king_center_body.svg</code> 和品牌标题，不加载或打包逐帧 PNG。SVG 画布统一为 <code>320x320</code>，不得包含 <code>&lt;image&gt;</code> 嵌入、文字、水印或真实关卡答案。<code>docs/prd_screenshots/</code> 仅服务产品文档，Android 与 iOS 的 Debug/Release 导出预设都必须排除该目录。</p>
+<div class="table-wrap"><table><thead><tr><th>时间</th><th>画面动作</th><th>声音与节奏</th></tr></thead><tbody><tr><td><code>0.00-2.84s</code></td><td>蓝天渐变背景淡入；展示真实 6x6 拼块案例的固定区域、13 个施工凹槽和下方 5 个待放块。5 块按真实 <code>solutionOrder</code> 依次被选中，从托盘沿短弧线抬起并落入各自合法位置；块的格子轮廓、颜色和方向不在飞行中改变。</td><td>前 4 块落位播放中等尺寸木质放置音，第 5 块使用完整落位音。</td></tr><tr><td><code>2.84-3.18s</code></td><td>13 个施工格全部由刚才的 5 块覆盖后，仍在同一个绘制节点中降低侧面和投影并压平；只做一次 <code>1.00 -&gt; 1.025 -&gt; 0.992 -&gt; 1.00</code> 收束回弹，不加载另一张终局图。</td><td><code>3.18s</code> 播放一次拼块完成音，不叠加屏幕震动。</td></tr><tr><td><code>3.20-3.82s</code></td><td>在同一棋盘上按固化案例的唯一解依次找出 6 只皇冠小狮子；每行、每列、每个颜色区域各一只且互不八方向相邻，最后一只出现后六只都保持可见。</td><td>第六只出现时使用现有皇冠揭示短音。</td></tr><tr><td><code>3.82-4.48s</code></td><td>六只全部找到后，棋盘边缘和小狮子只播放一次短促金色庆祝脉冲；<code>3.88s</code> 起标准全身小狮子从棋盘后方上升，<code>color king</code> 标题同步淡入。</td><td>不循环播放庆祝音效。</td></tr><tr><td><code>4.48-5.55s</code></td><td>完整棋盘、6 只皇冠小狮子、全身小狮子和标题完全静止；资源未就绪时停在此稳定画面。</td><td>保持静音，不循环。</td></tr><tr><td><code>5.55-6.00s</code></td><td>目标页面已准备好时，整个 Splash 统一淡出并释放输入。</td><td>不新增离场音。</td></tr></tbody></table></div>
+<p>拼块事实源：演示案例固化自运行目录 <code>data/runtime/composite_size_6.res</code> 的 <code>103:hard</code> 条目，包含 5 个可移动拼块、3 种施工颜色和 13 个施工格。为避免启动阶段同步加载整份 6x6 目录，运行时只在 <code>SplashAssemblyBoard</code> 中保留该条目的最小快照；测试必须逐项对比真实目录中的 <code>baseRegions</code>、<code>constructionCells</code>、每块 <code>pieceId/regionId/cells</code>、合法终点和最终 <code>solution</code>。五块绝对落点的并集必须恰好等于 13 个施工格，不得重叠、漏格、跨色或在终局消失。</p>
+<p>原 ImageGen 4x4 手绘母版只作为 <code>docs/animation_sources/splash/</code> 下的历史设计参考，不参与运行时导出。<code>assets/ui/splash/splash_assembly_00.svg</code> 至 <code>15.svg</code> 及 <code>tools/process_splash_sprite_sheet.py</code> 已废弃删除，防止再次用无法逐格闭合的手绘终局替换真实拼装结果。运行时棋盘、凹槽、待放块、飞行块、已落位块和压平终局均由同一个 <code>SplashAssemblyBoard._draw()</code> 基于同一份格子数据绘制；方块外观复用正式拼块玩法的 <code>block_tile_neutral.svg</code> 和“明亮经典”色板。最终小狮子使用正式棋盘的 <code>lion_king.svg</code> / <code>lion_king_happy.svg</code>，全身角色与品牌标题继续使用纯路径 SVG。<code>docs/prd_screenshots/</code> 与历史动画母版仅服务产品文档，Android 与 iOS 的 Debug/Release 导出预设都必须排除 <code>docs/</code>。</p>
 <p>品牌标题使用 <code>assets/ui/splash/color_king_title.svg</code>，由 <code>tools/generate_splash_title_svg.py</code> 将圆润粗体字形固化为纯 <code>&lt;path&gt;</code>；标题包含蓝灰偏移阴影、深金外沿、金色纵向渐变、浅金高光边和两枚小型矢量闪光。运行时使用保持宽高比的 <code>TextureRect</code>，不得回退为依赖设备字体的 Label，也不得在 SVG 中保存 <code>&lt;text&gt;</code> 或嵌入位图。</p>
-<p>减少动画模式使用 <code>1.65s</code> 的淡入和三张稳定关键帧（未完成拼块、临近完成、同一棋盘完成态），再独立淡入皇冠金币、狮子与标题并用 <code>0.45s</code> 淡出；取消逐块飞行、完成回弹和高光闪动。普通时间轴在完整棋盘出现后允许点击、触摸或键盘跳过，跳过与自然结束都只能释放一次启动路由。</p>
+<p>减少动画模式使用 <code>1.65s</code> 的淡入和离散状态切换：先展示未完成棋盘，再直接显示同一数据生成的完整棋盘和 6 只小狮子，最后淡入全身狮子与标题并用 <code>0.45s</code> 淡出；取消逐块飞行、完成回弹和高光闪动。普通时间轴在 6 只小狮子全部出现后允许点击、触摸或键盘跳过，跳过与自然结束都只能释放一次启动路由。</p>
 <p>Splash 验收标准：</p>
 <ul>
 <li>新用户启动时，Splash 结束后进入单张 5x5 新手教程；已有存档用户进入原本应进入的首页/关卡/恢复流程，动画不改变路由判断。</li>
@@ -248,7 +249,8 @@ figcaption {
 <li>真实资源已就绪时正常模式总时长约 <code>6.00s</code>、减少动画模式约 <code>2.10s</code>；资源未就绪时不显示空白页面、不循环跳动，准备完成后从稳定画面自然退出。</li>
 <li>动画中途退出应用不会写入教程完成、关卡进度、金币、红心、皇冠或拼块现场；重新启动可以正常继续原流程。</li>
 <li>静音时不播放音效；减少动画模式无闪烁、无明显回弹和无屏幕震动；稳定画面后允许跳过且只释放一次输入。</li>
-<li>蓝色阶梯块、青色小 L 和粉色小 L 在终局中都能于同色连续区域内找到完整轮廓；允许平移及 90° 旋转，不允许少格、变形或跨入其它颜色区域。</li>
+<li>固化案例的 5 个块在动画开始、飞行、落位和压平终局中保持相同 <code>pieceId</code>、颜色和逐格轮廓；5 块绝对落点无重叠并恰好覆盖全部 13 个初始凹槽。</li>
+<li>终局依次出现 6 只皇冠小狮子，位置必须等于固化案例唯一解并满足每行、每列、每色各一且不八方向相邻；稳定画面六只全部保留。</li>
 <li>连续冷启动两次不产生重复节点、重复音效、残留 Tween 或无法释放的 Splash 覆盖层。</li>
 </ul>
 <h3>5.2 应用图标</h3>

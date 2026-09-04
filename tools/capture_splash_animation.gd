@@ -42,7 +42,8 @@ func _capture() -> void:
 			"average_process_ms": average_ms,
 			"peak_process_ms": peak_ms,
 			"samples": process_samples.size(),
-			"frame_count": splash.SPLASH_FRAMES.size(),
+			"piece_count": splash.SPLASH_PIECE_COUNT,
+			"king_count": splash.SPLASH_KING_COUNT,
 			"peak_draw_calls": peak_draw_calls,
 		}
 	}))
