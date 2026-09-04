@@ -33,8 +33,11 @@ func _run() -> void:
 	assert(not FileAccess.file_exists("res://tools/process_splash_sprite_sheet.py"), "The retired hand-drawn frame processor must not return")
 	var assembly_source := FileAccess.get_file_as_string("res://scripts/overlays/splash_assembly_board.gd")
 	assert("SOURCE_ENTRY_KEY := \"103:hard\"" in assembly_source, "The data-driven Splash must keep its real catalog provenance visible")
-	assert("draw_texture_rect(BLOCK_TILE_TEXTURE" in assembly_source, "Splash pieces should reuse the block-assembly tile treatment")
+	assert("BLOCK_TILE_TEXTURE" not in assembly_source and "SPLASH_BOARD_SURFACE" in assembly_source, "Splash should use its original warm illustration styling instead of the live-game block texture")
 	assert("HAPPY_LION_TEXTURE" in assembly_source, "The completed board should reveal the canonical happy lion markers")
+	assert("func _draw_dock" not in assembly_source and "ASSEMBLY_TRAY" not in assembly_source, "Splash must not show a lower pending-piece tray")
+	assert("MOTION_TRAIL_STEPS := 3" in assembly_source and "_draw_piece_motion_sample" in assembly_source, "Only the active piece should receive a subtle sampled motion trail")
+	assert("PIECE_START_CENTERS" in assembly_source, "Each active piece should enter one by one from outside the board")
 
 	var lion_svg_source := FileAccess.get_file_as_string("res://assets/ui/lion_king_center_body.svg")
 	assert("<path" in lion_svg_source and "<image" not in lion_svg_source, "Final mascot must remain a pure-path SVG")
