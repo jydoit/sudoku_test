@@ -25,6 +25,10 @@ const LION_FINAL_TOP := -218.0
 const LION_FINAL_BOTTOM := -68.0
 const LION_START_OFFSET := 24.0
 const TITLE_HEIGHT := 118.0
+const SPLASH_SKY_TOP := Color("#4A82AA")
+const SPLASH_SKY_MIDDLE := Color("#6AAED7")
+const SPLASH_SKY_HAZE := Color("#C4DFEA")
+const SPLASH_SKY_BOTTOM := Color("#A9D1E1")
 
 var root: Control
 var background: TextureRect
@@ -118,7 +122,7 @@ func _build_ui() -> void:
 	background = TextureRect.new()
 	background.name = "SplashBackground"
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	background.texture = UITokensScript.royal_screen_gradient_texture()
+	background.texture = _splash_background_texture()
 	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	background.stretch_mode = TextureRect.STRETCH_SCALE
 	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -166,6 +170,26 @@ func _build_ui() -> void:
 	animation_player.root_node = NodePath("..")
 	animation_player.animation_finished.connect(_on_animation_finished)
 	add_child(animation_player)
+
+
+func _splash_background_texture() -> GradientTexture2D:
+	var gradient := Gradient.new()
+	gradient.offsets = PackedFloat32Array([0.0, 0.18, 0.52, 0.76, 0.90, 1.0])
+	gradient.colors = PackedColorArray([
+		SPLASH_SKY_TOP,
+		SPLASH_SKY_MIDDLE,
+		SPLASH_SKY_HAZE,
+		UITokensScript.ROYAL_FLOOR,
+		UITokensScript.ROYAL_FLOOR,
+		SPLASH_SKY_BOTTOM,
+	])
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.width = 1
+	texture.height = 256
+	texture.fill_from = Vector2(0.5, 0.0)
+	texture.fill_to = Vector2(0.5, 1.0)
+	return texture
 
 
 func _apply_safe_layout() -> void:

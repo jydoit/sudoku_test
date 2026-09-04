@@ -52,13 +52,18 @@ const PIECE_START_CELL_SIZE := 39.0
 const BOARD_TOP := 48.0
 const PIECE_ARC_HEIGHT := 34.0
 const SPLASH_BOARD_SURFACE := Color("#FFF8EE")
-const SPLASH_BOARD_EDGE := Color("#E8C49D")
-const SPLASH_BOARD_INNER_EDGE := Color("#FFFDF8")
-const SPLASH_BOARD_SHADOW := Color(0.34, 0.21, 0.12, 0.14)
+const CRYSTAL_SURFACE := Color(0.70, 0.90, 0.97, 0.46)
+const CRYSTAL_EDGE := Color(0.43, 0.78, 0.91, 0.82)
+const CRYSTAL_HIGHLIGHT := Color(1.0, 1.0, 1.0, 0.92)
+const CRYSTAL_SHADOW := Color(0.12, 0.43, 0.64, 0.20)
+const CRYSTAL_REFRACTION := Color(0.82, 0.96, 1.0, 0.64)
 const ANIME_ACTION_INK := Color("#365A8A")
 const ANIME_ACTION_LIGHT := Color("#FFF7C9")
 const ANIME_STREAK_COUNT := 3
 const ANIME_IMPACT_RAY_COUNT := 10
+const WOOD_GRAIN_ALPHA := 0.13
+const WOOD_EDGE_LIGHT_ALPHA := 0.58
+const WOOD_EDGE_SHADE_ALPHA := 0.38
 # The two demonstrated real pieces sit below the board like the original
 # illustrated Splash. There is no game-like tray or list of the other pieces.
 const PIECE_START_CENTERS := [
@@ -166,21 +171,77 @@ func _draw() -> void:
 
 
 func _draw_board_base(board_rect: Rect2) -> void:
+	var crystal_outer := StyleBoxFlat.new()
+	crystal_outer.bg_color = CRYSTAL_SURFACE
+	crystal_outer.border_color = CRYSTAL_HIGHLIGHT
+	crystal_outer.set_border_width_all(3)
+	crystal_outer.set_corner_radius_all(21)
+	crystal_outer.shadow_color = CRYSTAL_SHADOW
+	crystal_outer.shadow_size = 10
+	crystal_outer.shadow_offset = Vector2(0, 5)
+	draw_style_box(crystal_outer, board_rect.grow(16.0))
+
+	var crystal_band := StyleBoxFlat.new()
+	crystal_band.bg_color = Color.TRANSPARENT
+	crystal_band.border_color = CRYSTAL_EDGE
+	crystal_band.set_border_width_all(8)
+	crystal_band.set_corner_radius_all(18)
+	draw_style_box(crystal_band, board_rect.grow(12.0))
+
 	var board_base := StyleBoxFlat.new()
 	board_base.bg_color = SPLASH_BOARD_SURFACE
-	board_base.border_color = SPLASH_BOARD_EDGE
-	board_base.set_border_width_all(3)
+	board_base.border_color = CRYSTAL_REFRACTION
+	board_base.set_border_width_all(2)
 	board_base.set_corner_radius_all(13)
-	board_base.shadow_color = SPLASH_BOARD_SHADOW
-	board_base.shadow_size = 6
-	board_base.shadow_offset = Vector2(0, 4)
-	draw_style_box(board_base, board_rect.grow(8.0))
-	var inner_ring := StyleBoxFlat.new()
-	inner_ring.bg_color = Color.TRANSPARENT
-	inner_ring.border_color = SPLASH_BOARD_INNER_EDGE
-	inner_ring.set_border_width_all(2)
-	inner_ring.set_corner_radius_all(9)
-	draw_style_box(inner_ring, board_rect.grow(2.0))
+	draw_style_box(board_base, board_rect.grow(4.0))
+	_draw_crystal_facets(board_rect.grow(14.0))
+
+
+func _draw_crystal_facets(frame_rect: Rect2) -> void:
+	var top_y := frame_rect.position.y + 3.0
+	var bottom_y := frame_rect.end.y - 3.0
+	var left_x := frame_rect.position.x + 3.0
+	var right_x := frame_rect.end.x - 3.0
+	draw_line(
+		Vector2(frame_rect.position.x + 22.0, top_y),
+		Vector2(frame_rect.end.x - 58.0, top_y),
+		CRYSTAL_HIGHLIGHT,
+		3.0,
+		true
+	)
+	draw_line(
+		Vector2(left_x, frame_rect.position.y + 22.0),
+		Vector2(left_x, frame_rect.end.y - 62.0),
+		Color(1.0, 1.0, 1.0, 0.68),
+		2.4,
+		true
+	)
+	draw_line(
+		Vector2(frame_rect.position.x + 70.0, bottom_y),
+		Vector2(frame_rect.end.x - 20.0, bottom_y),
+		Color(0.31, 0.70, 0.86, 0.46),
+		3.0,
+		true
+	)
+	draw_line(
+		Vector2(right_x, frame_rect.position.y + 64.0),
+		Vector2(right_x, frame_rect.end.y - 24.0),
+		Color(0.31, 0.70, 0.86, 0.42),
+		2.4,
+		true
+	)
+	var upper_facet := PackedVector2Array([
+		Vector2(frame_rect.end.x - 50.0, frame_rect.position.y + 1.0),
+		Vector2(frame_rect.end.x - 24.0, frame_rect.position.y + 1.0),
+		Vector2(frame_rect.end.x - 37.0, frame_rect.position.y + 8.0),
+	])
+	draw_colored_polygon(upper_facet, Color(1.0, 1.0, 1.0, 0.38))
+	var lower_facet := PackedVector2Array([
+		Vector2(frame_rect.position.x + 31.0, frame_rect.end.y - 1.0),
+		Vector2(frame_rect.position.x + 63.0, frame_rect.end.y - 1.0),
+		Vector2(frame_rect.position.x + 47.0, frame_rect.end.y - 9.0),
+	])
+	draw_colored_polygon(lower_facet, Color(0.52, 0.85, 0.95, 0.42))
 
 
 func _draw_well(rect: Rect2) -> void:
@@ -198,14 +259,87 @@ func _draw_block(
 	var tile_rect := rect.grow(-gap)
 	var texture: Texture2D = SPLASH_TILE_TEXTURES[posmod(region_id - 1, SPLASH_TILE_TEXTURES.size())]
 	var raised_alpha := 1.0 - flatten_amount
-	if movable and raised_alpha > 0.001:
-		draw_texture_rect(
-			texture,
-			Rect2(tile_rect.position + Vector2(0, cell_size * 0.035), tile_rect.size),
-			false,
-			Color(0.18, 0.10, 0.16, 0.17 * alpha * raised_alpha)
-		)
+	var shadow_alpha := 0.22 if movable else 0.16
+	shadow_alpha *= lerpf(0.82, 1.0, raised_alpha)
+	draw_texture_rect(
+		texture,
+		Rect2(tile_rect.position + Vector2(0, cell_size * 0.052), tile_rect.size),
+		false,
+		Color(0.12, 0.065, 0.035, shadow_alpha * alpha)
+	)
 	draw_texture_rect(texture, tile_rect, false, Color(1, 1, 1, alpha))
+	_draw_wood_grain(tile_rect, region_id, alpha, cell_size)
+	_draw_wood_bevel(tile_rect, region_id, alpha, cell_size)
+
+
+func _draw_wood_grain(tile_rect: Rect2, region_id: int, alpha: float, cell_size: float) -> void:
+	var palette_color: Color = UITokensScript.REGION_COLORS[
+		posmod(region_id - 1, UITokensScript.REGION_COLORS.size())
+	]
+	var grain_color := palette_color.darkened(0.42)
+	grain_color.a = WOOD_GRAIN_ALPHA * alpha
+	var inset := maxf(5.0, cell_size * 0.12)
+	var usable_width := tile_rect.size.x - inset * 2.0
+	var phase_seed := fmod(tile_rect.position.x * 0.071 + tile_rect.position.y * 0.053, 1.0)
+	var grain_y := tile_rect.position.y + tile_rect.size.y * (0.48 + (phase_seed - 0.5) * 0.12)
+	var wave_height := cell_size * 0.040
+	var points := PackedVector2Array([
+		Vector2(tile_rect.position.x + inset, grain_y),
+		Vector2(tile_rect.position.x + inset + usable_width * 0.50, grain_y + wave_height),
+		Vector2(tile_rect.end.x - inset, grain_y - wave_height * 0.38),
+	])
+	draw_polyline(points, grain_color, maxf(0.8, cell_size * 0.020), true)
+
+	var cell_hash := int(floor(tile_rect.position.x / cell_size)) + int(floor(tile_rect.position.y / cell_size)) * 3
+	if posmod(cell_hash, 6) == 0:
+		var knot_center := tile_rect.position + tile_rect.size * Vector2(0.68, 0.58)
+		var knot_radius := maxf(2.0, cell_size * 0.055)
+		draw_arc(knot_center, knot_radius, 0.0, TAU, 14, grain_color, maxf(0.8, cell_size * 0.020), true)
+
+
+func _draw_wood_bevel(tile_rect: Rect2, region_id: int, alpha: float, cell_size: float) -> void:
+	var palette_color: Color = UITokensScript.REGION_COLORS[
+		posmod(region_id - 1, UITokensScript.REGION_COLORS.size())
+	]
+	var bevel := maxf(2.4, cell_size * 0.065)
+	var corner_inset := maxf(3.6, cell_size * 0.095)
+	var top_light := palette_color.lightened(0.72)
+	top_light.a = WOOD_EDGE_LIGHT_ALPHA * alpha
+	var left_light := palette_color.lightened(0.52)
+	left_light.a = WOOD_EDGE_LIGHT_ALPHA * 0.62 * alpha
+	var bottom_shade := palette_color.darkened(0.58)
+	bottom_shade.a = WOOD_EDGE_SHADE_ALPHA * alpha
+	var right_shade := palette_color.darkened(0.48)
+	right_shade.a = WOOD_EDGE_SHADE_ALPHA * 0.78 * alpha
+
+	var top_bevel := PackedVector2Array([
+		tile_rect.position + Vector2(corner_inset, 1.0),
+		Vector2(tile_rect.end.x - corner_inset, tile_rect.position.y + 1.0),
+		Vector2(tile_rect.end.x - corner_inset - bevel, tile_rect.position.y + bevel),
+		tile_rect.position + Vector2(corner_inset + bevel, bevel),
+	])
+	var left_bevel := PackedVector2Array([
+		tile_rect.position + Vector2(1.0, corner_inset),
+		tile_rect.position + Vector2(bevel, corner_inset + bevel),
+		Vector2(tile_rect.position.x + bevel, tile_rect.end.y - corner_inset - bevel),
+		Vector2(tile_rect.position.x + 1.0, tile_rect.end.y - corner_inset),
+	])
+	var bottom_bevel := PackedVector2Array([
+		Vector2(tile_rect.position.x + corner_inset, tile_rect.end.y - 1.0),
+		tile_rect.end - Vector2(corner_inset, 1.0),
+		tile_rect.end - Vector2(corner_inset + bevel, bevel),
+		Vector2(tile_rect.position.x + corner_inset + bevel, tile_rect.end.y - bevel),
+	])
+	var right_bevel := PackedVector2Array([
+		Vector2(tile_rect.end.x - 1.0, tile_rect.position.y + corner_inset),
+		Vector2(tile_rect.end.x - 1.0, tile_rect.end.y - corner_inset),
+		tile_rect.end - Vector2(bevel, corner_inset + bevel),
+		Vector2(tile_rect.end.x - bevel, tile_rect.position.y + corner_inset + bevel),
+	])
+	draw_colored_polygon(top_bevel, top_light)
+	draw_colored_polygon(left_bevel, left_light)
+	draw_colored_polygon(bottom_bevel, bottom_shade)
+	draw_colored_polygon(right_bevel, right_shade)
 
 
 func _draw_moving_piece(stage_index: int, board_origin: Vector2) -> void:

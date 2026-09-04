@@ -46,6 +46,12 @@ func _run() -> void:
 	assert("PIECE_START_CENTERS" in assembly_source and "_draw_piece_centered" in assembly_source, "Exactly two selected real pieces should be presented below the board before placement")
 	assert("ANIME_STREAK_COUNT := 3" in assembly_source and "ANIME_IMPACT_RAY_COUNT := 10" in assembly_source, "The two demonstrated pieces should use restrained anime motion accents")
 	assert("func _draw_anime_motion_streaks" in assembly_source and "func _draw_anime_impact_burst" in assembly_source, "Anime accents should remain deterministic code-driven effects")
+	assert("CRYSTAL_SURFACE" in assembly_source and "func _draw_crystal_facets" in assembly_source, "The board should retain its lightweight illustrated crystal frame")
+	assert("set_border_width_all(8)" in assembly_source, "The outer crystal refraction band should remain visibly wide")
+	assert("WOOD_EDGE_SHADE_ALPHA := 0.38" in assembly_source and "func _draw_wood_bevel" in assembly_source, "Every colored tile should retain strong edge shading and a four-sided wood bevel")
+	assert("func _draw_wood_grain" in assembly_source, "Colored Splash tiles should retain deterministic low-contrast wood grain")
+	var overlay_source := FileAccess.get_file_as_string("res://scripts/overlays/splash_overlay.gd")
+	assert("func _splash_background_texture" in overlay_source and "SPLASH_SKY_TOP" in overlay_source, "Splash should use its own lower-saturation sky without changing shared royal screens")
 
 	var lion_svg_source := FileAccess.get_file_as_string("res://assets/ui/lion_king_center_body.svg")
 	assert("<path" in lion_svg_source and "<image" not in lion_svg_source, "Final mascot must remain a pure-path SVG")
