@@ -220,14 +220,13 @@ var result_coin_pulse_tween: Tween
 var result_page_fade_tween: Tween
 var result_lion_tween: Tween
 var result_coin_tween: Tween
-var result_lion_coin_arm_tween: Tween
+var result_lion_coin_toss_tween: Tween
 var result_success_sequence_tween: Tween
 var result_coin_flight_tweens: Array[Tween] = []
 var result_petal_tweens: Array[Tween] = []
 var result_lion_animation_name := ""
 var result_lion_entry_name := ""
 var result_lion_entry_active := false
-var result_lion_celebration_variant := 0
 var result_lion_generation := 0
 var result_coin_arrival_sound_values: Dictionary = {}
 var result_is_excellent := false
@@ -649,7 +648,7 @@ func play_coin_animation(reward: int, balance_before: int, balance_after: int) -
 		+ RESULT_COIN_REEL_DURATION
 	)
 	var completion_hold := maxf(RESULT_COIN_REEL_SETTLE_HOLD, RESULT_COIN_MIN_DURATION - sequence_duration)
-	_start_result_lion_coin_arm_toss()
+	_start_result_lion_coin_toss()
 	result_coin_tween = create_tween()
 	result_coin_tween.tween_interval(RESULT_COIN_START_DELAY)
 	result_coin_tween.tween_callback(_launch_result_coin_scatter.bind(source))
@@ -821,17 +820,17 @@ func _on_result_coin_flyer_arrived(flyer: TextureRect, value: int, reward: int, 
 		_start_result_balance_reel(balance_after)
 
 
-func _start_result_lion_coin_arm_toss() -> void:
-	if result_lion_coin_arm_tween and result_lion_coin_arm_tween.is_valid():
-		result_lion_coin_arm_tween.kill()
+func _start_result_lion_coin_toss() -> void:
+	if result_lion_coin_toss_tween and result_lion_coin_toss_tween.is_valid():
+		result_lion_coin_toss_tween.kill()
 	_show_center_result_lion_idle()
 	if result_lion_frame_animation:
 		result_lion_frame_animation.play_action("coin_toss", RESULT_LION_COIN_TOSS_DURATION)
 	result_lion_animation_name = "coin_toss"
-	result_lion_coin_arm_tween = create_tween()
-	result_lion_coin_arm_tween.tween_interval(RESULT_LION_COIN_TOSS_DURATION)
-	result_lion_coin_arm_tween.tween_callback(func() -> void:
-		result_lion_coin_arm_tween = null
+	result_lion_coin_toss_tween = create_tween()
+	result_lion_coin_toss_tween.tween_interval(RESULT_LION_COIN_TOSS_DURATION)
+	result_lion_coin_toss_tween.tween_callback(func() -> void:
+		result_lion_coin_toss_tween = null
 		_set_result_lion_idle_pose()
 	)
 
@@ -941,9 +940,9 @@ func stop_coin_animation() -> void:
 	if result_coin_tween and result_coin_tween.is_valid():
 		result_coin_tween.kill()
 	result_coin_tween = null
-	if result_lion_coin_arm_tween and result_lion_coin_arm_tween.is_valid():
-		result_lion_coin_arm_tween.kill()
-	result_lion_coin_arm_tween = null
+	if result_lion_coin_toss_tween and result_lion_coin_toss_tween.is_valid():
+		result_lion_coin_toss_tween.kill()
+	result_lion_coin_toss_tween = null
 	result_coin_arrival_sound_values.clear()
 	if result_coin_pulse_tween and result_coin_pulse_tween.is_valid():
 		result_coin_pulse_tween.kill()
@@ -1005,7 +1004,6 @@ func _start_random_result_lion_entry(generation: int) -> void:
 	if generation != result_lion_generation or not result_lion_entry_layer or not result_piece_icon:
 		return
 	result_lion_entry_name = RESULT_LION_ENTRY_VARIANTS[randi_range(0, RESULT_LION_ENTRY_VARIANTS.size() - 1)]
-	result_lion_celebration_variant = randi_range(0, 2)
 	result_lion_animation_name = result_lion_entry_name
 	var peek_frames := _result_lion_entry_frames(result_lion_entry_name, "peek")
 	var runner_requested_edge := 210.0
@@ -1093,7 +1091,7 @@ func _start_random_result_lion_entry(generation: int) -> void:
 	)
 	result_lion_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	result_lion_tween.tween_method(
-		_set_result_lion_arrival_progress.bind(result_lion_runner, target, result_lion_celebration_variant),
+		_set_result_lion_arrival_progress.bind(result_lion_runner, target),
 		0.0,
 		1.0,
 		RESULT_LION_ARRIVAL_DURATION
@@ -1300,7 +1298,7 @@ func _result_lion_runner_target_scale(runner: TextureRect) -> float:
 	return clampf(result_piece_icon.size.y / runner.size.y, 0.1, 1.0)
 
 
-func _set_result_lion_arrival_progress(progress: float, runner: TextureRect, target: Vector2, _celebration_variant: int) -> void:
+func _set_result_lion_arrival_progress(progress: float, runner: TextureRect, target: Vector2) -> void:
 	if not is_instance_valid(runner):
 		return
 	var clamped := clampf(progress, 0.0, 1.0)
