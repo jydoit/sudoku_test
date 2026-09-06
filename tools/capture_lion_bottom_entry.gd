@@ -209,7 +209,7 @@ func _capture_handoff_and_center_actions(_target: Vector2) -> void:
 		)
 		await _shot("handoff_land_%03d" % roundi(sample * 100.0))
 	for sample in [0.0, 0.58, 0.78, 1.0]:
-		game.result_page._set_result_lion_arrival_progress(sample, runner, handoff_target, 0)
+		game.result_page._set_result_lion_arrival_progress(sample, runner, handoff_target)
 		await _shot("handoff_arrival_%03d" % roundi(sample * 100.0))
 	runner.hide()
 	game.result_page.result_piece_icon.modulate = Color.WHITE

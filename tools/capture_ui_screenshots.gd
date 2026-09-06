@@ -8,6 +8,7 @@ var game
 
 func _init() -> void:
 	root.size = Vector2i(540, 960)
+	ProjectSettings.set_setting("color_king/splash/disabled", true)
 	call_deferred("_run")
 
 

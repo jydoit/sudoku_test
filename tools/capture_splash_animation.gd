@@ -1,7 +1,7 @@
 extends SceneTree
 
 const SplashOverlayScript = preload("res://scripts/overlays/splash_overlay.gd")
-const CAPTURE_TIMES := [0.35, 0.85, 1.42, 2.04, 2.50, 3.00, 3.65]
+const CAPTURE_TIMES := [0.50, 1.12, 1.56, 2.08, 2.52, 2.92, 3.50, 4.25, 5.10]
 
 
 func _init() -> void:
@@ -42,7 +42,8 @@ func _capture() -> void:
 			"average_process_ms": average_ms,
 			"peak_process_ms": peak_ms,
 			"samples": process_samples.size(),
-			"frame_count": splash.SPLASH_FRAMES.size(),
+			"piece_count": splash.SPLASH_PIECE_COUNT,
+			"king_count": splash.SPLASH_KING_COUNT,
 			"peak_draw_calls": peak_draw_calls,
 		}
 	}))

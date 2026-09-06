@@ -194,6 +194,14 @@ func play_block_place(piece_size: int = 1) -> void:
 	_play_gameplay(stream, -0.5, randf_range(0.98, 1.02))
 
 
+func play_splash_crystal_place(final_accent: bool = false) -> void:
+	# Splash uses the existing uncompressed metallic marks as dedicated crystal
+	# contacts, rather than inheriting the composite mode's wooden block impact.
+	var stream: AudioStream = MARK_STREAMS[1 if final_accent else 0]
+	var pitch := 1.06 if final_accent else 0.98
+	_play_gameplay(stream, -0.8 if final_accent else -1.8, pitch)
+
+
 func play_block_reject() -> void:
 	_play_gameplay(BLOCK_REJECT_STREAM, -2.0)
 

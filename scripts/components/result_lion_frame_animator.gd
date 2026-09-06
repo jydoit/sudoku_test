@@ -102,17 +102,6 @@ func set_frame_index(frame_index: int) -> void:
 	scale = Vector2.ONE
 
 
-func set_coin_toss_progress(progress: float) -> void:
-	if animation_player:
-		animation_player.stop()
-	var frame_index := mini(
-		floori(clampf(progress, 0.0, 1.0) * float(COIN_TOSS_TEXTURES.size())),
-		COIN_TOSS_TEXTURES.size() - 1
-	)
-	texture = COIN_TOSS_TEXTURES[frame_index]
-	scale = Vector2.ONE
-
-
 func current_frame_index() -> int:
 	return FRAME_TEXTURES.find(texture)
 

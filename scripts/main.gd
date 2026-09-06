@@ -430,8 +430,8 @@ func _on_splash_sound_requested(kind: String) -> void:
 	if not audio_controller:
 		return
 	match kind:
-		"snap": audio_controller.play_block_place(3)
-		"snap_final": audio_controller.play_block_place(5)
+		"crystal_place": audio_controller.play_splash_crystal_place(false)
+		"crystal_place_final": audio_controller.play_splash_crystal_place(true)
 		"assembly_complete": audio_controller.play_assembly_complete()
 		"crown": audio_controller.play_crown_reveal()
 
