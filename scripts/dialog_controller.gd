@@ -156,6 +156,9 @@ func _build_ui() -> void:
 	_close_button.focus_mode = Control.FOCUS_NONE
 	_close_button.add_theme_font_size_override("font_size", 24)
 	_close_button.add_theme_color_override("font_color", UITokensScript.INK)
+	_close_button.add_theme_color_override("font_hover_color", UITokensScript.INK)
+	_close_button.add_theme_color_override("font_pressed_color", UITokensScript.INK)
+	_close_button.add_theme_color_override("font_focus_color", UITokensScript.INK)
 	_close_button.add_theme_stylebox_override("normal", _button_style(UITokensScript.DIALOG_SECONDARY_BUTTON))
 	_close_button.add_theme_stylebox_override("hover", _button_style(UITokensScript.SOFT_BLUE))
 	_close_button.add_theme_stylebox_override("pressed", _button_style(UITokensScript.SOFT_BLUE.darkened(0.06)))
@@ -224,6 +227,7 @@ func _apply_button_variant(button: Button, variant: String) -> void:
 	button.add_theme_color_override("font_color", font_color)
 	button.add_theme_color_override("font_hover_color", font_color)
 	button.add_theme_color_override("font_pressed_color", font_color)
+	button.add_theme_color_override("font_focus_color", font_color)
 	button.add_theme_stylebox_override("normal", _button_style(color))
 	button.add_theme_stylebox_override("hover", _button_style(color.lightened(0.04)))
 	button.add_theme_stylebox_override("pressed", _button_style(color.darkened(0.06)))

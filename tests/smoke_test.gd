@@ -49,6 +49,18 @@ func _run() -> void:
 	var game = packed.instantiate()
 	root.add_child(game)
 	await process_frame
+	assert(game.home_screen.shop_button.get_index() == 0, "Shop should be the first vertical home menu entry")
+	assert(game.formal_level_page.diamond_balance_label != null, "Level top bar should expose diamond balance")
+	game._show_shop()
+	assert(game.shop_page.visible and game.shop_page._coins.text == "2" and game.shop_page._diamonds.text == "0", "Shop should display account balances")
+	assert(game.shop_page.active_tab == "diamonds" and game.shop_page._offer_buttons.size() == 6, "Shop should open six mock diamond packages")
+	for price_button in game.shop_page._offer_buttons:
+		assert(price_button.disabled, "Mock USD packages must not allow real purchases")
+	game.shop_page.select_tab("coins")
+	assert(game.shop_page._offer_buttons.size() == 6, "Shop should offer six coin exchange packages")
+	for price_button in game.shop_page._offer_buttons:
+		assert(price_button.disabled, "Exchange should be disabled when there are no diamonds")
+	game._show_game()
 	await process_frame
 	assert(game.localization != null, "Main UI should use the shared localization controller")
 	assert(game.LocalizationControllerScript.locale_for_system("zh_CN") == "zh", "System Chinese locales should map to Chinese")
@@ -622,6 +634,9 @@ func _run() -> void:
 	assert(bool(challenge_schedule["isMilestoneChallenge"]), "Every tenth display level should be marked as a challenge")
 	assert(str(challenge_schedule["mode"]) == "challenge", "Milestone levels should use the challenge branch")
 	assert(challenge_schedule.get("kingPositions", []).is_empty(), "Challenge levels should not reveal opening kings")
+	for display in [30, 40, 80, 160, 240]:
+		var formal_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, display, {})
+		assert(not formal_schedule.has("assemblyEnabled"), "Mainline schedules must never enable block gameplay, including large milestone boards")
 	var pre_optional_five_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 15, challenge_progress)
 	assert(not bool(pre_optional_five_schedule["isMilestoneChallenge"]), "Five-step challenge candidates should not start before display level 31")
 	assert(pre_optional_five_schedule.get("kingPositions", []).size() >= 1, "Pre-31 five-step display levels should keep opening kings")
@@ -641,7 +656,7 @@ func _run() -> void:
 			optional_challenge_seen = true
 			assert(str(optional_schedule["mode"]) == "challenge", "Optional five-step challenges should use the challenge branch")
 			assert(optional_schedule.get("kingPositions", []).is_empty(), "Optional five-step challenges should not reveal opening kings")
-			assert(not bool(optional_schedule.get("assemblyEnabled", false)), "Optional five-step challenges should not enable assembly")
+			assert(not optional_schedule.has("assemblyEnabled"), "Ordinary challenge schedules must not carry a retired assembly flag")
 		else:
 			optional_regular_seen = true
 			assert(str(optional_schedule["mode"]) != "challenge", "Optional five-step misses should stay on the regular branch")
@@ -650,8 +665,18 @@ func _run() -> void:
 			break
 	assert(optional_challenge_seen, "The optional five-step challenge roll should be able to produce a challenge")
 	assert(optional_regular_seen, "The optional five-step challenge roll should be able to produce a regular level")
-	var challenge_arm := "%d|%s" % [int(challenge_schedule["selectedSize"]), str(challenge_schedule["selectedDifficulty"])]
-	assert(["5|challenge", "5|hard", "6|challenge", "6|hard"].has(challenge_arm), "Milestone should choose a supported hard or challenge arm from the currently unlocked sizes")
+	var challenge_arm := {"size": int(challenge_schedule["selectedSize"]), "difficulty": str(challenge_schedule["selectedDifficulty"])}
+	var challenge_context := LevelDirectorScript._recommendation_context(level_index, LevelDirectorScript.unlocked_sizes(20), challenge_progress.duplicate(true))
+	assert(challenge_context["arms"].has(challenge_arm), "Milestone must select from the same current recommendation pool as ordinary levels")
+	var before_empty_pool_level: int = game.player_level_number
+	var before_empty_pool_index: int = game.current_level_index
+	var before_empty_pool_schedule: Dictionary = game.active_schedule.duplicate(true)
+	var saved_catalog: Array = game.levels
+	game.levels = []
+	game._next_level()
+	assert(game.player_level_number == before_empty_pool_level and game.current_level_index == before_empty_pool_index, "An empty recommendation pool must not advance or fall back to raw level zero")
+	assert(game.active_schedule == before_empty_pool_schedule, "Failed scheduling must preserve the active board")
+	game.levels = saved_catalog
 	var reward_progress := {"completedLevelIds": [], "recentRuns": [], "statsByArm": {}}
 	LevelDirectorScript.record_completion(reward_progress, game.levels[0], LevelDirectorScript.schedule_for_display_level(game.levels, 1, {}), 2000.0, 10, 0, "2026-07-09", 1000)
 	var reward_run: Dictionary = reward_progress["recentRuns"][0]
@@ -818,11 +843,15 @@ func _run() -> void:
 	game.coin_count = 0
 	game._use_crown_find()
 	assert(game._piece_positions().size() == pieces_before_shortage, "Insufficient coins must not place a crown")
-	assert(game.dialog_controller.is_dialog_open("coin_shortage"), "Insufficient coins should offer voluntary purchase and rewarded-ad routes")
+	assert(game.dialog_controller.is_dialog_open("coin_shortage"), "Insufficient coins should offer the shop and optional rewarded-ad routes")
+	var coin_shortage_message := game.dialog_controller.find_child("DialogMessage", true, false) as Label
+	assert(coin_shortage_message.text == game._t("还差 %d 金币", [game.pending_coin_price - game.coin_count]), "Coin shortage copy should state only the remaining amount")
 	assert(game.pending_coin_tool == CoinEconomyScript.TOOL_CROWN_FIND, "Coin shortage dialog should retain the requested tool")
 	assert(game.pending_rewarded_coin_grant > 0 and game.pending_rewarded_coin_grant <= game.pending_coin_price, "Rewarded-ad grant should cover the shortage without exceeding the requested tool price")
 	var shortage_later_button: Button = game.dialog_controller.find_child("DialogAction_later", true, false)
 	assert(shortage_later_button != null, "Coin shortage should expose all actions through the shared controller")
+	var shortage_shop_button: Button = game.dialog_controller.find_child("DialogAction_purchase", true, false)
+	assert(shortage_shop_button != null and shortage_shop_button.text == game._t("前往商店"), "Coin shortage purchase action should route to the shop instead of selling coins directly")
 	shortage_later_button.pressed.emit()
 	var locked_hints_before_clear := _count_state(game.cell_states, "hint")
 	var mark_before_hint_clear := _first_empty_non_king_cell(game)

@@ -123,7 +123,6 @@ static func recommend(
 	_ensure_pattern_size(progress, size, patterns)
 
 	var schedule := LevelDirectorScript.manual_schedule_for_level(levels, source_index, 1, "home_composite")
-	schedule["assemblyEnabled"] = true
 	schedule["assemblySeed"] = int(offline_data.get("seed", 0))
 	schedule["assemblyDifficultyPattern"] = pattern
 	schedule["homeCompositeRound"] = maxi(1, round_number)

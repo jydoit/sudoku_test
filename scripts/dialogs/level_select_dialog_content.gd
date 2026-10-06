@@ -19,6 +19,9 @@ func configure(localizer: Callable = Callable()) -> void:
 	picker.focus_mode = Control.FOCUS_NONE
 	picker.add_theme_font_size_override("font_size", 17)
 	picker.add_theme_color_override("font_color", Color("#26334A"))
+	picker.add_theme_color_override("font_hover_color", Color("#26334A"))
+	picker.add_theme_color_override("font_pressed_color", Color("#26334A"))
+	picker.add_theme_color_override("font_focus_color", Color("#26334A"))
 	picker.add_theme_stylebox_override("normal", _button_style(Color("#F1F4F7"), 12))
 	add_child(picker)
 

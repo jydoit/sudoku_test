@@ -68,7 +68,43 @@ static func normalize_progress(progress: Dictionary) -> Dictionary:
 		progress["completedLevelIds"] = []
 	if not progress.has("banditState") or not progress["banditState"] is Dictionary:
 		progress["banditState"] = {}
+	var played := {}
+	var stored_played = progress.get("playedLevelIds", [])
+	if stored_played is Array:
+		for raw_id in stored_played:
+			_add_played_id(played, raw_id)
+	for raw_id in progress["completedLevelIds"]:
+		_add_played_id(played, raw_id)
+	for run in progress["recentRuns"]:
+		if run is Dictionary:
+			_add_played_id(played, run.get("levelId", -1))
+	progress["playedLevelIds"] = played.keys()
+	progress["pendingChallenge"] = bool(progress.get("pendingChallenge", false))
 	return progress
+
+
+static func _add_played_id(played: Dictionary, raw_id) -> void:
+	if not (raw_id is int or raw_id is float or (raw_id is String and raw_id.is_valid_int())):
+		return
+	var level_id := int(raw_id)
+	if level_id > 0:
+		played[level_id] = true
+
+
+static func record_level_started(progress: Dictionary, level_id: int, schedule: Dictionary) -> bool:
+	normalize_progress(progress)
+	if level_id <= 0 or str(schedule.get("mode", "")) == "home_composite":
+		return false
+	var changed := false
+	if not progress["playedLevelIds"].has(level_id):
+		progress["playedLevelIds"].append(level_id)
+		changed = true
+	var was_pending := bool(progress["pendingChallenge"])
+	if bool(schedule.get("isMilestoneChallenge", false)):
+		progress["pendingChallenge"] = false
+	elif bool(schedule.get("challengeDeferred", false)):
+		progress["pendingChallenge"] = true
+	return changed or was_pending != bool(progress["pendingChallenge"])
 
 
 static func schedule_for_display_level(levels: Array, display_level: int, progress: Dictionary) -> Dictionary:
@@ -79,33 +115,51 @@ static func schedule_for_display_level(levels: Array, display_level: int, progre
 	var level_index := build_level_index(levels)
 
 	if display <= FIXED_OPENING_COUNT:
-		return _fixed_opening_schedule(levels, level_index, display)
+		return _fixed_opening_schedule(levels, level_index, display, progress)
 
 	var allowed_sizes := unlocked_sizes(display)
-	var is_milestone := is_challenge_display(display, progress)
+	var challenge_requested := is_challenge_display(display, progress) or bool(progress["pendingChallenge"])
+	var is_milestone := challenge_requested
 	var rng := _make_rng(display, "schedule:%d" % _progress_signature(progress))
 	var completed_ids := _completed_ids(progress)
 	var recent_ids := _recent_level_ids(progress, DEDUPE_HISTORY_WINDOW)
 	var arm := {}
 	var mode := "rule"
+	var recommendation_context := {}
+	var challenge_index := {}
+	var challenge_arms: Array = []
+	var challenge_deferred := false
 
 	if is_milestone:
-		arm = _milestone_arm(progress, allowed_sizes, display, rng)
-		mode = "challenge"
+		recommendation_context = _recommendation_context(level_index, allowed_sizes, progress)
+		challenge_index = _unplayed_level_index(levels, level_index, recommendation_context["arms"], progress["playedLevelIds"])
+		challenge_arms = _available_arms(challenge_index, allowed_sizes)
+		if not challenge_arms.is_empty():
+			arm = _milestone_arm(progress, challenge_arms, display, rng, recommendation_context["arms"])
+			mode = "challenge"
+		else:
+			is_milestone = false
+			challenge_deferred = true
+			arm = _recommended_arm(recommendation_context, allowed_sizes, progress, display, rng)
+			mode = str(arm.get("mode", "bayes"))
 	elif _previous_run_is_challenge(progress):
-		arm = _post_challenge_arm(progress, allowed_sizes)
+		arm = _closest_available_arm(_available_arms(level_index, allowed_sizes), _post_challenge_arm(progress, allowed_sizes))
 		mode = "post_challenge"
 	else:
-		arm = _recommended_arm(levels, level_index, allowed_sizes, completed_ids, progress, display, rng)
+		recommendation_context = _recommendation_context(level_index, allowed_sizes, progress)
+		arm = _recommended_arm(recommendation_context, allowed_sizes, progress, display, rng)
 		mode = str(arm.get("mode", "bayes"))
+	if arm.is_empty():
+		return {}
 
 	var selected_size := int(arm.get("size", allowed_sizes[0]))
 	var selected_difficulty := str(arm.get("difficulty", "simple"))
-	var index := _choose_level_index(levels, level_index, selected_size, selected_difficulty, completed_ids, recent_ids, rng)
+	var index := _choose_level_index(
+		levels, challenge_index if is_milestone else level_index, selected_size, selected_difficulty,
+		progress["playedLevelIds"] if is_milestone else completed_ids, recent_ids, rng, not is_milestone
+	)
 	if index < 0:
-		index = _choose_any_level_index(levels, level_index, allowed_sizes, completed_ids, recent_ids, rng)
-	if index < 0:
-		index = clampi(display - 1, 0, levels.size() - 1)
+		return {}
 
 	var level: Dictionary = levels[index]
 	var schedule := _make_schedule(
@@ -119,11 +173,19 @@ static func schedule_for_display_level(levels: Array, display_level: int, progre
 		str(level.get("difficulty", selected_difficulty))
 	)
 	schedule["recommendationReason"] = str(arm.get("reason", mode))
+	if challenge_requested:
+		schedule["challengeDeferred"] = challenge_deferred
+		schedule["challengeEligibleArms"] = challenge_arms.duplicate(true)
+		if is_milestone:
+			schedule["challengeStrategy"] = str(arm.get("challengeStrategy", "pool_ceiling"))
+	if not recommendation_context.is_empty():
+		schedule["recommendableArms"] = recommendation_context["arms"].duplicate(true)
+		schedule["recommendationConstraint"] = recommendation_context["reason"]
 	schedule["toolFindProbability"] = TOOL_FIND_PROBABILITY
 	schedule["toolHintProbability"] = TOOL_HINT_PROBABILITY
 	schedule["toolRewardWeight"] = float(arm.get("toolRewardWeight", TOOL_REWARD_BASE_WEIGHT))
 	schedule["noToolStreak"] = int(arm.get("noToolStreak", _no_tool_streak(progress)))
-	schedule["difficultyFloor"] = str(arm.get("difficultyFloor", ""))
+	schedule["difficultyFloor"] = str(recommendation_context.get("difficultyFloor", ""))
 	schedule["preSizeSixDifficultyPressure"] = bool(arm.get("preSizeSixDifficultyPressure", false))
 	_apply_opening_king_hint_policy(schedule, level, progress)
 	return schedule
@@ -146,12 +208,13 @@ static func recommend_level_for_sizes(levels: Array, allowed_sizes: Array, displ
 	var rng := _make_rng(display, "catalog:%d" % _progress_signature(progress))
 	var completed_ids := _completed_ids(progress)
 	var recent_ids := _recent_level_ids(progress, DEDUPE_HISTORY_WINDOW)
-	var arm := _recommended_arm(levels, level_index, supported_sizes, completed_ids, progress, display, rng)
+	var context := _recommendation_context(level_index, supported_sizes, progress)
+	var arm := _recommended_arm(context, supported_sizes, progress, display, rng)
+	if arm.is_empty():
+		return {}
 	var selected_size := int(arm.get("size", supported_sizes[0]))
 	var selected_difficulty := str(arm.get("difficulty", "simple"))
 	var index := _choose_level_index(levels, level_index, selected_size, selected_difficulty, completed_ids, recent_ids, rng)
-	if index < 0:
-		index = _choose_any_level_index(levels, level_index, supported_sizes, completed_ids, recent_ids, rng)
 	if index < 0:
 		return {}
 	var level: Dictionary = levels[index]
@@ -166,6 +229,8 @@ static func recommend_level_for_sizes(levels: Array, allowed_sizes: Array, displ
 		str(level.get("difficulty", selected_difficulty))
 	)
 	schedule["recommendationReason"] = str(arm.get("reason", schedule["mode"]))
+	schedule["recommendableArms"] = context["arms"].duplicate(true)
+	schedule["recommendationConstraint"] = context["reason"]
 	return schedule
 
 
@@ -203,7 +268,7 @@ static func manual_schedule_for_level(levels: Array, index: int, display_level: 
 	)
 
 
-static func _fixed_opening_schedule(levels: Array, level_index: Dictionary, display_level: int) -> Dictionary:
+static func _fixed_opening_schedule(levels: Array, level_index: Dictionary, display_level: int, progress: Dictionary) -> Dictionary:
 	var display := maxi(1, display_level)
 	var plan_index := clampi(display - 1, 0, FIXED_OPENING_PLAN.size() - 1)
 	var plan: Dictionary = FIXED_OPENING_PLAN[plan_index]
@@ -212,18 +277,34 @@ static func _fixed_opening_schedule(levels: Array, level_index: Dictionary, disp
 	var ordinal := int(plan.get("ordinal", 1))
 	var index := _find_nth_level_index(level_index, selected_size, selected_difficulty, ordinal)
 	if index < 0:
-		index = clampi(display - 1, 0, levels.size() - 1)
+		var bucket := _indexed_bucket(level_index, selected_size, selected_difficulty)
+		if bucket.is_empty():
+			return {}
+		index = int(bucket[0])
+	var is_milestone := is_challenge_display(display)
+	var challenge_deferred := false
+	if is_milestone and progress["playedLevelIds"].has(int(levels[index].get("levelId", -1))):
+		var rng := _make_rng(display, "opening_unplayed:%d" % _progress_signature(progress))
+		var unplayed_index := _choose_level_index(levels, level_index, selected_size, selected_difficulty, progress["playedLevelIds"], [], rng, false)
+		if unplayed_index >= 0:
+			index = unplayed_index
+		else:
+			is_milestone = false
+			challenge_deferred = true
 	var level: Dictionary = levels[index]
-	return _make_schedule(
+	var schedule := _make_schedule(
 		level,
 		index,
 		display,
 		"fixed",
-		is_challenge_display(display),
+		is_milestone,
 		[selected_size],
 		int(level.get("rows", selected_size)),
 		str(level.get("difficulty", selected_difficulty))
 	)
+	if challenge_deferred:
+		schedule["challengeDeferred"] = true
+	return schedule
 
 
 static func _find_nth_level_index(level_index: Dictionary, size: int, difficulty: String, ordinal: int) -> int:
@@ -270,7 +351,7 @@ static func unlocked_sizes(display_level: int) -> Array:
 
 
 static func record_completion(progress: Dictionary, level: Dictionary, schedule: Dictionary, elapsed_seconds: float, moves: int, hints: int, completed_date: String = "", completed_unix: int = 0, direct_finds: int = 0) -> void:
-	normalize_progress(progress)
+	record_level_started(progress, int(level.get("levelId", -1)), schedule)
 	var size := int(level.get("rows", schedule.get("selectedSize", 0)))
 	var difficulty := str(level.get("difficulty", schedule.get("selectedDifficulty", "normal")))
 	var arm_key := _arm_key(size, difficulty)
@@ -317,7 +398,7 @@ static func record_completion(progress: Dictionary, level: Dictionary, schedule:
 
 
 static func record_failure(progress: Dictionary, level: Dictionary, schedule: Dictionary, elapsed_seconds: float, moves: int, hints: int, completed_date: String = "", completed_unix: int = 0, direct_finds: int = 0) -> void:
-	normalize_progress(progress)
+	record_level_started(progress, int(level.get("levelId", -1)), schedule)
 	var size := int(level.get("rows", schedule.get("selectedSize", 0)))
 	var difficulty := str(level.get("difficulty", schedule.get("selectedDifficulty", "normal")))
 	var arm_key := _arm_key(size, difficulty)
@@ -397,14 +478,12 @@ static func record_retention_if_needed(progress: Dictionary, today: String, now_
 
 
 static func _make_schedule(level: Dictionary, index: int, display: int, mode: String, is_milestone: bool, allowed_sizes: Array, selected_size: int, selected_difficulty: String) -> Dictionary:
-	var assembly_enabled := is_milestone and display % MILESTONE_INTERVAL == 0 and selected_size >= 6
 	return {
 		"displayLevel": display,
 		"levelIndex": index,
 		"levelId": int(level.get("levelId", -1)),
 		"mode": mode,
 		"isMilestoneChallenge": is_milestone,
-		"assemblyEnabled": assembly_enabled,
 		"allowedSizes": allowed_sizes.duplicate(),
 		"selectedSize": selected_size,
 		"selectedDifficulty": selected_difficulty,
@@ -543,61 +622,47 @@ static func _difficulty_weights(display: int) -> Dictionary:
 	return {"simple": 0.14, "medium": 0.25, "hard": 0.36, "challenge": 0.25}
 
 
-static func _recommended_arm(levels: Array, level_index: Dictionary, allowed_sizes: Array, completed_ids: Array, progress: Dictionary, display: int, rng: RandomNumberGenerator) -> Dictionary:
+static func _recommendation_context(level_index: Dictionary, allowed_sizes: Array, progress: Dictionary) -> Dictionary:
 	_ensure_bandit_state(progress, level_index)
 	_apply_size_release_policy(progress, allowed_sizes)
 	var arms := _available_arms(level_index, allowed_sizes)
 	var no_tool_streak := _no_tool_streak(progress)
 	var difficulty_floor := _difficulty_floor_for_no_tool_streak(no_tool_streak)
-	if arms.is_empty():
-		return _decorate_recommended_arm(
-			{"size": int(allowed_sizes[0]), "difficulty": "simple", "mode": "bayes", "reason": "fallback"},
-			allowed_sizes,
-			no_tool_streak,
-			difficulty_floor
-		)
 	arms = _arms_at_or_above_difficulty(arms, difficulty_floor)
+	var context := {
+		"arms": arms,
+		"noToolStreak": no_tool_streak,
+		"difficultyFloor": difficulty_floor,
+		"mode": "posterior",
+		"reason": "posterior_reward",
+		"toolRewardWeight": TOOL_REWARD_MAX_WEIGHT
+	}
+	if arms.is_empty():
+		context["reason"] = "no_eligible_arms"
+		return context
 
 	var recent := _last_runs(progress, RECENT_WINDOW)
 	var recent_mode_size := _most_common_recent_size(recent, int(allowed_sizes[0]))
 	var new_size_arm := _new_size_medium_probe(arms, progress, recent_mode_size)
 	if not new_size_arm.is_empty():
-		return _decorate_recommended_arm({
-			"size": int(new_size_arm["size"]),
-			"difficulty": str(new_size_arm["difficulty"]),
-			"mode": "new_size_probe",
-			"reason": "higher_than_recent_mode",
-			"toolRewardWeight": TOOL_REWARD_BASE_WEIGHT
-		}, allowed_sizes, no_tool_streak, difficulty_floor)
+		context.merge({"arms": [new_size_arm], "mode": "new_size_probe", "reason": "higher_than_recent_mode", "toolRewardWeight": TOOL_REWARD_BASE_WEIGHT}, true)
+		return context
 
 	var recent_max_arm := _recent_max_size_probe(arms, progress, recent)
 	if not recent_max_arm.is_empty():
 		var recent_max_tool_weight := TOOL_REWARD_MAX_WEIGHT if no_tool_streak >= NO_TOOL_DIFFICULTY_STREAK else TOOL_REWARD_BASE_WEIGHT
-		return _decorate_recommended_arm({
-			"size": int(recent_max_arm["size"]),
-			"difficulty": str(recent_max_arm["difficulty"]),
-			"mode": "recent_size_probe",
-			"reason": "recent_max_size",
-			"toolRewardWeight": recent_max_tool_weight
-		}, allowed_sizes, no_tool_streak, difficulty_floor)
+		context.merge({"arms": [recent_max_arm], "mode": "recent_size_probe", "reason": "recent_max_size", "toolRewardWeight": recent_max_tool_weight}, true)
+		return context
 
 	var unseen := _arms_with_max_plays(arms, progress, 0)
 	if not unseen.is_empty():
-		return _decorate_recommended_arm(
-			_weighted_arm_choice(unseen, progress, rng, "unseen_combo_probe", TOOL_REWARD_BASE_WEIGHT, allowed_sizes, no_tool_streak),
-			allowed_sizes,
-			no_tool_streak,
-			difficulty_floor
-		)
+		context.merge({"arms": unseen, "mode": "unseen_combo_probe", "reason": "unseen_combo_probe", "toolRewardWeight": TOOL_REWARD_BASE_WEIGHT}, true)
+		return context
 
 	var under_size_quota := _arms_for_size_quota(arms, progress)
 	if not under_size_quota.is_empty():
-		return _decorate_recommended_arm(
-			_weighted_arm_choice(under_size_quota, progress, rng, "size_quota_probe", TOOL_REWARD_MAX_WEIGHT, allowed_sizes, no_tool_streak),
-			allowed_sizes,
-			no_tool_streak,
-			difficulty_floor
-		)
+		context.merge({"arms": under_size_quota, "mode": "size_quota_probe", "reason": "size_quota_probe"}, true)
+		return context
 
 	var under_quota: Array = []
 	for arm in arms:
@@ -605,14 +670,27 @@ static func _recommended_arm(levels: Array, level_index: Dictionary, allowed_siz
 		if plays < MIN_COMBO_EXPOSURE:
 			under_quota.append(arm)
 	if not under_quota.is_empty():
-		return _decorate_recommended_arm(
-			_weighted_arm_choice(under_quota, progress, rng, "combo_quota_probe", TOOL_REWARD_MAX_WEIGHT, allowed_sizes, no_tool_streak),
-			allowed_sizes,
-			no_tool_streak,
-			difficulty_floor
-		)
+		context.merge({"arms": under_quota, "mode": "combo_quota_probe", "reason": "combo_quota_probe"}, true)
+	return context
 
-	var tool_weight := TOOL_REWARD_MAX_WEIGHT
+
+static func _recommended_arm(context: Dictionary, allowed_sizes: Array, progress: Dictionary, display: int, rng: RandomNumberGenerator) -> Dictionary:
+	var arms: Array = context["arms"]
+	if arms.is_empty():
+		return {}
+	var no_tool_streak := int(context["noToolStreak"])
+	var difficulty_floor := str(context["difficultyFloor"])
+	var tool_weight := float(context["toolRewardWeight"])
+	var mode := str(context["mode"])
+	if mode in ["new_size_probe", "recent_size_probe"]:
+		var probe: Dictionary = arms[0].duplicate(true)
+		probe.merge({"mode": mode, "reason": context["reason"], "toolRewardWeight": tool_weight}, true)
+		return _decorate_recommended_arm(probe, allowed_sizes, no_tool_streak, difficulty_floor)
+	if mode != "posterior":
+		return _decorate_recommended_arm(
+			_weighted_arm_choice(arms, progress, rng, mode, tool_weight, allowed_sizes, no_tool_streak),
+			allowed_sizes, no_tool_streak, difficulty_floor
+		)
 	var sampled_arm := _thompson_arm(arms, progress, rng, display, tool_weight, allowed_sizes, no_tool_streak)
 	if not sampled_arm.is_empty() and rng.randf() >= EXTRA_EXPLORATION_PROBABILITY:
 		sampled_arm["mode"] = "thompson_sampling"
@@ -641,7 +719,7 @@ static func _arms_at_or_above_difficulty(arms: Array, difficulty_floor: String) 
 		var difficulty_index := DIFFICULTY_ORDER.find(str(arm.get("difficulty", "simple")))
 		if difficulty_index >= floor_index:
 			filtered.append(arm)
-	return filtered if not filtered.is_empty() else arms
+	return filtered
 
 
 static func _difficulty_pressure_multiplier(allowed_sizes: Array, difficulty: String, no_tool_streak: int) -> float:
@@ -805,14 +883,26 @@ static func _thompson_arm(arms: Array, progress: Dictionary, rng: RandomNumberGe
 	return best
 
 
-static func _milestone_arm(progress: Dictionary, allowed_sizes: Array, display: int, rng: RandomNumberGenerator) -> Dictionary:
+static func _milestone_arm(progress: Dictionary, eligible_arms: Array, display: int, rng: RandomNumberGenerator, recommendation_arms: Array = []) -> Dictionary:
+	if eligible_arms.is_empty():
+		return {}
+	var allowed_sizes: Array = []
+	for arm in eligible_arms:
+		var arm_size := int(arm["size"])
+		if not allowed_sizes.has(arm_size):
+			allowed_sizes.append(arm_size)
+	allowed_sizes.sort()
+	var baseline_sizes := allowed_sizes.duplicate()
+	for arm in recommendation_arms:
+		var arm_size := int(arm["size"])
+		if not baseline_sizes.has(arm_size):
+			baseline_sizes.append(arm_size)
 	var recent := _last_runs(progress, MILESTONE_RECENT_WINDOW)
-	if recent.is_empty():
-		return {"size": int(allowed_sizes[allowed_sizes.size() - 1]), "difficulty": "hard"}
-
-	var best: Dictionary = recent[0]
+	var best: Dictionary = {}
 	var best_score := -INF
 	for run in recent:
+		if not baseline_sizes.has(int(run.get("size", 0))):
+			continue
 		var difficulty := str(run.get("difficulty", "simple"))
 		var score := _difficulty_score(difficulty) * 100.0
 		score += float(run.get("elapsedSeconds", 0.0)) * 0.03
@@ -823,14 +913,59 @@ static func _milestone_arm(progress: Dictionary, allowed_sizes: Array, display: 
 			best_score = score
 			best = run
 
-	var size := int(best.get("size", allowed_sizes[0]))
-	if not allowed_sizes.has(size):
-		size = int(allowed_sizes[allowed_sizes.size() - 1])
+	if best.is_empty():
+		return _challenge_choice(_closest_available_arm(eligible_arms, {"size": int(allowed_sizes.back()), "difficulty": "hard"}), "initial")
+	var size := int(best["size"])
 	var difficulty := str(best.get("difficulty", "hard"))
-	var action = _weighted_pick(_milestone_action_weights(display), rng)
-	if str(action) == "size_up":
-		return {"size": _next_size(size, allowed_sizes), "difficulty": difficulty}
-	return {"size": size, "difficulty": _next_difficulty(difficulty)}
+	var size_up := _next_size(size, allowed_sizes)
+	var upgrades: Array = []
+	for arm in eligible_arms:
+		if int(arm["size"]) == size and DIFFICULTY_ORDER.find(str(arm["difficulty"])) > DIFFICULTY_ORDER.find(difficulty):
+			upgrades.append(arm)
+	var directions := {}
+	if not upgrades.is_empty():
+		directions["difficulty_up"] = _closest_available_arm(upgrades, {"size": size, "difficulty": _next_difficulty(difficulty)})
+	var larger := {"size": size_up, "difficulty": difficulty}
+	if size_up > size and eligible_arms.has(larger):
+		directions["size_up"] = larger
+	if not directions.is_empty():
+		var weights := _milestone_action_weights(display)
+		for direction in weights.keys():
+			if not directions.has(direction):
+				weights.erase(direction)
+		var action := str(_weighted_pick(weights, rng))
+		return _challenge_choice(directions[action], action)
+	# No viable upgrade: prefer the hardest unseen combination still in the pool.
+	var hardest: Dictionary = eligible_arms[0]
+	for arm in eligible_arms:
+		var rank := DIFFICULTY_ORDER.find(str(arm["difficulty"]))
+		var best_rank := DIFFICULTY_ORDER.find(str(hardest["difficulty"]))
+		if rank > best_rank or (rank == best_rank and int(arm["size"]) > int(hardest["size"])):
+			hardest = arm
+	return _challenge_choice(hardest, "pool_ceiling")
+
+
+static func _challenge_choice(arm: Dictionary, strategy: String) -> Dictionary:
+	var result := arm.duplicate(true)
+	result["challengeStrategy"] = strategy
+	return result
+
+
+static func _closest_available_arm(arms: Array, preferred: Dictionary) -> Dictionary:
+	var best: Dictionary = {}
+	var best_score := INF
+	var preferred_size := int(preferred["size"])
+	var preferred_difficulty := DIFFICULTY_ORDER.find(str(preferred["difficulty"]))
+	for arm in arms:
+		var difficulty := DIFFICULTY_ORDER.find(str(arm["difficulty"]))
+		var score := absf(float(int(arm["size"]) - preferred_size)) * 10.0
+		score += absf(float(difficulty - preferred_difficulty))
+		if difficulty < preferred_difficulty:
+			score += 0.5
+		if score < best_score:
+			best_score = score
+			best = arm
+	return best.duplicate(true)
 
 
 static func _previous_run_is_challenge(progress: Dictionary) -> bool:
@@ -852,23 +987,31 @@ static func _post_challenge_arm(progress: Dictionary, allowed_sizes: Array) -> D
 	return {"size": size, "difficulty": _previous_difficulty(str(previous.get("difficulty", "medium")))}
 
 
-static func _choose_level_index(levels: Array, level_index: Dictionary, size: int, difficulty: String, completed_ids: Array, recent_ids: Array, rng: RandomNumberGenerator) -> int:
+static func _unplayed_level_index(levels: Array, level_index: Dictionary, arms: Array, played_ids: Array) -> Dictionary:
+	var played := {}
+	for level_id in played_ids:
+		played[int(level_id)] = true
+	var result := {}
+	for arm in arms:
+		var size := int(arm["size"])
+		var difficulty := str(arm["difficulty"])
+		var candidates: Array = []
+		for index in _indexed_bucket(level_index, size, difficulty):
+			if not played.has(int(levels[int(index)].get("levelId", -1))):
+				candidates.append(index)
+		if not candidates.is_empty():
+			if not result.has(size):
+				result[size] = {}
+			result[size][difficulty] = candidates
+	return result
+
+
+static func _choose_level_index(levels: Array, level_index: Dictionary, size: int, difficulty: String, completed_ids: Array, recent_ids: Array, rng: RandomNumberGenerator, allow_repeats: bool = true) -> int:
 	var candidates := _candidate_indices(levels, level_index, [size], [difficulty], completed_ids, recent_ids, false, false)
-	if candidates.is_empty():
+	if candidates.is_empty() and allow_repeats:
 		candidates = _candidate_indices(levels, level_index, [size], [difficulty], completed_ids, recent_ids, true, false)
-	if candidates.is_empty():
+	if candidates.is_empty() and allow_repeats:
 		candidates = _candidate_indices(levels, level_index, [size], [difficulty], completed_ids, recent_ids, true, true)
-	if candidates.is_empty():
-		return -1
-	return int(candidates[rng.randi_range(0, candidates.size() - 1)])
-
-
-static func _choose_any_level_index(levels: Array, level_index: Dictionary, allowed_sizes: Array, completed_ids: Array, recent_ids: Array, rng: RandomNumberGenerator) -> int:
-	var candidates := _candidate_indices(levels, level_index, allowed_sizes, DIFFICULTY_ORDER, completed_ids, recent_ids, false, false)
-	if candidates.is_empty():
-		candidates = _candidate_indices(levels, level_index, allowed_sizes, DIFFICULTY_ORDER, completed_ids, recent_ids, true, false)
-	if candidates.is_empty():
-		candidates = _candidate_indices(levels, level_index, allowed_sizes, DIFFICULTY_ORDER, completed_ids, recent_ids, true, true)
 	if candidates.is_empty():
 		return -1
 	return int(candidates[rng.randi_range(0, candidates.size() - 1)])

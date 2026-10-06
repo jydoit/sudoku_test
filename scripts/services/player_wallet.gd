@@ -3,6 +3,7 @@ extends RefCounted
 const CoinEconomyScript = preload("res://scripts/coin_economy.gd")
 
 var balance: int
+var diamond_balance := 0
 var economy_progress: Dictionary = CoinEconomyScript.default_progress()
 var run_exchange_count := 0
 
@@ -52,3 +53,14 @@ func grant(amount: int, reason: String = "") -> Dictionary:
 	var before := balance
 	balance += granted
 	return {"amount": granted, "balanceBefore": before, "balanceAfter": balance, "reason": reason}
+
+
+func exchange_diamonds_for_coins(diamonds: int, coins_per_diamond: int) -> Dictionary:
+	var amount := maxi(0, diamonds)
+	var rate := maxi(1, coins_per_diamond)
+	if amount == 0 or diamond_balance < amount:
+		return {"success": false, "diamondsSpent": 0, "coinsGranted": 0, "diamondBalance": diamond_balance, "coinBalance": balance}
+	var coins := amount * rate
+	diamond_balance -= amount
+	balance += coins
+	return {"success": true, "diamondsSpent": amount, "coinsGranted": coins, "diamondBalance": diamond_balance, "coinBalance": balance}

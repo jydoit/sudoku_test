@@ -1176,6 +1176,10 @@ func _build_intro_controls() -> void:
 	_intro_skip_button.text = "跳过"
 	_intro_skip_button.custom_minimum_size = Vector2(68, 42)
 	_intro_skip_button.focus_mode = Control.FOCUS_ALL
+	_intro_skip_button.add_theme_color_override("font_color", Color("#26334A"))
+	_intro_skip_button.add_theme_color_override("font_hover_color", Color("#26334A"))
+	_intro_skip_button.add_theme_color_override("font_pressed_color", Color("#26334A"))
+	_intro_skip_button.add_theme_color_override("font_focus_color", Color("#26334A"))
 	_intro_skip_button.pressed.connect(skip_intro)
 	row.add_child(_intro_skip_button)
 

@@ -1,0 +1,11 @@
+{
+  "generator": "OpenAI ImageGen (built-in tool)",
+  "date": "2026-10-05",
+  "runtime_assets": ["assets/ui/shop/coins_pile.svg", "assets/ui/shop/diamonds_pile.svg"],
+  "reference_images": ["shop_coins_imagegen.png", "shop_diamonds_imagegen.png"],
+  "conversion": "tools/build_shop_vectors.py; vtracer 0.6.15 and Pillow; pure SVG paths, no embedded raster",
+  "shared_prompt": "Premium casual mobile puzzle shop currency icon for color king, designed to be traced to pure SVG vector paths. Rich royal-cartoon art. Clean cel-shaded vector-like shapes, bold readable silhouette, 12-18 distinct color regions, no grain, no texture noise, no photorealism. Square composition, pile centered, full object visible, generous transparent margin, no floor, no cast background shadow, no scene, no words, no numbers, no borders, no watermark. Genuinely transparent alpha background. Displayed at 120px wide so keep details crisp and chunky.",
+  "coins_prompt": "A compact attractive pile of golden coins, three short staggered stacks and two tilted coins in front, simple embossed three-point crown insignia on the front coin. Warm polished gold, orange-gold thick bevelled edges, cream highlights at upper left.",
+  "diamonds_prompt": "A compact attractive treasure pile of five chunky brilliant-cut cyan blue diamonds, one large upright central diamond and four smaller overlapping gems at its base, NO coins, NO chest. Bright polished azure and turquoise crystal with crisp pale cyan and white facets, rich deep blue thick bevelled lower edges, highlights from upper left.",
+  "export": "PNG references and this provenance file stay in docs and are excluded by all mobile export presets. Only imported SVG runtime textures ship."
+}

@@ -26,9 +26,11 @@ const AssemblyViewScript = preload("res://scripts/assembly_view.gd")
 const ToolIconScript = preload("res://scripts/tool_icon.gd")
 const CoinRollDisplayScript = preload("res://scripts/components/coin_roll_display.gd")
 const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resource.gd")
+const HiddenDiamondHUDScript = preload("res://scripts/components/hidden_diamond_hud.gd")
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const LION_KING_ICON = preload("res://assets/ui/lion_king.svg")
 const SETTINGS_ICON = preload("res://assets/ui/settings.svg")
+const DIAMOND_ICON = preload("res://assets/ui/diamond.svg")
 const HELP_ICON = preload("res://assets/ui/help.svg")
 const HOME_ICON = preload("res://assets/ui/home.svg")
 const HEART_ICON = preload("res://assets/ui/heart.svg")
@@ -45,6 +47,7 @@ var assembly_view
 var assembly_tray_target: Control
 var action_bar: Control
 var progress_row: Control
+var hidden_diamond_hud: PanelContainer
 var progress_bar: ProgressBar
 var progress_label: Label
 var level_label: Label
@@ -57,6 +60,7 @@ var level_select_button: Button
 var tutorial_skip_button: Button
 var coin_label: Label
 var coin_roll_display: HBoxContainer
+var diamond_balance_label: Label
 var coin_balance_roll_clip: Control
 var coin_balance_roll_secondary: Label
 var level_heart_label: Control
@@ -116,6 +120,9 @@ func setup(initial_coins: int, include_assembly: bool, localizer: Callable = Cal
 	content.add_child(_build_level_header())
 	progress_row = _build_progress_row()
 	content.add_child(progress_row)
+	hidden_diamond_hud = HiddenDiamondHUDScript.new()
+	hidden_diamond_hud.configure(localizer)
+	content.add_child(hidden_diamond_hud)
 	content.add_child(_build_coach())
 
 	assembly_tray_target = Control.new()
@@ -178,6 +185,11 @@ func _start_safe_area_tracking() -> void:
 func set_coin_balance(value: int) -> void:
 	if coin_roll_display:
 		coin_roll_display.set_value(maxi(0, value))
+
+
+func set_diamond_balance(value: int) -> void:
+	if diamond_balance_label:
+		diamond_balance_label.text = str(maxi(0, value))
 
 
 func set_progress(current: int, target: int) -> void:
@@ -328,10 +340,10 @@ func _refresh_tool_button_visual(button: Button) -> void:
 func _apply_action_button_style(button: Button, color: Color) -> void:
 	if not button:
 		return
-	button.add_theme_stylebox_override("normal", _card_style(color, 20, true))
-	button.add_theme_stylebox_override("hover", _card_style(color.lightened(0.04), 20, true))
-	button.add_theme_stylebox_override("pressed", _button_style(color.darkened(0.05), 20))
-	button.add_theme_stylebox_override("disabled", _button_style(Color("#EEECE8"), 20))
+	button.add_theme_stylebox_override("normal", UITokensScript.raised_button_style(color, 20))
+	button.add_theme_stylebox_override("hover", UITokensScript.raised_button_style(color.lightened(0.04), 20))
+	button.add_theme_stylebox_override("pressed", UITokensScript.raised_button_style(color, 20, true))
+	button.add_theme_stylebox_override("disabled", UITokensScript.raised_button_style(Color("#EEECE8"), 20, false, true))
 
 
 func _t(source: String, values: Array = []) -> String:
@@ -406,7 +418,7 @@ func _build_top_bar(initial_coins: int) -> Control:
 	margin.add_theme_constant_override("margin_bottom", 10)
 	panel.add_child(margin)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 5)
+	row.add_theme_constant_override("separation", 2)
 	margin.add_child(row)
 
 	top_home_button = _small_button("", Vector2(62, 52), 28)
@@ -442,9 +454,7 @@ func _build_top_bar(initial_coins: int) -> Control:
 	tutorial_skip_button.pressed.connect(func() -> void: tutorial_requested.emit())
 	tutorial_skip_button.hide()
 	row.add_child(tutorial_skip_button)
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(spacer)
+	row.add_child(_build_diamond_badge())
 	settings_button = _small_button("", Vector2(58, 52), 22)
 	settings_button.icon = SETTINGS_ICON
 	settings_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -458,6 +468,33 @@ func _build_top_bar(initial_coins: int) -> Control:
 		level_select_button.pressed.connect(func() -> void: level_select_requested.emit())
 		row.add_child(level_select_button)
 	return panel
+
+
+func _build_diamond_badge() -> Control:
+	var badge := HBoxContainer.new()
+	badge.name = "LevelDiamondBalance"
+	badge.custom_minimum_size = Vector2(60, 42)
+	badge.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	badge.alignment = BoxContainer.ALIGNMENT_CENTER
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_theme_constant_override("separation", 4)
+	var icon := TextureRect.new()
+	icon.texture = DIAMOND_ICON
+	icon.custom_minimum_size = Vector2(24, 24)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_child(icon)
+	diamond_balance_label = Label.new()
+	diamond_balance_label.text = "0"
+	diamond_balance_label.custom_minimum_size.x = 23
+	diamond_balance_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	diamond_balance_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	diamond_balance_label.add_theme_font_size_override("font_size", 20)
+	diamond_balance_label.add_theme_color_override("font_color", Color("#188BB5"))
+	badge.add_child(diamond_balance_label)
+	return badge
 
 
 func _build_level_header() -> Control:
@@ -585,16 +622,19 @@ func _small_button(text: String, minimum_size: Vector2 = Vector2(40, 40), font_s
 	button.focus_mode = Control.FOCUS_NONE
 	button.add_theme_font_size_override("font_size", font_size)
 	button.add_theme_color_override("font_color", INK)
-	button.add_theme_stylebox_override("normal", _button_style(Color("#F1F4F7"), 13))
-	button.add_theme_stylebox_override("hover", _button_style(Color("#E7EDF2"), 13))
-	button.add_theme_stylebox_override("pressed", _button_style(Color("#DDE5EC"), 13))
+	button.add_theme_color_override("font_hover_color", INK)
+	button.add_theme_color_override("font_pressed_color", INK)
+	button.add_theme_color_override("font_focus_color", INK)
+	button.add_theme_stylebox_override("normal", UITokensScript.raised_button_style(Color("#EDF3FA"), 13))
+	button.add_theme_stylebox_override("hover", UITokensScript.raised_button_style(Color("#F7FAFF"), 13))
+	button.add_theme_stylebox_override("pressed", UITokensScript.raised_button_style(Color("#E3EDF7"), 13, true))
 	return button
 
 
 func _coin_resource_badge(display: Control) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.name = "LevelCoinBadge"
-	panel.custom_minimum_size = Vector2(122, 48)
+	panel.custom_minimum_size = Vector2(112, 48)
 	panel.add_theme_stylebox_override("panel", _card_style(CARD, 18, true, 8))
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 6)
@@ -708,11 +748,11 @@ func _action_button(text: String, color: Color = CARD) -> Button:
 	button.focus_mode = Control.FOCUS_NONE
 	button.add_theme_font_size_override("font_size", 17)
 	button.add_theme_color_override("font_color", INK)
+	button.add_theme_color_override("font_hover_color", INK)
+	button.add_theme_color_override("font_pressed_color", INK)
+	button.add_theme_color_override("font_focus_color", INK)
 	button.add_theme_color_override("font_disabled_color", Color("#B9BEC6"))
-	button.add_theme_stylebox_override("normal", _card_style(color, 20, true))
-	button.add_theme_stylebox_override("hover", _card_style(color.lightened(0.04), 20, true))
-	button.add_theme_stylebox_override("pressed", _button_style(color.darkened(0.05), 20))
-	button.add_theme_stylebox_override("disabled", _button_style(Color("#EEECE8"), 20))
+	_apply_action_button_style(button, color)
 	return button
 
 
@@ -728,6 +768,9 @@ func _button_style(color: Color, radius: int) -> StyleBoxFlat:
 
 func _card_style(color: Color, radius: int, shadow: bool = false, padding: int = 0) -> StyleBoxFlat:
 	var style := _button_style(color, radius)
+	style.border_color = color.darkened(0.12)
+	style.set_border_width_all(1)
+	style.border_width_bottom = 3
 	if shadow:
 		style.shadow_color = Color(0.20, 0.23, 0.30, 0.12)
 		style.shadow_size = 7
