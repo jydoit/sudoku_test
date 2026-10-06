@@ -63,6 +63,8 @@ const CROWN_BASE_FONT_RATIO := 0.66
 const CROWN_FEEDBACK_FONT_DELTA := 0.05
 const OPENING_CROWN_FONT_DELTA := 0.16
 const CROWN_MAX_FONT_RATIO := 0.72
+const GOLDEN_RATIO := 1.61803398875
+const RESOURCE_BALANCE_ICON_SIZE := 24.0
 
 const REGION_COLOR_NAMES := ["蓝色", "红色", "绿色", "金色", "紫色", "橙色", "青色", "粉色", "青柠色", "靛蓝色"]
 const REGION_PATTERN_NAMES := ["散点纹", "三竖线纹", "爪印纹", "双弧纹", "菱形点阵", "斜线纹", "圆环纹", "双横线纹", "弧叶纹", "菱形纹"]
@@ -107,6 +109,10 @@ const WRONG_X_BACKDROP_RADIUS_RATIO := 0.32
 
 static func cell_gap(cell_size: float) -> float:
 	return maxf(CELL_GAP_MIN, round(cell_size * CELL_GAP_RATIO))
+
+
+static func resource_balance_icon_value_gap() -> float:
+	return round(RESOURCE_BALANCE_ICON_SIZE / GOLDEN_RATIO)
 
 
 static func raised_button_style(color: Color, radius: int = 16, pressed: bool = false, disabled: bool = false) -> StyleBoxFlat:

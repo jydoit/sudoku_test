@@ -72,7 +72,8 @@ static func record_completion(
 	heart_limit: int,
 	remaining_hearts: int,
 	reward: int,
-	run_coin_exchanges: int
+	run_coin_exchanges: int,
+	accuracy: Dictionary = {}
 ) -> void:
 	normalize_progress(progress)
 	var recent: Array = progress["recentCompletions"]
@@ -83,7 +84,8 @@ static func record_completion(
 		"size": size,
 		"heartLimit": maxi(1, heart_limit),
 		"remainingHearts": maxi(0, remaining_hearts),
-		"excellent": CoinRewardPolicyScript.is_excellent_completion(heart_limit, remaining_hearts),
+		"excellent": CoinRewardPolicyScript.is_excellent_completion(heart_limit, remaining_hearts, accuracy),
+		"runAccuracy": accuracy.duplicate(true),
 		"reward": maxi(0, reward),
 		"coinExchanges": maxi(0, run_coin_exchanges)
 	})

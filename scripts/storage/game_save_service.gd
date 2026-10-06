@@ -4,6 +4,7 @@ const CoinEconomyScript = preload("res://scripts/coin_economy.gd")
 const CompositeCoinPolicyScript = preload("res://scripts/composite_coin_policy.gd")
 const CompositeLevelDirectorScript = preload("res://scripts/composite_level_director.gd")
 const LevelDirectorScript = preload("res://scripts/level_director.gd")
+const RunAccuracyScript = preload("res://scripts/controllers/run_accuracy.gd")
 
 
 static func normalize_loaded(data: Dictionary, defaults: Dictionary, today: String) -> Dictionary:
@@ -29,6 +30,7 @@ static func normalize_loaded(data: Dictionary, defaults: Dictionary, today: Stri
 	var history := _dictionary_or(data.get("homeCompositeHistory", {}), {}).duplicate(true)
 	if not history.is_empty():
 		history["activeSchedule"] = clean_schedule(_dictionary_or(history.get("activeSchedule", {}), {}))
+		history["runAccuracy"] = RunAccuracyScript.normalize_state(history.get("runAccuracy"))
 	return {
 		"currentLevelIndex": level_index,
 		"playerLevelNumber": maxi(1, int(data.get("playerLevelNumber", level_index + 1))),
@@ -54,6 +56,7 @@ static func normalize_loaded(data: Dictionary, defaults: Dictionary, today: Stri
 		"runHintCount": maxi(0, int(data.get("runHintCount", 0))),
 		"runDirectFindCount": maxi(0, int(data.get("runDirectFindCount", 0))),
 		"runCoinExchangeCount": maxi(0, int(data.get("runCoinExchangeCount", 0))),
+		"runAccuracy": RunAccuracyScript.normalize_state(data.get("runAccuracy")),
 		"immediateErrors": bool(data.get("immediateErrors", true)),
 		"selectedLanguage": str(data.get("selectedLanguage", "")),
 		"musicEnabled": bool(data.get("musicEnabled", true)),
@@ -92,7 +95,8 @@ static func capture_formal(context: Dictionary) -> Dictionary:
 		"runMoveCount": int(context["runMoveCount"]),
 		"runHintCount": int(context["runHintCount"]),
 		"runDirectFindCount": int(context["runDirectFindCount"]),
-		"runCoinExchangeCount": int(context["runCoinExchangeCount"])
+		"runCoinExchangeCount": int(context["runCoinExchangeCount"]),
+		"runAccuracy": RunAccuracyScript.normalize_state(context.get("runAccuracy"))
 	}
 
 
@@ -129,7 +133,8 @@ static func build_home_composite_history(context: Dictionary, composite_state: D
 		"runMoveCount": int(context["runMoveCount"]),
 		"runHintCount": int(context["runHintCount"]),
 		"runDirectFindCount": int(context["runDirectFindCount"]),
-		"runCoinExchangeCount": int(context["runCoinExchangeCount"])
+		"runCoinExchangeCount": int(context["runCoinExchangeCount"]),
+		"runAccuracy": RunAccuracyScript.normalize_state(context.get("runAccuracy"))
 	}
 
 
@@ -153,6 +158,7 @@ static func home_composite_history_is_valid(history: Dictionary, levels: Array) 
 
 static func build_save(context: Dictionary, tutorial_controller, composite_state: Dictionary) -> Dictionary:
 	var data := context.duplicate(true)
+	data["runAccuracy"] = RunAccuracyScript.normalize_state(context.get("runAccuracy"))
 	data["compositeState"] = composite_state if bool(context.get("homeCompositeEntryActive", false)) else {}
 	tutorial_controller.write_save(data)
 	return data
@@ -184,6 +190,7 @@ static func _formal_snapshot(snapshot: Dictionary) -> Dictionary:
 		return {}
 	var clean := snapshot.duplicate(true)
 	clean["directorProgress"] = _migrate_played_progress(snapshot)
+	clean["runAccuracy"] = RunAccuracyScript.normalize_state(snapshot.get("runAccuracy"))
 	clean["activeSchedule"] = formal_schedule(
 		_dictionary_or(snapshot.get("activeSchedule", {}), {}),
 		_dictionary_or(snapshot.get("compositeState", {}), {})

@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="240" viewBox="0 0 1280 240">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8bc8ed"/>
+      <stop offset=".5" stop-color="#e7f2f3"/>
+      <stop offset="1" stop-color="#fff8ed"/>
+    </linearGradient>
+    <linearGradient id="creamPill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffdf6"/>
+      <stop offset=".72" stop-color="#fff8e8"/>
+      <stop offset="1" stop-color="#efdfbd"/>
+    </linearGradient>
+    <linearGradient id="button" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f9fcff"/>
+      <stop offset="1" stop-color="#e5edf7"/>
+    </linearGradient>
+    <linearGradient id="coin" x1="0" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#fff09b"/>
+      <stop offset=".46" stop-color="#ffc135"/>
+      <stop offset="1" stop-color="#d27b10"/>
+    </linearGradient>
+    <linearGradient id="gem" x1="0" y1="0" x2=".8" y2="1">
+      <stop offset="0" stop-color="#e8ffff"/>
+      <stop offset=".42" stop-color="#54d6f0"/>
+      <stop offset="1" stop-color="#1688bd"/>
+    </linearGradient>
+    <linearGradient id="heart" x1="0" y1="0" x2=".15" y2="1">
+      <stop offset="0" stop-color="#ff9aa7"/>
+      <stop offset=".42" stop-color="#f2536c"/>
+      <stop offset="1" stop-color="#c92f4c"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-40%" width="170%" height="200%">
+      <feDropShadow dx="0" dy="7" stdDeviation="6" flood-color="#344359" flood-opacity=".22"/>
+    </filter>
+    <filter id="iconShadow" x="-40%" y="-40%" width="180%" height="190%">
+      <feDropShadow dx="0" dy="4" stdDeviation="2.5" flood-color="#26334a" flood-opacity=".27"/>
+    </filter>
+    <filter id="softIconShadow" x="-35%" y="-35%" width="170%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="1.5" flood-color="#26334a" flood-opacity=".14"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="240" fill="url(#sky)"/>
+
+  <!-- Standalone home button -->
+  <g filter="url(#shadow)">
+    <rect x="28" y="70" width="92" height="100" rx="23" fill="url(#button)" stroke="#c4d1e1" stroke-width="2"/>
+    <rect x="28" y="162" width="92" height="8" rx="4" fill="#aab9cb" opacity=".72"/>
+    <path d="M54 117 74 100l20 17v28H80v-17H68v17H54z" fill="none" stroke="#293b58" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Coin icon first, dynamic amount capsule behind it -->
+  <g transform="translate(56 0)">
+  <g filter="url(#shadow)">
+    <rect x="166" y="82" width="198" height="78" rx="28" fill="url(#creamPill)" stroke="#c98318" stroke-width="3"/>
+    <path d="M190 155h150" stroke="#ddbd82" stroke-width="2" opacity=".85"/>
+    <path d="M216 104h122" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity=".78"/>
+  </g>
+  <g filter="url(#iconShadow)">
+    <circle cx="174" cy="121" r="34" fill="#a95e0a"/>
+    <circle cx="174" cy="117" r="32" fill="url(#coin)" stroke="#f4a522" stroke-width="3"/>
+    <circle cx="174" cy="117" r="24" fill="none" stroke="#ffe492" stroke-width="2.5"/>
+    <path d="m160 127 3-18 11 8 11-8 3 18z M163 132h22" fill="none" stroke="#a35d0b" stroke-width="3.5" stroke-linejoin="round"/>
+  </g>
+  <text x="222" y="132" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#34466a">6430</text>
+  </g>
+
+  <!-- Diamond icon first, its capsule width follows the displayed count -->
+  <g transform="translate(101 0)">
+  <g filter="url(#shadow)">
+    <rect x="414" y="82" width="154" height="78" rx="28" fill="url(#creamPill)" stroke="#54a9d4" stroke-width="3"/>
+    <path d="M438 155h108" stroke="#b5d6e5" stroke-width="2" opacity=".9"/>
+    <path d="M448 104h96" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity=".78"/>
+  </g>
+  <g filter="url(#softIconShadow)">
+    <path d="m395 108 12-16h30l12 16-27 43z" fill="url(#gem)" stroke="#147ba9" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="m395 108 27 0 15-16m-15 59v-43m-15-16 15 16 15-16" fill="none" stroke="#efffff" stroke-width="2.5" opacity=".96"/>
+    <path d="m400 105 9-10h8l-12 16z" fill="#fff" opacity=".72"/>
+    <path d="m422 151 15-43h12z" fill="#0f77aa" opacity=".20"/>
+  </g>
+  <text x="470" y="132" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#34466a">13</text>
+  </g>
+
+  <!-- Heart first, remaining-life count after it -->
+  <g transform="translate(145 0)">
+  <g filter="url(#shadow)">
+    <rect x="618" y="82" width="148" height="78" rx="28" fill="url(#creamPill)" stroke="#dd7885" stroke-width="3"/>
+    <path d="M642 155h100" stroke="#e5b7bb" stroke-width="2" opacity=".9"/>
+    <path d="M650 104h92" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity=".78"/>
+  </g>
+  <g filter="url(#softIconShadow)">
+    <path d="M626 143 600 119c-15-18 8-38 26-21 18-17 41 3 26 21z" fill="url(#heart)" stroke="#c53550" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M603 116c2-7 9-12 16-10" fill="none" stroke="#ffd2d8" stroke-width="4" stroke-linecap="round" opacity=".9"/>
+    <path d="M626 143 652 119c-3 10-12 18-26 24z" fill="#a82342" opacity=".18"/>
+    <ellipse cx="610" cy="109" rx="4" ry="2.5" fill="#fff" opacity=".82"/>
+  </g>
+  <text x="670" y="132" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#34466a">3</text>
+  </g>
+
+  <!-- Independent controls distributed evenly across the row -->
+  <g transform="translate(-63 0)" filter="url(#shadow)">
+    <rect x="1050" y="70" width="92" height="100" rx="23" fill="url(#button)" stroke="#c4d1e1" stroke-width="2"/>
+    <rect x="1050" y="162" width="92" height="8" rx="4" fill="#aab9cb" opacity=".72"/>
+    <g transform="translate(1096 120)" fill="#31435f" stroke="#31435f" stroke-width="2.5">
+      <path d="M-5-29h10l2 8 6 2 7-4 7 8-5 7 2 6 8 3v10l-8 2-2 6 5 7-7 8-7-4-6 2-2 8H-5l-2-8-6-2-7 4-7-8 5-7-2-6-8-2v-10l8-3 2-6-5-7 7-8 7 4 6-2z"/>
+      <circle r="9" fill="#eef4fb" stroke="#eef4fb"/>
+    </g>
+  </g>
+
+  <!-- Debug-only selection control -->
+  <g transform="translate(-5 0)" filter="url(#shadow)">
+    <rect x="1160" y="70" width="92" height="100" rx="23" fill="url(#button)" stroke="#c4d1e1" stroke-width="2"/>
+    <rect x="1160" y="162" width="92" height="8" rx="4" fill="#aab9cb" opacity=".72"/>
+  </g>
+  <text x="1206" y="128" transform="translate(-5 0)" text-anchor="middle" font-family="sans-serif" font-size="22" font-weight="700" fill="#31435f">选关</text>
+</svg>

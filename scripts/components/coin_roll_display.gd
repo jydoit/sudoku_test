@@ -252,6 +252,19 @@ func configured_content_gap() -> float:
 	return _content_gap
 
 
+func counter_width_for_value(value: int) -> float:
+	var digit_count := maxi(_minimum_digits, str(maxi(0, value)).length())
+	var profile := _profile_for_digit_count(digit_count)
+	var profile_font_size := int(profile.get("font_size", _font_size))
+	var profile_minimum_width := float(profile.get("minimum_width", _minimum_counter_width))
+	var sample := ""
+	for _index in range(digit_count):
+		sample += "8"
+	var font := primary_label.get_theme_font("font")
+	var measured_width := font.get_string_size(sample, HORIZONTAL_ALIGNMENT_LEFT, -1.0, profile_font_size).x
+	return ceilf(maxf(profile_minimum_width, measured_width + _horizontal_padding * 2.0))
+
+
 func visual_gap_from_icon_to_number() -> float:
 	if not coin_icon or not clip:
 		return 0.0
@@ -301,20 +314,16 @@ func _refresh_geometry(first_value: int, second_value: int) -> void:
 	var digit_count := maxi(_minimum_digits, maxi(first_text.length(), second_text.length()))
 	var profile := _profile_for_digit_count(digit_count)
 	var profile_font_size := int(profile.get("font_size", _font_size))
-	var profile_minimum_width := float(profile.get("minimum_width", _minimum_counter_width))
 	if digit_count == _geometry_digit_count and profile_font_size == _font_size:
 		return
 	_font_size = profile_font_size
 	for label in [primary_label, secondary_label]:
 		label.add_theme_font_size_override("font_size", _font_size)
-	var sample := ""
-	for _index in range(digit_count):
-		sample += "8"
+	var measured_width := counter_width_for_value(first_value if first_text.length() >= second_text.length() else second_value)
 	var font := primary_label.get_theme_font("font")
-	var measured_width := font.get_string_size(sample, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size).x
 	var measured_height := font.get_height(_font_size)
 	_counter_size = Vector2(
-		ceilf(maxf(profile_minimum_width, measured_width + _horizontal_padding * 2.0)),
+		measured_width,
 		ceilf(maxf(_minimum_counter_height, measured_height + _vertical_padding * 2.0 + absf(float(_shadow_offset_y))))
 	)
 	_geometry_digit_count = digit_count

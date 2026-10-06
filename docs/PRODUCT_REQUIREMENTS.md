@@ -232,7 +232,7 @@ Splash 验收标准：
 
 功能逻辑：
 
-- 顶部资源栏包含横向加宽的返回首页按钮、金币图标与余额、独立红心体力槽、横向加宽的设置按钮和 Debug 专用“选关”按钮；帮助按钮下移到关卡标题行右侧，与关卡编号垂直居中，钻石图标及账户余额位于同一标题行。首页、帮助、设置三个图标始终居中，帮助问号和设置齿轮使用更粗的矢量描边；底部操作区同一行显示清除、皇冠直找和提示三个道具；不显示排行榜或其它资源入口。
+- 普通、拼块及新手教程共用无外框的独立组件顶栏：返回首页、金币、钻石、红心、设置按弹性间距均匀分布；调试选关与教程跳过只在对应状态占用同一个右端位置，并与其余组件一样参与分布。金币、钻石、红心均为图标在前、数字在后的独立胶囊；约 42px 的矢量图标压住胶囊左缘，金币/钻石/红心分别采用金/蓝/粉描边，数字在右侧。帮助按钮位于关卡标题行右侧，与关卡编号垂直居中，标题行不再重复显示资源。首页、帮助、设置图标居中并使用矢量资源；底部操作区同一行显示清除、皇冠直找和提示三个道具；不显示排行榜或其它资源入口。
 - 关卡标题只显示关卡编号，不显示关卡名称。
 - 帮助按钮打开规则浮窗。普通关卡默认展示“消除规则”，使用三张棋盘示意图说明皇冠邻格、行列和颜色区域规则；复合拼块关卡额外提供“拼块玩法”页，说明拿取、放置、横向滑动托盘、撤回方块和完成后的棋盘转换。
 - “选关”属于 Debug 专用功能：编辑器和 Debug 包显示按钮并可打开关卡选择弹窗；Release 正式包不创建按钮、不注册选关信号，也不实例化选关弹窗。Android 正式包必须使用 `Android Release` 导出预设，并从包体排除 `scripts/dialogs/level_select_dialog_content.gd`；原 `Android` 预设保留 Debug 选关能力。完整选关列表仅在 Debug 环境实际打开弹窗时构建，不在启动、首页刷新或语言切换时重复生成。
@@ -244,14 +244,15 @@ Splash 验收标准：
 
 当前实现：
 
-- 关卡 UI 按玩法拆为两个独立页面实例：`scripts/pages/formal_level_page.gd` 承载常规皇冠玩法，`scripts/pages/composite_level_page.gd` 承载拼块玩法及其完成拼接后的皇冠阶段；两者共享 `scripts/pages/level_page_base.gd` 中的顶部栏、关卡标题、进度、棋盘、工具栏、红心、金币动画和标题行钻石余额。顶部栏和结算页的金币图标、数字裁切窗口及滚动逻辑统一由 `scripts/components/coin_roll_display.gd` 提供；组件按字体实际高度和余额位数计算裁切尺寸，至少完整承载五位数，静态更新会终止旧 Tween 并复位备用数字，且在 RTL 页面中仍固定使用“金币图标 + 数字”的 LTR 顺序。`scripts/main.gd` 只切换当前页面并通过页面 API 更新金币、钻石、进度和红心，不再在页面切换时复制绑定整套内部节点引用。
+- 关卡 UI 按玩法拆为两个独立页面实例：`scripts/pages/formal_level_page.gd` 承载常规皇冠玩法，`scripts/pages/composite_level_page.gd` 承载拼块玩法及其完成拼接后的皇冠阶段；两者共享 `scripts/pages/level_page_base.gd` 中的顶部独立组件 HUD、关卡标题、进度、棋盘、工具栏、红心和金币动画。普通玩法、拼块玩法和新手教程均复用同一顶部布局。顶栏和结算页的金币图标、数字裁切窗口及滚动逻辑统一由 `scripts/components/coin_roll_display.gd` 提供；余额按字体度量与位数动态调整，超长余额缩小字号；内部始终保持“图标 + 数字”的 LTR 顺序。`scripts/main.gd` 只切换当前页面并通过页面 API 更新金币、钻石、进度和红心，不再在页面切换时复制绑定整套内部节点引用。
+- 顶栏使用已确认设计稿拆出的 `assets/ui/hud/` 矢量资源：金币、钻石、红心、首页、设置及三种 `*_capsule.svg` 背景。资源图标实际布局尺寸为 `42 × 42px`，胶囊高 `40px`；必须先设置 `TextureRect.EXPAND_IGNORE_SIZE` 再赋纹理，避免 SVG 原始尺寸撑开控件。金币 1–4 位使用 `20px` 字号，不回落到长余额字号。针对性布局检查须验证图标实际边界与渲染结果，而非仅验证最小尺寸配置。
 - 冲突状态由 `_validate_and_update()` 更新。
 - 教练文字卡仅在新手教程中显示；进入正式关卡后隐藏并退出纵向布局，释放空间主要交给棋盘。
 - 关卡页左右安全留白为 `6px`，棋盘内部总缩进为 `10px`；在 540px 宽竖屏下，5x5 棋盘实际绘制范围不小于 `510 x 510px`。
-- 顶部编辑和底部广告入口已从关卡页移除；顶部资源栏显示加大的首页入口、金币、本关红心、帮助、设置与选关入口，底部操作区显示清除、皇冠直找和提示按钮。
+- 顶部编辑和底部广告入口已从关卡页移除；顶栏显示独立的首页、金币、钻石、本关红心和设置组件，并以均匀弹性间距分开；标题行显示帮助，调试版可在顶栏最右端显示选关，底部操作区显示清除、皇冠直找和提示按钮。
 - 帮助、设置和 Debug 选关内容分别由 `scripts/dialogs/help_dialog_content.gd`、`settings_dialog_content.gd` 和 `level_select_dialog_content.gd` 构建；Release 构建不会实例化选关内容。三张规则示意图由 `scripts/rule_illustration.gd` 使用现有狮子皇冠贴图与棋盘色板绘制。`scripts/main.gd` 只负责弹窗打开条件和确认后的流程动作。
 - 帮助、选关、教程确认和金币不足提示统一由 `scripts/dialog_controller.gd` 管理，使用游戏内遮罩、暖白卡片、统一边框、圆角、阴影、按钮和开关动效，不依赖系统窗口外观。提示正文保持简短，下一步操作由按钮表达，避免重复解释。
-- 新手教程复用正式关卡的顶部标题、皇冠进度、帮助入口、红心槽和底部三道具布局；教程期间仅将“选关”替换为“跳过”，避免绕过引导进入正式关卡。`scripts/controllers/tutorial_controller.gd` 持有完成状态、当前步骤、交互阶段、教程历史和焦点令牌，并直接处理双击皇冠、滑动/点击排除、Hint、皇冠直找、撤销和阶段推进；`scripts/main.gd` 只消费其结构化结果并触发音效、文案和页面动画。历史遗留的 `place / color / row_col / adjacent / tools` 多页教程分支已删除，运行时只保留产品定义的单张 5x5 状态机。`scripts/overlays/tutorial_overlay.gd` 独立管理中央提示、手指定位以及单击/双击/滑动动画。
+- 新手教程复用正式关卡的独立顶部组件 HUD、标题、皇冠进度、帮助入口、红心数量和底部三道具布局；教程期间右侧操作组显示“跳过”而不显示“选关”，避免绕过引导进入正式关卡。`scripts/controllers/tutorial_controller.gd` 持有完成状态、当前步骤、交互阶段、教程历史和焦点令牌，并直接处理双击皇冠、滑动/点击排除、Hint、皇冠直找、撤销和阶段推进；`scripts/main.gd` 只消费其结构化结果并触发音效、文案和页面动画。历史遗留的 `place / color / row_col / adjacent / tools` 多页教程分支已删除，运行时只保留产品定义的单张 5x5 状态机。`scripts/overlays/tutorial_overlay.gd` 独立管理中央提示、手指定位以及单击/双击/滑动动画。
 - 开局提示皇冠卡片和飞入棋盘动画由 `scripts/overlays/opening_king_overlay.gd` 管理；全局 Toast 由 `scripts/overlays/feedback_layer.gd` 管理，所有 Tween 均随对应 UI 组件创建和清理。
 
 功能截图与交互流转：
@@ -262,14 +263,14 @@ Splash 验收标准：
 
 - 页面在移动端宽度下按钮和棋盘不溢出。
 - 正式关卡不显示黄色教练文字区；隐藏后棋盘布局高度相应增大，顶部栏仅小幅增高。
-- 关卡页顶部显示加大的首页按钮、金币余额、本关红心、帮助、设置与选关入口，底部显示清除、皇冠直找和提示按钮，不显示排行榜、编辑和广告。
+- 关卡页顶部显示独立的首页、金币、钻石、红心与设置组件，标题行显示帮助，调试版可显示选关；底部显示清除、皇冠直找和提示按钮，不显示排行榜、编辑和广告。
 - 点击帮助按钮会打开消除规则浮窗，三张示意图和文字分别准确表达邻格、行列和颜色区域规则。
 - 复合拼块关卡的拼接阶段打开帮助时默认进入“拼块玩法”页；进入找皇冠阶段后默认回到“消除规则”，但仍可切换并重播拼块流程动画。
 - 所有模态弹窗同一时间只显示一个，并统一拦截底层棋盘输入、支持取消键关闭和移动端安全边距。
 - 移动端以 `540×960` 为设计基准并使用可扩展画布适配全面屏；所有页面装饰背景铺满设备物理边缘，不能因固定宽高比或 Android 系统栏留下黑边。首页和共用结果页采用“清透中深天蓝 → 晴空蓝 → 浅蓝薄雾 → 米白内容区 → 底部柔和天空蓝”的连续渐变，不能形成压暗的藏蓝色带；米白色关卡页在顶部状态栏与底部手势区叠加同一套向内容区渐隐的天空蓝边缘，确保系统时间、状态图标和手势条清晰可辨，同时不能压暗棋盘、工具栏或按钮。关卡、按钮、标题与棋盘继续避让系统安全区。
 - 点击“选关”可打开选择弹窗，并能进入所选关卡。
 - 关卡标题只显示关卡编号。
-- 新手教程显示与正式关卡一致的标题、帮助、红心、皇冠进度和三道具布局，并以“跳过”替代“选关”。
+- 新手教程显示与正式关卡一致的独立顶部组件、标题、帮助、红心数量、皇冠进度和三道具布局，并在右侧操作组以“跳过”替代“选关”。
 
 ### 6.3 棋盘交互模块
 
@@ -603,8 +604,9 @@ Splash 验收标准：
 
 - 当皇冠数量等于目标数且无冲突时通关。
 - 找到最后一只小狮子后，先在关卡棋盘内播放约 `2.3s` 的分段完成庆祝：最后落下的小狮子先切换开心笑脸，缓慢上升并左右欢乐摇摆，在最高处短暂停留后落回；其余已找到的小狮子按与其距离由近到远依次执行相同的笑脸上浮、摇摆和近身闪光响应，最远处的小狮子也必须完整完成动作。加宽的金色径向扫光用约 `1.4s` 覆盖棋盘，并在扫过后保留暖金余辉、金色外框和星点收尾，在金色状态到达峰值时补充一次轻触感。约 `2.52s` 后才进入结算页。整段效果由单一连续时间轴按每个渲染帧驱动，不为每个格子创建独立 Tween；局内庆祝不能与结算金币和花瓣动画重叠。
-- 每次成功完成关卡都会按展示关卡序号结算金币，重玩也按实际表现重新结算。基础金币随 `SIZE_UNLOCK_DISPLAY_LEVELS` 的 size 开放阶段增长：第 1-10 关为 1，第 11-79 关为 2，第 80-159 关为 3，第 160-239 关为 4，第 240 关起为 5。
-- 本关初始体力大于 1 且通关时没有消耗任何体力，评为 `EXCELLENT`，奖励为 `ceil(base × 1.3)` 并播放一次花瓣飘落庆祝动画；只有 1 点初始体力或发生过体力损失时评为 `GOOD`，奖励为 base 且不播放花瓣动画。
+- 每次成功完成关卡都会按展示关卡序号结算金币，重玩也按实际表现重新结算。基础金币随 `SIZE_UNLOCK_DISPLAY_LEVELS` 的 size 开放阶段增长：第 1-29 关为 1，第 30-79 关为 2，第 80-159 关为 3，第 160-239 关为 4，第 240 关起为 5。
+- 本关初始体力大于 1 时保留原评级：成功通关且没有消耗任何体力为 `EXCELLENT`，否则为 `GOOD`。本关初始体力为 1 时，成功通关且整局从未把真实答案狮子格标为普通 X、从未错误放置狮子，才评为 `EXCELLENT`；误排或错误放置后即使撤销、清除或失败后复活，本局仍为 `GOOD`。道具使用、通关用时和步数不降低评级。普通玩法 `EXCELLENT` 奖励为 `ceil(base × 1.3)` 并播放一次花瓣飘落庆祝动画，`GOOD` 奖励为 base 且不播放花瓣；独立拼块原有多红心评级及 `4 / 2` 金币奖励不变。
+- 单红心准确性只记录已经成立的操作：真实双击放置狮子时，首击产生的临时 X 不算误排；单击或滑动把真实答案格标为普通 X 才记为误排，后续取消、撤销和清除均不能抹去记录。记录随本局存档、教程主线快照和独立拼块往返快照持久保存；新局或重新挑战才重置。旧存档没有完整操作历史时，当前单红心局保守评为 `GOOD`，重开后启用完整准确性评级，不根据当前棋盘倒推已经撤销的历史。
 - 通关结果页使用整屏奖励结构：铺满物理屏幕的“蓝天 × 米白”渐变背景、顶部完成文案、中部皇冠展位和底部按钮；渐变在屏幕上沿使用可承载白色系统图标的清透中深天蓝，并向下连续过渡到晴空蓝、浅蓝薄雾和米白内容区，最底部手势区以柔和天空蓝收尾，Android 系统栏与长屏边缘不得露出黑边或生硬深蓝色带。标题、副标题和奖励文案必须在移动端安全宽度内自适应换行，不能被英文长文本的最小宽度撑出屏幕，卡片和按钮始终保留运行时安全边距。
 - 顶部核心文案按表现显示 `EXCELLENT / GOOD` 和“第 X 关 已完成”。
 - 中部排行榜位置先使用皇冠展位，不显示排行榜；广告位置先不显示。
@@ -633,8 +635,9 @@ Splash 验收标准：
 回归测试重点：
 
 - 正确解完成后显示通关结果页。
-- 验证第 `1 / 11 / 80 / 160 / 240` 关基础奖励依次为 `1 / 2 / 3 / 4 / 5`。
-- 多体力关卡无体力消耗时显示 Excellent、奖励按 1.3 倍向上取整并播放花瓣；损失体力或单体力关卡显示 Good、只发 base 且无花瓣。
+- 验证第 `1 / 30 / 80 / 160 / 240` 关基础奖励依次为 `1 / 2 / 3 / 4 / 5`，第 29 关仍为 1。
+- 多体力关卡无体力消耗时仍显示 Excellent；单体力关卡在完整记录且无误排、无错误放置的情况下显示 Excellent，奖励按 1.3 倍向上取整并播放花瓣。其余情况显示 Good、只发 base 且无花瓣；拼块原有多心 `2 / 4` 奖励不变。
+- `tests/single_heart_rating_test.gd` 专项覆盖单击/滑动误排、取消/撤销/清除后记录不丢、真实双击首击临时 X 不误记、失败后复活不洗白、道具/时间/步数不降级、存档与教程/拼块快照恢复、新局重置和旧存档保守降级。
 - 拼块付费新局进入后显示金币扣除浮层，顶部余额在裁切窗口中逐格向下滚动；通关结算页由小狮子逐枚抛出金币，全部飞币落入奖励图标后再启动一次减速余额滚筒。获得和扣除动画的结束值都必须与存档金币流水一致。
 - 顶部与结算页余额回归覆盖 `0 / 8 / 18 / 99 / 108 / 999 / 1000 / 99999`：静态、获得、消费和 Tween 中途切页都不得裁字或留下偏移；在 `540 x 960` 竖屏、中英文和 RTL 语言下，金币图标与数字的对齐、顺序和间距必须稳定。
 - 已完成关卡重复通关按本次表现重新结算，不能重复写入已完成关卡 ID。
@@ -658,7 +661,7 @@ Splash 验收标准：
 
 统计字段：
 
-- `recentCompletions`：最近通关的关卡 ID、展示关卡序号、尺寸、初始/剩余体力、Excellent 标记、奖励规则版本、实际奖励和本局金币兑换次数；旧奖励版本不进入新道具价格累计。
+- `recentCompletions`：最近通关的关卡 ID、展示关卡序号、尺寸、初始/剩余体力、Excellent 标记、`runAccuracy` 准确性记录、奖励规则版本、实际奖励和本局金币兑换次数；旧奖励版本不进入新道具价格累计。
 - `toolExchangeCounts`：按逻辑提示、皇冠直找、复活分别累计兑换次数。
 - `totalCoinEarned`、`totalCoinSpent`：累计发放和核销金币，用于后续平衡经济系统。
 
@@ -688,14 +691,15 @@ Splash 验收标准：
 - 存档文件读取和写入统一通过 `scripts/storage/save_repository.gd`；`scripts/storage/game_save_service.gd` 负责存档版本兼容、业务字段标准化、正式关卡快照和拼块历史构建及校验。页面和玩法控制器不直接访问 `FileAccess`，`main.gd` 只把当前会话字段应用到运行态。
 - `_load_save()` 加载并兼容旧版本。
 - `_save_game()` 在关键状态变化后写入。
-- 当前保存字段包括 `currentLevelIndex`、`currentLevelId`、`playerLevelNumber`、`activeSchedule`、`directorProgress`、`compositeDirectorProgress`、`compositeCoinProgress`、`economyProgress`、`runStartedUnix`、`runMoveCount`、`runHintCount`、`runDirectFindCount`、`runCoinExchangeCount`、`cellStates`、`isCompleted`、`isFailed`、`coinCount`、`diamondCount`、`hiddenDiamondEventIds`、`heartCount`、`hintCount`、`completedLevels`、`immediateErrors`、`tutorialCompleted`、`tutorialStarted`、`tutorialStepIndex`、`formalProgressSnapshot`、`homeCompositeEntryActive`、`homeCompositeRound`、`homeCompositeProgressSnapshot`、`homeCompositeHistory`、`compositeState`、`compositeTutorialSeen`。钻石余额与隐藏奖励账本属于全局账户数据，不纳入教程/拼块的主线现场快照，避免返回时回滚奖励。
+- 当前保存字段包括 `currentLevelIndex`、`currentLevelId`、`playerLevelNumber`、`activeSchedule`、`directorProgress`、`compositeDirectorProgress`、`compositeCoinProgress`、`economyProgress`、`runStartedUnix`、`runMoveCount`、`runHintCount`、`runDirectFindCount`、`runCoinExchangeCount`、`runAccuracy`、`cellStates`、`isCompleted`、`isFailed`、`coinCount`、`diamondCount`、`hiddenDiamondEventIds`、`heartCount`、`hintCount`、`completedLevels`、`immediateErrors`、`tutorialCompleted`、`tutorialStarted`、`tutorialStepIndex`、`formalProgressSnapshot`、`homeCompositeEntryActive`、`homeCompositeRound`、`homeCompositeProgressSnapshot`、`homeCompositeHistory`、`compositeState`、`compositeTutorialSeen`。钻石余额与隐藏奖励账本属于全局账户数据，不纳入教程/拼块的主线现场快照，避免返回时回滚奖励。
 - `directorProgress` 保存最近通关和失败记录、size/difficulty 统计、下一关开启和次留补记状态、各组合的 Beta 后验，以及 `banditState` 中的 size/difficulty Dirichlet 参数和新 size 发布 epoch。
 - 首页点击“开始关卡”时，如果当前恢复的正式关卡已经完成，会自动推进并加载下一关，避免停留在已完成且不可操作的棋盘。
-- `SAVE_VERSION` 当前为 19；`hiddenDiamondProgress` 保存独立激励调度、同玩法同尺寸通关纪录、限时/限步的近期达成结果和待结束事件，不纳入主线现场快照。`formalProgressSnapshot` 在重看教程时持久保存正式关卡索引、调度、通关记录、经济资源、棋盘状态、红心和本局统计，不再保存拼块控制器或回滚独立拼块教学状态。`compositeDirectorProgress` 独立保留拼块玩法的基础关卡推荐统计、各 size 的 pattern Dirichlet 参数、曝光次数和最近结果；`compositeCoinProgress` 保存本地日期、当日已用免费局、累计付费局、累计入场消费和累计拼块奖励。
+- `SAVE_VERSION` 当前为 21；`hiddenDiamondProgress` 保存独立激励调度、同玩法同尺寸通关纪录、限时/限步的近期达成结果和待结束事件，不纳入主线现场快照。`formalProgressSnapshot` 在重看教程时持久保存正式关卡索引、调度、通关记录、经济资源、棋盘状态、红心和本局统计，不再保存拼块控制器或回滚独立拼块教学状态。`compositeDirectorProgress` 独立保留拼块玩法的基础关卡推荐统计、各 size 的 pattern Dirichlet 参数、曝光次数和最近结果；`compositeCoinProgress` 保存本地日期、当日已用免费局、累计付费局、累计入场消费和累计拼块奖励。
 - `homeCompositeProgressSnapshot` 与 `homeCompositeEntryActive` 用于隔离首页拼块入口：即使在独立拼块体验中退出应用，下次启动回到首页时也先恢复进入前的主线现场。`homeCompositeHistory` 独立保留拼块玩法的最近局数和未完成现场，不会随主线快照恢复而清空。
 - `compositeState` 仅用于独立拼块，保存关卡 ID、阶段、离线数据种子、拆块数据版本、已放方块、放置历史、死局状态、最终布局签名、`regions` 与 `solution`。缺少独立现场时从本局离线数据开始拼块；拆块数据版本或种子变化时不套用旧坐标。
-- 当前存档版本为 `20`，升级前先保存同目录 `.pre-v20.bak` 原件；已有 `.pre-v18.bak` / `.pre-v19.bak` 不删除，备份失败时禁止覆盖原存档。旧主线已拼完的颜色棋盘与答案继续转为 `activeSchedule.boardLayout`，原标记、账户余额、通关记录保留，继续作为普通找皇冠关卡；旧主线尚未完成的拼接改为该关普通棋盘，原拼接记录可从备份恢复。独立拼块存档不受影响。旧隐藏事件账本继续保留，不因改版重复发奖。
+- 当前存档版本为 `21`，升级前先保存同目录 `.pre-v21.bak` 原件；已有 `.pre-v18.bak` / `.pre-v19.bak` / `.pre-v20.bak` 不删除，备份失败时禁止覆盖原存档。旧主线已拼完的颜色棋盘与答案继续转为 `activeSchedule.boardLayout`，原标记、账户余额、通关记录保留，继续作为普通找皇冠关卡；旧主线尚未完成的拼接改为该关普通棋盘，原拼接记录可从备份恢复。独立拼块存档不受影响。旧隐藏事件账本继续保留，不因改版重复发奖。
 - v20 补充永久已玩集合与挑战延后状态：由各正式进度的已有 `playedLevelIds`、通关 ID、仍保留的成功/失败记录和当前正式关卡合并补齐，正式教程快照及独立拼块中的主线快照分别迁移；排除教程负 ID 和当前独立拼块局，不跨玩法混入历史。不能还原旧存档已经丢失的退出/失败记录；不得伪造历史或重置待办、棋盘、余额和奖励账本。
+- v21 增加本局准确性记录 `runAccuracy = {tracked, excludedLion, wrongCrown}`：`tracked` 表示从本局开始就完整记录，`excludedLion` 表示曾把真实答案狮子格标为普通 X，`wrongCrown` 表示曾错误放置狮子。该记录同时进入正式存档、`formalProgressSnapshot`、`homeCompositeProgressSnapshot` 和 `homeCompositeHistory`；误操作标记只可从 false 变为 true，退出、恢复、撤销、清除和复活均不重置。新局/重新挑战初始化完整记录，旧存档或旧快照缺失字段时标为未完整记录，当前单心局维持 Good，重开后启用新规则；不修改既有余额、通关奖励或隐藏钻石账本。
 
 功能截图与交互流转：
 
@@ -847,7 +851,7 @@ Splash 验收标准：
 - `scripts/services/shop_catalog.gd` 是套餐数量与定价的唯一来源。当前线性 Mock 策略生成六档钻石：10/20/30/40/50/60，美元价 $0.99/$1.98/$2.97/$3.96/$4.95/$5.94；美元以整数美分存储。页面显示短标签“价格预览”，购买按钮禁用，不扣款，也不模拟发放钻石。正式上线必须改为 Apple/Google 返回的商品及本地化价格，不能使用 Mock 金额收费。
 - 同一定价脚本生成六档金币兑换：100/200/300/400/500/600，分别消耗 1/2/3/4/5/6 颗钻石（每 1 颗钻石兑换 100 金币）。这是实际账户兑换，必须原子核销钻石、增加金币并保存；余额不足的档位禁用，不产生负余额。教程/拼块暂停期间发生兑换时，也要同步已保存的正式关卡快照余额，恢复关卡不能回滚已兑换金币。
 - 道具或拼块入场金币不足时提供“前往商店”入口，直接打开金币标签。金币不提供美元直购，只能通过钻石兑换获取额外金币。
-- 普通与拼块关卡顶栏在红心与设置之间居中显示当前钻石余额，使用单个等比矢量图标加数字；关卡标题行不再重复展示钻石。余额与金币同属账户全局数据，不随新手教程快照或拼块玩法返回而回滚。
+- 普通、拼块和新手教程关卡共用同一套独立式顶部 HUD：不绘制统一大边框，首页、金币、钻石、红心、设置各自独立，组件之间使用弹性间隔均匀分布；调试选关、教程跳过仅在相应场景加入右侧操作位。金币、钻石与红心均按“图标在前、数量在后”展示；约 `42px` 的矢量图标压住对应胶囊左缘，胶囊使用金/蓝/粉描边，数字在右侧，余额按位数动态扩宽/缩小字号。胶囊内部保持 LTR，阿语只镜像外部排列；钻石与心形不使用图标底圈。关卡标题行不重复展示钻石。余额与金币同属账户全局数据，不随新手教程快照或拼块玩法返回而回滚。
 - 隐藏钻石激励叠加在当前真实棋盘上，不创建翻牌小游戏、额外狮子或第二张棋盘。普通关卡仅在尚未操作的开局考虑激励；独立拼块仅在完整拼接、转换及开局皇冠展示结束，进入找皇冠阶段时考虑。拼接、转换、教程、首页和商店均不启动或消耗激励。
 - 每次激励由独立 `HiddenDiamondController` 管理“提示 → 激励进行中 → 成功/失效”状态。开局只展示约 `1.25s` 的提示弹窗：短标题“限时挑战 / 限步挑战”、狮子图标乘以当前棋盘 size、一个限制值，以及下方单个钻石图标 `× 1`。无翻牌网格、跳过按钮或说明段落。提示拦截棋盘输入，完全消失后才开始倒计时/扣步。
 - 进行中的激励在关卡标题下方以单排立体计数条替代原进度条：左侧狮子图标＋待找数量倒数，中间只显示 `MM:SS` 或 `N 步`，右侧钻石图标 `× 1`。计数框及开局提示共用蓝金釉面、倒角高光与下沿厚边；中央读数放大至 `28px` 并带秒表/次数 SVG，预留稳定宽度避免跳字，两侧数量降一级视觉权重。总目标始终等于当前 size（如 6x6 共 6 只），已展示的开局皇冠计入已找到数量。限时和限步互斥，首次类型随机，之后交替；普通玩法和独立拼块独立调度，不会切换玩法。
@@ -879,14 +883,14 @@ Splash 验收标准：
 | 初始免费提示 | 2 | `INITIAL_HINT_COUNT` | 新存档默认提示次数；旧存档保留原有剩余数量 |
 | 初始皇冠直找 | 1 | `INITIAL_CROWN_FIND_COUNT` | 新存档默认直找皇冠次数；旧存档高于初始值的剩余次数不得被截断 |
 | 展示关卡基础奖励 | 1 / 2 / 3 / 4 / 5 | `CoinRewardPolicy.base_reward_for_display_level()`、`SIZE_UNLOCK_DISPLAY_LEVELS` | 对应第 1 / 30 / 80 / 160 / 240 关起的阶段 |
-| Excellent 奖励 | `ceil(base × 1.3)` | `CoinRewardPolicy.EXCELLENT_REWARD_MULTIPLIER` | 仅初始体力大于 1 且零体力损失时触发，同时播放花瓣动画 |
-| Good 奖励 | `base` | `CoinRewardPolicy.completion_reward()` | 单体力关卡或发生过体力损失，无花瓣动画 |
+| Excellent 奖励 | `ceil(base × 1.3)` | `CoinRewardPolicy.EXCELLENT_REWARD_MULTIPLIER` | 多体力零体力损失；单体力完整记录且无误排答案、无错误放置，同时播放花瓣动画 |
+| Good 奖励 | `base` | `CoinRewardPolicy.completion_reward()` | 多体力发生损失；单体力有误排/错误放置或旧存档缺失完整记录，无花瓣动画 |
 | 逻辑提示价格 | 最近 3 关实际奖励之和 | `HINT_REWARD_WINDOW` | 免费提示耗尽后核销；不足记录用历史关卡 base 补齐 |
 | 皇冠直找价格 | 最近 6 关实际奖励之和 | `CROWN_FIND_REWARD_WINDOW` | 免费直找耗尽后核销；不足记录用历史关卡 base 补齐 |
 | 清除价格 | 0 | `_clear_board()` | 永久免费，清理普通 X、普通皇冠和错误红色 X，保留两类提示皇冠 |
 | 保盘复活价格 | 2 × 本关奖励基数 | `TOOL_REVIVE` | 红心耗尽后恢复 1 颗红心 |
 | 每关红心 | 1-10 关为 3；11-30 关为 2；31 关起为 1 | `_heart_limit_for_display_level()` | 正式关卡每次进入/重试时按展示关卡序号重置 |
-| 关卡红心动效 | 静态显示 | `LevelPageBase.set_hearts()`、`_update_heart_label()` | 局内不创建持续循环 Tween；失去的红心立即变灰，全部红心始终保持正常大小 |
+| 关卡红心显示 | 单颗立体红心矢量图标 + 当前剩余数量 | `LevelPageBase.set_hearts()` | 余额为 0 时心形变灰；不创建循环动画 |
 | 默认棋盘尺寸 | 5x5-9x9 | `data/levels.json` | 由关卡导演按进度解锁 |
 | 普通玩法组合推荐 | Dirichlet + Beta-Bernoulli + Thompson Sampling | `scripts/level_director.gd` | 反馈信号包括通关、失败、下一关开启和次日留存 |
 | 新 size 冷启动 | 新 size Dirichlet 加成，优先 Medium | `LevelDirector._apply_size_release_policy()` | 新 size 开放时衰减旧 size 的历史探索权重 |
@@ -994,6 +998,12 @@ HOME=/Users/shingo_mac/Documents/Codex/2026-06-29/du-y/work/godot_home /Applicat
 
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/challenge_recommendation_limits_test.gd
+```
+
+单红心结算准确性专项（从仓库根目录执行，不读取真实存档）：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/single_heart_rating_test.gd
 ```
 
 ## 10. 迭代更新规则

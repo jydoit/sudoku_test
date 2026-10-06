@@ -19,9 +19,11 @@ func _run() -> void:
 
 	await _verify_new_user_defaults()
 	await _verify_current_round_trip()
+	await _verify_legacy_accuracy_resume()
 	await _verify_version_one_migration()
 	_verify_retired_formal_assembly_migration()
 	_verify_played_history_migration()
+	_verify_run_accuracy_storage()
 	await _verify_formal_entry_history()
 
 	_restore_save(had_save, previous_save)
@@ -30,6 +32,7 @@ func _run() -> void:
 	print("PASS SAVE-003 new user defaults")
 	print("PASS SAVE-004 permanent played history migration and snapshot isolation")
 	print("PASS SAVE-005 formal entry persistence, retry and deferred challenge lifecycle")
+	print("PASS SAVE-006 run accuracy migration, round trip and snapshot isolation")
 	quit()
 
 
@@ -50,7 +53,9 @@ func _verify_current_round_trip() -> void:
 	game.tutorial_completed = true
 	game.tutorial_started = false
 	game.in_tutorial = false
-	game.player_level_number = 2
+	# Fixed-opening boards deliberately restart on app load; use a resumable
+	# formal round to verify the saved board and attempt accuracy together.
+	game.player_level_number = 20
 	game.coin_count = 73
 	game.player_wallet.diamond_balance = 4
 	game.hidden_diamond_controller.offered_ids = ["normal_level_20"]
@@ -62,7 +67,8 @@ func _verify_current_round_trip() -> void:
 	game.composite_coin_progress["dailyDate"] = game._today_string()
 	game.composite_coin_progress["dailyFreeRoundsUsed"] = 3
 	game.composite_coin_progress["totalPaidRounds"] = 2
-	game._load_level(1)
+	game._load_level(10)
+	game.run_accuracy.restore({"tracked": true, "excludedLion": true, "wrongCrown": false})
 	var editable := _first_editable_cell(game)
 	game.cell_states[editable.y][editable.x] = "blocked"
 	game._save_game()
@@ -83,6 +89,23 @@ func _verify_current_round_trip() -> void:
 	assert(int(restored.composite_coin_progress.get("totalPaidRounds", -1)) == 2, "SAVE-001 should restore cumulative paid block rounds")
 	assert(restored.resume_level_id == expected_level_id, "SAVE-001 should restore the current level id")
 	assert(restored.resume_states[editable.y][editable.x] == "blocked", "SAVE-001 should restore ordinary X marks")
+	assert(restored.run_accuracy.save_state() == {"tracked": true, "excludedLion": true, "wrongCrown": false}, "SAVE-001 should restore current run accuracy without clearing prior mistakes")
+	restored.queue_free()
+	await process_frame
+
+
+func _verify_legacy_accuracy_resume() -> void:
+	var legacy: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	legacy["saveVersion"] = 20
+	legacy.erase("runAccuracy")
+	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	file.store_string(JSON.stringify(legacy))
+	file.close()
+	var restored = await _new_game()
+	assert(not restored.run_accuracy.save_state()["tracked"], "Resuming a legacy run must not invent accuracy evidence")
+	assert(int(restored.current_level["levelId"]) == int(legacy["currentLevelId"]) and restored.cell_states == legacy["cellStates"], "Accuracy migration must preserve the legacy board instead of restarting it")
+	restored._replay_level()
+	assert(restored.run_accuracy.save_state() == {"tracked": true, "excludedLion": false, "wrongCrown": false}, "An explicit retry must start a newly tracked clean attempt")
 	restored.queue_free()
 	await process_frame
 
@@ -301,6 +324,87 @@ func _saved_played_contains(data: Dictionary, level_id: int) -> bool:
 		if int(raw_id) == level_id:
 			return true
 	return false
+
+
+func _verify_run_accuracy_storage() -> void:
+	var perfect := {"tracked": true, "excludedLion": false, "wrongCrown": false}
+	var excluded := {"tracked": true, "excludedLion": true, "wrongCrown": false}
+	var wrong := {"tracked": true, "excludedLion": false, "wrongCrown": true}
+	var untracked := {"tracked": false, "excludedLion": false, "wrongCrown": false}
+	var context := _run_accuracy_context()
+	context["runAccuracy"] = excluded
+	context["formalProgressSnapshot"] = {"currentLevelId": 41, "runAccuracy": perfect}
+	context["homeCompositeProgressSnapshot"] = {"currentLevelId": 42, "runAccuracy": wrong}
+	context["homeCompositeHistory"] = {"levelId": 43, "runAccuracy": untracked}
+	var loaded := GameSaveServiceScript.normalize_loaded(context, {}, "2026-10-06")
+	assert(loaded["runAccuracy"] == excluded, "Load must retain evidence of an incorrectly excluded lion")
+	assert(loaded["formalProgressSnapshot"]["runAccuracy"] == perfect, "Tutorial-return snapshot must keep its own accuracy")
+	assert(loaded["homeCompositeProgressSnapshot"]["runAccuracy"] == wrong, "Block-entry snapshot must keep its own accuracy")
+	assert(loaded["homeCompositeHistory"]["runAccuracy"] == untracked, "Independent block history must preserve whether accuracy was tracked")
+	loaded["runAccuracy"]["excludedLion"] = false
+	loaded["formalProgressSnapshot"]["runAccuracy"]["excludedLion"] = true
+	loaded["homeCompositeProgressSnapshot"]["runAccuracy"]["wrongCrown"] = false
+	loaded["homeCompositeHistory"]["runAccuracy"]["tracked"] = true
+	assert(excluded["excludedLion"] and not perfect["excludedLion"] and wrong["wrongCrown"] and not untracked["tracked"], "Loading accuracy must not alias any source snapshot or live dictionary")
+	assert(not loaded["runAccuracy"]["excludedLion"] and loaded["formalProgressSnapshot"]["runAccuracy"]["excludedLion"], "Different runs must not share the same accuracy dictionary")
+
+	var snapshot := GameSaveServiceScript.capture_formal(context)
+	var history := GameSaveServiceScript.build_home_composite_history(context, {})
+	var tutorial = load("res://scripts/controllers/tutorial_controller.gd").new()
+	var written := GameSaveServiceScript.build_save(context, tutorial, {})
+	assert(snapshot["runAccuracy"] == excluded and history["runAccuracy"] == excluded and written["runAccuracy"] == excluded, "All save/capture entry points must carry current run evidence")
+	snapshot["runAccuracy"]["wrongCrown"] = true
+	history["runAccuracy"]["tracked"] = false
+	written["runAccuracy"]["excludedLion"] = false
+	assert(not excluded["wrongCrown"] and excluded["tracked"] and excluded["excludedLion"], "Save/capture/history accuracy must be independent deep copies")
+	assert(snapshot["runAccuracy"]["tracked"] and history["runAccuracy"]["excludedLion"] and not written["runAccuracy"]["wrongCrown"], "Mutating one captured run must not alter another captured run")
+
+	var serialized := GameSaveServiceScript.build_save(context, tutorial, {})
+	var round_trip: Dictionary = JSON.parse_string(JSON.stringify(serialized))
+	var restored := GameSaveServiceScript.normalize_loaded(round_trip, {}, "2026-10-06")
+	assert(restored["runAccuracy"] == excluded, "JSON round trip must keep run accuracy boolean evidence")
+	for key in ["formalProgressSnapshot", "homeCompositeProgressSnapshot", "homeCompositeHistory"]:
+		assert(restored[key]["runAccuracy"] == context[key]["runAccuracy"], "JSON round trip must preserve %s accuracy independently" % key)
+	assert(restored["cellStates"] == context["cellStates"] and restored["coinCount"] == 73 and restored["diamondCount"] == 4, "Accuracy persistence must not change board marks or account balances")
+
+	var legacy := context.duplicate(true)
+	legacy["saveVersion"] = 20
+	legacy.erase("runAccuracy")
+	for key in ["formalProgressSnapshot", "homeCompositeProgressSnapshot", "homeCompositeHistory"]:
+		legacy[key].erase("runAccuracy")
+	_assert_unknown_run_accuracy(GameSaveServiceScript.normalize_loaded(legacy, {}, "2026-10-06"))
+	assert(GameSaveServiceScript.capture_formal(legacy)["runAccuracy"].is_empty(), "Capturing old accuracy must not infer flawless play from full hearts")
+	assert(GameSaveServiceScript.build_home_composite_history(legacy, {})["runAccuracy"].is_empty(), "Old independent block history must remain untracked")
+	assert(GameSaveServiceScript.build_save(legacy, tutorial, {})["runAccuracy"].is_empty(), "Saving old accuracy must not manufacture history")
+	var malformed: Array = [null, false, 1, "true", [], {}, {"tracked": true}, {"tracked": true, "excludedLion": 0, "wrongCrown": false}, {"tracked": "true", "excludedLion": false, "wrongCrown": false}, {"tracked": true, "excludedLion": false, "wrongCrown": null}]
+	for value in malformed:
+		var bad := context.duplicate(true)
+		bad["runAccuracy"] = value
+		for key in ["formalProgressSnapshot", "homeCompositeProgressSnapshot", "homeCompositeHistory"]:
+			bad[key]["runAccuracy"] = value
+		_assert_unknown_run_accuracy(GameSaveServiceScript.normalize_loaded(bad, {}, "2026-10-06"))
+		assert(GameSaveServiceScript.capture_formal(bad)["runAccuracy"].is_empty(), "Malformed accuracy must not become valid while capturing a formal snapshot")
+		assert(GameSaveServiceScript.build_home_composite_history(bad, {})["runAccuracy"].is_empty(), "Malformed accuracy must not become valid while capturing a block history")
+		assert(GameSaveServiceScript.build_save(bad, tutorial, {})["runAccuracy"].is_empty(), "Malformed accuracy must not become valid while saving")
+
+
+func _run_accuracy_context() -> Dictionary:
+	return {
+		"saveVersion": 21, "currentLevelIndex": 0, "currentLevelId": 40,
+		"playerLevelNumber": 40, "levelIndex": 0, "levelId": 40, "round": 1,
+		"activeSchedule": {}, "directorProgress": {}, "economyProgress": {},
+		"completedLevels": [], "cellStates": [["blocked", "king"]],
+		"isCompleted": false, "isFailed": false, "coinCount": 73, "diamondCount": 4,
+		"heartCount": 1, "hintCount": 2, "crownFindCount": 1,
+		"runStartedUnix": 0, "runMoveCount": 5, "runHintCount": 1,
+		"runDirectFindCount": 1, "runCoinExchangeCount": 0
+	}
+
+
+func _assert_unknown_run_accuracy(data: Dictionary) -> void:
+	assert(data["runAccuracy"].is_empty(), "Missing or malformed current run accuracy must stay unknown")
+	for key in ["formalProgressSnapshot", "homeCompositeProgressSnapshot", "homeCompositeHistory"]:
+		assert(data[key]["runAccuracy"].is_empty(), "Missing or malformed %s accuracy must stay unknown" % key)
 
 
 func _new_game():

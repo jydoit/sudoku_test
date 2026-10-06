@@ -200,10 +200,10 @@ func _run() -> void:
 	assert(level_coin_icon != null and level_coin_icon.texture != null, "Level coin balance should render the SVG coin icon beside its rolling value")
 	var level_coin_display = game.game_screen.coin_roll_display
 	var result_coin_display = game.result_page.result_coin_roll_display
-	assert(level_coin_display.primary_label.get_theme_font_size("font_size") >= 23, "The level balance should use a readable mobile font size")
+	assert(level_coin_display.primary_label.get_theme_font_size("font_size") >= 13, "The compact top balance should remain readable after long-balance scaling")
 	assert(result_coin_display.primary_label.get_theme_font_size("font_size") >= 30, "The result balance should use a large reward font size")
 	assert(level_coin_display.counter_height() >= 44.0 and result_coin_display.counter_height() >= 48.0, "Coin clips should include vertical font and shadow safety space")
-	assert(level_coin_display.counter_width() >= 62.0, "The level coin clip should retain its compact five-digit width")
+	assert(level_coin_display.active_digit_count() == str(maxi(0, game.coin_count)).length(), "The level coin width should track the current balance digits instead of reserving five places")
 	var result_balance_profiles := {
 		0: [38, 42.0],
 		8: [38, 42.0],
@@ -227,7 +227,7 @@ func _run() -> void:
 		var expected_profile: Array = result_balance_profiles[balance]
 		assert(result_coin_display.active_font_size() == int(expected_profile[0]), "Result balance %d should use its digit-count font profile" % balance)
 		assert(result_coin_display.counter_width() >= float(expected_profile[1]), "Result balance %d should reserve its digit-count width" % balance)
-	assert(level_coin_display.primary_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER and level_coin_display.primary_label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER, "The level balance should be centered in both axes")
+	assert(level_coin_display.primary_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_LEFT and level_coin_display.primary_label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER, "The level balance should read left-to-right after its leading coin icon")
 	assert(result_coin_display.primary_label.horizontal_alignment == HORIZONTAL_ALIGNMENT_LEFT and result_coin_display.primary_label.vertical_alignment == VERTICAL_ALIGNMENT_CENTER, "The result balance should align toward the coin while remaining vertically centered")
 	assert(result_coin_display.coin_icon.custom_minimum_size.x >= 44.0, "The result reward coin should remain visually prominent")
 	assert(result_coin_display.primary_label.get_theme_constant("outline_size") >= 1, "The result balance should use a stable bold treatment")
@@ -306,7 +306,8 @@ func _run() -> void:
 	assert(CoinRewardPolicyScript.completion_reward(1, 3, 3) == 2, "A no-heart-loss multi-heart completion should round its 1.3x reward upward")
 	assert(CoinRewardPolicyScript.completion_reward(size_nine_unlock, 2, 2) == 7, "Excellent rewards should round five times 1.3 upward")
 	assert(CoinRewardPolicyScript.completion_reward(size_nine_unlock, 2, 1) == 5, "A heart-loss completion should receive the base reward")
-	assert(CoinRewardPolicyScript.completion_reward(size_nine_unlock, 1, 1) == 5, "Single-heart levels should not qualify for Excellent")
+	assert(CoinRewardPolicyScript.completion_reward(size_nine_unlock, 1, 1) == 5, "A legacy single-heart run without accuracy history should retain Good")
+	assert(CoinRewardPolicyScript.completion_reward(size_nine_unlock, 1, 1, {"tracked": true, "excludedLion": false, "wrongCrown": false}) == 7, "A clean single-heart run should earn Excellent with the existing bonus")
 	var economy_test_progress := CoinEconomyScript.default_progress()
 	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_HINT, 1) == 3, "A new user's hint fallback price should sum three one-coin rewards")
 	assert(CoinEconomyScript.standard_tool_price(CoinEconomyScript.TOOL_CROWN_FIND, 1) == 6, "A new user's crown-find fallback price should sum six one-coin rewards")
@@ -330,9 +331,9 @@ func _run() -> void:
 	game._show_game()
 	await process_frame
 	await process_frame
-	assert(game.top_home_button.custom_minimum_size.x >= 60.0, "The level home control should use a wider mobile touch target")
+	assert(game.top_home_button.custom_minimum_size.x >= 48.0, "The independent home control should retain a usable mobile touch target")
 	assert(game.top_home_button.text.is_empty(), "Home should not depend on a Unicode house glyph")
-	assert(game.top_home_button.icon != null and game.top_home_button.icon.resource_path == "res://assets/ui/home.svg", "Home should render the bundled SVG icon on every platform")
+	assert(game.top_home_button.icon != null and game.top_home_button.icon.resource_path == "res://assets/ui/hud/home.svg", "Home should render the approved HUD SVG icon on every platform")
 	assert(game.top_home_button.alignment == HORIZONTAL_ALIGNMENT_CENTER and game.top_home_button.icon_alignment == HORIZONTAL_ALIGNMENT_CENTER, "Home icon should stay centered inside its touch target")
 	assert(game.coach_panel != null and not game.coach_panel.visible, "Formal levels should remove the coach text interval from the layout")
 	assert(game.board.size.y >= 600.0, "The board layout should receive the space released by the hidden coach interval")
@@ -344,12 +345,12 @@ func _run() -> void:
 	assert(game.help_button.text.is_empty(), "Help should not depend on a question-mark font glyph")
 	assert(game.help_button.icon != null and game.help_button.icon.resource_path == "res://assets/ui/help.svg", "Help should render the bundled SVG icon on every platform")
 	assert(game.help_button.alignment == HORIZONTAL_ALIGNMENT_CENTER and game.help_button.icon_alignment == HORIZONTAL_ALIGNMENT_CENTER, "Help icon should stay centered inside its touch target")
-	assert(game.settings_button != null and game.settings_button.get_parent() == game.top_home_button.get_parent(), "Settings should share the level top navigation row")
-	assert(game.settings_button.custom_minimum_size.x >= 56.0, "Settings should use a wider mobile touch target")
+	assert(game.settings_button != null and game.settings_button.get_parent() == game.top_home_button.get_parent(), "Settings should be an independent component in the shared top navigation row")
+	assert(game.settings_button.custom_minimum_size.x >= 48.0, "Settings should keep a usable independent mobile touch target")
 	assert(game.settings_button.text.is_empty(), "Settings should not depend on a Unicode gear glyph")
-	assert(game.settings_button.icon != null and game.settings_button.icon.resource_path == "res://assets/ui/settings.svg", "Settings should render the bundled SVG gear on every platform")
+	assert(game.settings_button.icon != null and game.settings_button.icon.resource_path == "res://assets/ui/hud/settings.svg", "Settings should render the approved HUD SVG gear on every platform")
 	assert(game.settings_button.alignment == HORIZONTAL_ALIGNMENT_CENTER and game.settings_button.icon_alignment == HORIZONTAL_ALIGNMENT_CENTER, "Settings gear should stay centered inside its touch target")
-	assert("stroke-width=\"6\"" in FileAccess.get_file_as_string("res://assets/ui/settings.svg"), "Settings gear should keep the strengthened outline")
+	assert(game.settings_button.get_theme_constant("icon_max_width") >= 30, "The solid HUD gear must remain legible at its approved scale")
 	assert("stroke-width=\"6\"" in FileAccess.get_file_as_string("res://assets/ui/help.svg"), "Help icon should keep the strengthened outline")
 	assert(int(ProjectSettings.get_setting("audio/general/ios/session_category", 0)) == 0, "iOS should keep the default Ambient audio session and respect the silent switch")
 	assert(game.dialog_controller != null, "All modal dialogs should use the shared dialog controller")
@@ -416,12 +417,13 @@ func _run() -> void:
 	game.hint_count = game.INITIAL_HINT_COUNT
 	game._update_crown_find_button()
 	game._update_hint_button()
-	assert(game.level_heart_slots.size() == game.INITIAL_HEART_COUNT, "The top heart badge should keep independent heart slots")
+	assert(game.level_heart_slots.size() == 1, "The top heart badge should show one heart icon beside its numeric count")
 	for heart_index in range(game.level_heart_slots.size()):
 		var heart_slot: TextureRect = game.level_heart_slots[heart_index]
-		assert(heart_slot.custom_minimum_size.x >= 32.0 and heart_slot.custom_minimum_size.y >= 38.0, "Heart slots should not be compressed")
-		assert(heart_slot.texture.resource_path == "res://assets/ui/heart.svg", "Heart slots should use the bundled SVG heart")
-		assert(heart_slot.scale.is_equal_approx(Vector2.ONE), "Every in-level heart should stay at its normal scale")
+		assert(heart_slot.custom_minimum_size.x >= 24.0 and heart_slot.custom_minimum_size.y >= 24.0, "The heart icon should remain legible in the compact top HUD")
+		assert(heart_slot.texture.resource_path == "res://assets/ui/hud/heart.svg", "Heart slots should use the approved HUD SVG heart")
+		assert(heart_slot.scale.is_equal_approx(Vector2.ONE), "The in-level heart icon should stay at its normal scale")
+	assert(game.level_heart_count_label.text == str(game.heart_count), "The heart badge should show the current numeric life count")
 	for tool_button in [game.clear_button, game.crown_find_button, game.hint_button]:
 		var tool_icon: Control = tool_button.find_child("ToolIcon", true, false)
 		var tool_label: Label = tool_button.find_child("ToolLabel", true, false)
@@ -752,8 +754,9 @@ func _run() -> void:
 	assert(game.board.reaction_kind == "wrong" and game.board.reaction_cell == wrong_cell, "Wrong crown attempts should temporarily show the worried lion reaction")
 	assert(game.heart_count == hearts_before_wrong - 1, "Wrong crown attempts should consume one heart")
 	assert(game.crown_find_count == crown_find_count_before_wrong, "Wrong crown attempts must not consume crown-find uses")
-	assert(game.level_heart_slots[game.heart_count].modulate == game.HEART_EMPTY_COLOR, "A lost SVG heart should turn gray")
-	assert(game.level_heart_slots[game.heart_count].scale.is_equal_approx(Vector2.ONE), "A lost heart should remain at its normal scale")
+	assert(game.level_heart_count_label.text == str(game.heart_count), "Losing a heart should update the compact heart count")
+	assert(game.level_heart_slots[0].modulate != game.HEART_EMPTY_COLOR, "The remaining-life heart should stay colored while lives remain")
+	assert(game.level_heart_slots[0].scale.is_equal_approx(Vector2.ONE), "The heart icon should remain at its normal scale")
 	assert(not game.board.error_cells.has(wrong_cell), "Wrong crown attempts should not be treated as rule-conflict crowns")
 	assert(not game.is_failed, "A single wrong crown attempt should not fail the level while hearts remain")
 	game._on_cell_pressed(wrong_cell.y, wrong_cell.x)
@@ -1237,6 +1240,7 @@ func _run() -> void:
 	assert(not result_lion_frames.animation_player.is_playing() and result_lion_frames.current_frame_index() == 0, "After the coin toss the complete lion should remain indefinitely on its smiling static frame")
 	game.current_heart_limit = 1
 	game.heart_count = 1
+	game.run_accuracy.restore({"tracked": true, "excludedLion": true, "wrongCrown": false})
 	var manual_balance_after: int = game.coin_count
 	var manual_balance_before: int = maxi(0, manual_balance_after - 5)
 	game._prepare_success_result_page(5)
@@ -1287,7 +1291,7 @@ func _run() -> void:
 	assert(game.result_page.result_coin_roll_primary.scale == Vector2.ONE and game.result_page.result_coin_roll_secondary.scale == Vector2.ONE, "The coin roller must not use the old scale-recovery effect")
 	await create_timer(game.result_page.RESULT_COIN_REEL_DURATION + 0.24).timeout
 	assert(game.result_page.result_coin_roll_primary.text == str(manual_balance_after) and not game.result_page.result_coin_roll_secondary.visible, "The visible roller should finish at the player's current balance")
-	assert(game.result_page.completion_title.text == game._t("GOOD"), "A single-heart completion should display Good")
+	assert(game.result_page.completion_title.text == game._t("GOOD"), "A single-heart completion with a previous lion exclusion should display Good")
 	assert(not game.result_page.result_is_excellent, "Good completion should disable the Excellent-only celebration state")
 	assert(not game.result_page.result_petals_layer.visible, "Good should stop and hide the falling-petal celebration")
 	await create_timer(0.35).timeout

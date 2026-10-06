@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="84" height="84" viewBox="388 84 68 76">
+  <!-- Original facets and silhouette from the approved HUD design. -->
+  <defs><linearGradient id="gem" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#e8ffff"/><stop offset=".42" stop-color="#54d6f0"/><stop offset="1" stop-color="#1688bd"/></linearGradient></defs>
+  <path d="m395 108 12-16h30l12 16-27 43z" transform="translate(0 2)" fill="#26334a" opacity=".14"/>
+  <path d="m395 108 12-16h30l12 16-27 43z" fill="url(#gem)" stroke="#147ba9" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="m395 108 27 0 15-16m-15 59v-43m-15-16 15 16 15-16" fill="none" stroke="#efffff" stroke-width="2.5" opacity=".96"/>
+  <path d="m400 105 9-10h8l-12 16z" fill="#fff" opacity=".72"/>
+  <path d="m422 151 15-43h12z" fill="#0f77aa" opacity=".20"/>
+</svg>

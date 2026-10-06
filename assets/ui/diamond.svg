@@ -3,6 +3,7 @@
     <linearGradient id="body" x1="18" y1="20" x2="78" y2="80" gradientUnits="userSpaceOnUse"><stop stop-color="#C9FBFF"/><stop offset=".42" stop-color="#49D5EE"/><stop offset="1" stop-color="#1686D8"/></linearGradient>
     <linearGradient id="facet" x1="31" y1="20" x2="63" y2="76" gradientUnits="userSpaceOnUse"><stop stop-color="#F1FFFF"/><stop offset="1" stop-color="#55B9F5"/></linearGradient>
   </defs>
+  <path d="M25 12h46l17 23-40 51L10 35l15-23Z" transform="translate(0 2)" fill="#12577F" opacity=".13"/>
   <path d="M25 12h46l17 23-40 51L10 35l15-23Z" fill="url(#body)" stroke="#176FAD" stroke-width="5" stroke-linejoin="round"/>
   <path d="m25 12-4 23h58L71 12M21 35l27 51 31-51M48 12v74" fill="none" stroke="#DDFBFF" stroke-width="3" stroke-linejoin="round" opacity=".9"/>
   <path d="M30 18h13l-7 13H24z" fill="#fff" opacity=".75"/>

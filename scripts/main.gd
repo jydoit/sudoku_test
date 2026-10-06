@@ -41,12 +41,13 @@ const HiddenDiamondControllerScript = preload("res://scripts/controllers/hidden_
 const CompositeEntryServiceScript = preload("res://scripts/services/composite_entry_service.gd")
 const GameSaveServiceScript = preload("res://scripts/storage/game_save_service.gd")
 const RunResultServiceScript = preload("res://scripts/services/run_result_service.gd")
+const RunAccuracyScript = preload("res://scripts/controllers/run_accuracy.gd")
 const ARROW_RIGHT_ICON: Texture2D = preload("res://assets/ui/arrow_right.svg")
 const UI_FONT: Font = preload("res://assets/fonts/NotoSansSC-Regular.ttf")
 const ARABIC_FONT: Font = preload("res://assets/fonts/NotoSansArabic-Regular.ttf")
 const SAVE_PATH := "user://color_queens_save.json"
 const SAVE_PATH_OVERRIDE_SETTING := "color_king/testing/save_path"
-const SAVE_VERSION := 20
+const SAVE_VERSION := 21
 const INITIAL_COIN_COUNT := 2
 const INITIAL_HINT_COUNT := 2
 const INITIAL_HEART_COUNT := 3
@@ -132,6 +133,7 @@ var run_started_unix := 0
 var run_move_count := 0
 var run_hint_count := 0
 var run_direct_find_count := 0
+var run_accuracy = RunAccuracyScript.new()
 var run_coin_exchange_count: int:
 	get: return player_wallet.run_exchange_count
 	set(value): player_wallet.run_exchange_count = value
@@ -272,6 +274,8 @@ var level_heart_label: Control:
 	get: return game_screen.level_heart_label if game_screen else null
 var level_heart_slots: Array[TextureRect]:
 	get: return game_screen.level_heart_slots if game_screen else []
+var level_heart_count_label: Label:
+	get: return game_screen.level_heart_count_label if game_screen else null
 var progress_bar: ProgressBar:
 	get: return game_screen.progress_bar if game_screen else null
 var progress_label: Label:
@@ -478,7 +482,10 @@ func _notification(what: int) -> void:
 		_:
 			return
 	if _application_paused or not _application_focused:
+		run_accuracy.commit_pending()
 		_cancel_hidden_diamond_event()
+		if is_node_ready() and not current_level.is_empty():
+			_save_game()
 	elif is_node_ready():
 		# Only unoffered events may start here; interrupted ones stay consumed.
 		call_deferred("_maybe_start_hidden_diamond_event")
@@ -797,11 +804,13 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 		is_completed = resume_completed
 		is_failed = resume_failed
 		heart_count = clampi(heart_count, 0, current_heart_limit)
+		_observe_restored_accuracy()
 		if run_started_unix <= 0:
 			run_started_unix = int(Time.get_unix_time_from_system())
 	else:
 		cell_states = _blank_states(rows, cols)
 		heart_count = current_heart_limit
+		run_accuracy.reset()
 		run_started_unix = int(Time.get_unix_time_from_system())
 		run_move_count = 0
 		run_hint_count = 0
@@ -1360,6 +1369,11 @@ func _on_cell_pressed(row: int, col: int) -> void:
 	hint_engine.reset_session()
 	board.set_guides({})
 	cell_states = result["states"]
+	var cell := Vector2i(col, row)
+	run_accuracy.record_mark(
+		cell, CrownRuleEngineScript.is_solution_cell(current_level, cell),
+		str(result["state"]) == "blocked", true, board.DOUBLE_TAP_MAX_MS
+	)
 	if str(result["state"]) == "blocked":
 		audio_controller.play_mark()
 	else:
@@ -1387,6 +1401,7 @@ func _on_cell_double_pressed(row: int, col: int) -> void:
 	hint_engine.reset_session()
 	board.set_guides({})
 	cell_states = result["states"]
+	run_accuracy.record_double(Vector2i(col, row), bool(result["correct"]))
 	board.set_states(cell_states)
 	_record_hidden_diamond_action("double", Vector2i(col, row))
 	if bool(result["correct"]):
@@ -1463,12 +1478,33 @@ func _apply_drag_cell(row: int, col: int) -> void:
 func _apply_formal_drag_result(result: Dictionary) -> void:
 	cell_states = result["states"]
 	var cell: Vector2i = result["cell"]
+	var already_excluded := bool(run_accuracy.save_state()["excludedLion"])
+	run_accuracy.record_mark(cell, CrownRuleEngineScript.is_solution_cell(current_level, cell), str(result["state"]) == "blocked")
+	if not already_excluded and bool(run_accuracy.save_state()["excludedLion"]):
+		_queue_save_game_after_frame()
 	if str(result["state"]) == "blocked":
 		audio_controller.play_mark()
 	else:
 		audio_controller.play_erase(true)
 	board.set_states(cell_states)
 	board.play_cell_feedback(cell.y, cell.x)
+
+
+func _observe_restored_accuracy() -> void:
+	run_accuracy.commit_pending()
+	if in_tutorial or _is_assembly_phase():
+		return
+	# Undo may restore the temporary first-tap X of a completed double tap.
+	# Once restored as an ordinary X it is a genuine exclusion, not a gesture.
+	for row in range(cell_states.size()):
+		for col in range(cell_states[row].size()):
+			var state := str(cell_states[row][col])
+			var cell := Vector2i(col, row)
+			if state == "blocked" and CrownRuleEngineScript.is_solution_cell(current_level, cell):
+				run_accuracy.record_mark(cell, true, true)
+			elif state == "wrong":
+				run_accuracy.record_double(cell, false)
+
 
 func _undo() -> void:
 	if _hidden_intro_blocks_input():
@@ -1481,6 +1517,7 @@ func _undo() -> void:
 	if result.is_empty():
 		return
 	cell_states = result["states"]
+	_observe_restored_accuracy()
 	board.set_states(cell_states)
 	_record_hidden_diamond_action()
 	_validate_and_update(false)
@@ -1504,6 +1541,7 @@ func _clear_board() -> void:
 	var result: Dictionary = formal_controller.clear_board()
 	if result.is_empty():
 		return
+	run_accuracy.commit_pending()
 	cell_states = result["states"]
 	hint_engine.reset_session()
 	board.set_states(cell_states)
@@ -1596,6 +1634,7 @@ func _use_hint() -> void:
 	_update_coin_label()
 	_update_hint_button()
 	run_hint_count += 1
+	run_accuracy.commit_pending()
 	_record_hidden_diamond_action("assist")
 	audio_controller.play_hint()
 	_save_game()
@@ -1623,6 +1662,7 @@ func _use_crown_find() -> void:
 	if not uses_free_count and not _spend_coins_for_tool(CoinEconomyScript.TOOL_CROWN_FIND):
 		return
 
+	run_accuracy.commit_pending()
 	_push_history()
 	hint_engine.reset_session()
 	board.set_guides({})
@@ -2225,10 +2265,11 @@ func _finish_tutorial(skipped: bool) -> void:
 func _complete_level() -> void:
 	if is_completed or is_failed:
 		return
+	run_accuracy.commit_pending()
 	hidden_diamond_controller.complete_board()
 	is_completed = true
 	if home_composite_entry_active:
-		var result: Dictionary = RunResultServiceScript.composite_completion(active_schedule, current_heart_limit, heart_count)
+		var result: Dictionary = RunResultServiceScript.composite_completion(active_schedule, current_heart_limit, heart_count, run_accuracy.save_state())
 		var composite_reward := int(result["reward"])
 		var composite_reward_transaction := player_wallet.grant(composite_reward, "composite_completion")
 		CompositeCoinPolicyScript.record_round_completed(composite_coin_progress, composite_reward)
@@ -2245,7 +2286,7 @@ func _complete_level() -> void:
 	var level_id := int(current_level["levelId"])
 	if not completed_levels.has(level_id):
 		completed_levels.append(level_id)
-	var result: Dictionary = RunResultServiceScript.formal_completion(player_level_number, current_heart_limit, heart_count)
+	var result: Dictionary = RunResultServiceScript.formal_completion(player_level_number, current_heart_limit, heart_count, run_accuracy.save_state())
 	var reward := int(result["reward"])
 	var reward_transaction := player_wallet.grant(reward, "formal_completion")
 	CoinEconomyScript.record_completion(
@@ -2256,7 +2297,8 @@ func _complete_level() -> void:
 		current_heart_limit,
 		heart_count,
 		reward,
-		run_coin_exchange_count
+		run_coin_exchange_count,
+		run_accuracy.save_state()
 	)
 	_record_level_result()
 	_update_home()
@@ -2270,12 +2312,12 @@ func _complete_level() -> void:
 
 func _prepare_success_result_page(reward: int = 0, reward_transaction: Dictionary = {}) -> void:
 	_set_result_overlay_mode("success")
-	var excellent := CoinRewardPolicyScript.is_excellent_completion(current_heart_limit, heart_count)
+	var excellent := CoinRewardPolicyScript.is_excellent_completion(current_heart_limit, heart_count, run_accuracy.save_state())
 	if reward <= 0:
 		if home_composite_entry_active:
 			reward = CompositeCoinPolicyScript.completion_reward(excellent)
 		else:
-			reward = CoinRewardPolicyScript.completion_reward(player_level_number, current_heart_limit, heart_count)
+			reward = CoinRewardPolicyScript.completion_reward(player_level_number, current_heart_limit, heart_count, run_accuracy.save_state())
 	var balance_after := maxi(0, int(reward_transaction.get("balanceAfter", coin_count)))
 	var balance_before := maxi(0, int(reward_transaction.get("balanceBefore", balance_after - reward)))
 	var next_quote := _home_composite_round_quote(home_composite_round + 1) if home_composite_entry_active else {}
@@ -2725,6 +2767,7 @@ func _load_save() -> void:
 	run_move_count = int(data.get("runMoveCount", 0))
 	run_hint_count = int(data.get("runHintCount", 0))
 	run_direct_find_count = int(data.get("runDirectFindCount", 0))
+	run_accuracy.restore(data.get("runAccuracy", {}))
 	run_coin_exchange_count = maxi(0, int(data.get("runCoinExchangeCount", 0)))
 	immediate_errors = bool(data.get("immediateErrors", true))
 	selected_language = str(data.get("selectedLanguage", ""))
@@ -2763,6 +2806,7 @@ func _capture_formal_progress_snapshot() -> bool:
 		"runMoveCount": run_move_count,
 		"runHintCount": run_hint_count,
 		"runDirectFindCount": run_direct_find_count,
+		"runAccuracy": run_accuracy.save_state(),
 		"runCoinExchangeCount": run_coin_exchange_count
 	})
 	return true
@@ -2802,6 +2846,7 @@ func _restore_formal_progress_snapshot() -> bool:
 	run_move_count = maxi(0, int(snapshot.get("runMoveCount", 0)))
 	run_hint_count = maxi(0, int(snapshot.get("runHintCount", 0)))
 	run_direct_find_count = maxi(0, int(snapshot.get("runDirectFindCount", 0)))
+	run_accuracy.restore(snapshot.get("runAccuracy", {}))
 	run_coin_exchange_count = maxi(0, int(snapshot.get("runCoinExchangeCount", 0)))
 	resume_composite_state.clear()
 	formal_progress_snapshot.clear()
@@ -2846,6 +2891,7 @@ func _update_home_composite_history() -> void:
 		"runMoveCount": run_move_count,
 		"runHintCount": run_hint_count,
 		"runDirectFindCount": run_direct_find_count,
+		"runAccuracy": run_accuracy.save_state(),
 		"runCoinExchangeCount": run_coin_exchange_count
 	}, _composite_save_state())
 
@@ -2880,6 +2926,7 @@ func _save_game() -> void:
 		"runMoveCount": run_move_count,
 		"runHintCount": run_hint_count,
 		"runDirectFindCount": run_direct_find_count,
+		"runAccuracy": run_accuracy.save_state(),
 		"runCoinExchangeCount": run_coin_exchange_count,
 		"coinCount": coin_count,
 		"diamondCount": player_wallet.diamond_balance,
@@ -3035,6 +3082,7 @@ func _update_level_picker() -> void:
 
 
 func _show_home() -> void:
+	run_accuracy.commit_pending()
 	_cancel_hidden_diamond_event()
 	if shop_page:
 		shop_page.hide()
@@ -3111,6 +3159,7 @@ func _start_home_composite_flow() -> void:
 		run_move_count = maxi(0, int(history.get("runMoveCount", 0)))
 		run_hint_count = maxi(0, int(history.get("runHintCount", 0)))
 		run_direct_find_count = maxi(0, int(history.get("runDirectFindCount", 0)))
+		run_accuracy.restore(history.get("runAccuracy", {}))
 		run_coin_exchange_count = maxi(0, int(history.get("runCoinExchangeCount", 0)))
 		var saved_composite = history.get("compositeState", {})
 		resume_composite_state = saved_composite.duplicate(true) if saved_composite is Dictionary else {}

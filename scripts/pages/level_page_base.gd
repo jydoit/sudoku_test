@@ -29,11 +29,17 @@ const CoinIconResourceScript = preload("res://scripts/components/coin_icon_resou
 const HiddenDiamondHUDScript = preload("res://scripts/components/hidden_diamond_hud.gd")
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const LION_KING_ICON = preload("res://assets/ui/lion_king.svg")
-const SETTINGS_ICON = preload("res://assets/ui/settings.svg")
-const DIAMOND_ICON = preload("res://assets/ui/diamond.svg")
+const SETTINGS_ICON = preload("res://assets/ui/hud/settings.svg")
+const DIAMOND_ICON = preload("res://assets/ui/hud/diamond.svg")
+const HUD_COIN_ICON = preload("res://assets/ui/hud/coin.svg")
 const HELP_ICON = preload("res://assets/ui/help.svg")
-const HOME_ICON = preload("res://assets/ui/home.svg")
-const HEART_ICON = preload("res://assets/ui/heart.svg")
+const HOME_ICON = preload("res://assets/ui/hud/home.svg")
+const HEART_ICON = preload("res://assets/ui/hud/heart.svg")
+const RESOURCE_CAPSULES := {
+	"Coin": preload("res://assets/ui/hud/coin_capsule.svg"),
+	"Diamond": preload("res://assets/ui/hud/diamond_capsule.svg"),
+	"Heart": preload("res://assets/ui/hud/heart_capsule.svg"),
+}
 const INITIAL_HEART_COUNT := 3
 const COIN_BALANCE_ROLL_DURATION := 1.35
 const COIN_FEEDBACK_FADE_IN := 0.18
@@ -61,10 +67,17 @@ var tutorial_skip_button: Button
 var coin_label: Label
 var coin_roll_display: HBoxContainer
 var diamond_balance_label: Label
+var level_heart_count_label: Label
+var coin_resource_badge: Control
+var diamond_resource_badge: Control
+var heart_resource_badge: Control
 var coin_balance_roll_clip: Control
 var coin_balance_roll_secondary: Label
 var level_heart_label: Control
 var level_heart_slots: Array[TextureRect] = []
+var _topbar_action_slot: Control
+var _topbar_previous_item: Control
+var _topbar_gap_records: Array[Dictionary] = []
 var clear_button: Button
 var clear_button_label: Label
 var clear_status_panel: PanelContainer
@@ -184,12 +197,19 @@ func _start_safe_area_tracking() -> void:
 
 func set_coin_balance(value: int) -> void:
 	if coin_roll_display:
-		coin_roll_display.set_value(maxi(0, value))
+		var safe_value := maxi(0, value)
+		coin_roll_display.set_value(safe_value)
+		_resize_resource_badge(coin_resource_badge, coin_roll_display.counter_width_for_value(safe_value), 100.0)
 
 
 func set_diamond_balance(value: int) -> void:
 	if diamond_balance_label:
-		diamond_balance_label.text = str(maxi(0, value))
+		var safe_value := maxi(0, value)
+		diamond_balance_label.text = str(safe_value)
+		diamond_balance_label.add_theme_font_size_override("font_size", _resource_count_font_size(safe_value))
+		var count_width: float = coin_roll_display.counter_width_for_value(safe_value)
+		diamond_balance_label.custom_minimum_size.x = count_width
+		_resize_resource_badge(diamond_resource_badge, count_width, 86.0)
 
 
 func set_progress(current: int, target: int) -> void:
@@ -210,11 +230,10 @@ func set_level_copy(title_text: String, coach_text: String, coach_color: Color, 
 
 
 func set_hearts(current: int, limit: int) -> void:
-	for index in range(level_heart_slots.size()):
-		var heart := level_heart_slots[index]
-		heart.visible = index < limit
-		var is_full := index < current
-		heart.modulate = Color("#F25D72") if is_full else Color("#C8CDD5")
+	if level_heart_count_label:
+		level_heart_count_label.text = str(clampi(current, 0, maxi(0, limit)))
+	for heart in level_heart_slots:
+		heart.modulate = Color.WHITE if current > 0 else Color("#C8CDD5")
 		heart.scale = Vector2.ONE
 		heart.pivot_offset = heart.custom_minimum_size * 0.5
 
@@ -407,94 +426,161 @@ func _build_coin_delta_feedback() -> void:
 
 
 func _build_top_bar(initial_coins: int) -> Control:
-	var panel := PanelContainer.new()
+	var panel := Control.new()
 	panel.name = "LevelTopBar"
-	panel.custom_minimum_size.y = 72
-	panel.add_theme_stylebox_override("panel", _card_style(CARD, 18, true))
+	panel.custom_minimum_size.y = 64
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 8)
-	margin.add_theme_constant_override("margin_right", 8)
-	margin.add_theme_constant_override("margin_top", 10)
-	margin.add_theme_constant_override("margin_bottom", 10)
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 0)
+	margin.add_theme_constant_override("margin_right", 0)
+	margin.add_theme_constant_override("margin_top", 4)
+	margin.add_theme_constant_override("margin_bottom", 4)
 	panel.add_child(margin)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 2)
+	row.name = "LevelTopBarItems"
+	row.add_theme_constant_override("separation", 0)
 	margin.add_child(row)
 
-	top_home_button = _small_button("", Vector2(62, 52), 28)
+	top_home_button = _small_button("", Vector2(48, 48), 24)
 	top_home_button.icon = HOME_ICON
+	top_home_button.expand_icon = true
+	top_home_button.add_theme_constant_override("icon_max_width", 30)
 	top_home_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	top_home_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	top_home_button.tooltip_text = "返回首页"
 	top_home_button.pressed.connect(func() -> void: home_requested.emit())
-	row.add_child(top_home_button)
+	_add_topbar_item(row, top_home_button)
 	coin_roll_display = CoinRollDisplayScript.new()
 	coin_roll_display.name = "LevelCoinRollDisplay"
 	coin_roll_display.configure({
 		"initial_value": initial_coins,
-		"font_size": 24,
-		"minimum_counter_width": 62.0,
-		"minimum_counter_height": 44.0,
-		"minimum_digits": 5,
-		"horizontal_padding": 6.0,
-		"vertical_padding": 4.0,
-		"icon_size": Vector2(30, 30),
-		"separation": 5,
-		"font_color": Color("#C98212"),
-		"shadow_offset_y": 2,
+		"font_size": 20,
+		"number_alignment": HORIZONTAL_ALIGNMENT_CENTER,
+		"minimum_counter_width": 0.0,
+		"minimum_counter_height": 34.0,
+		"minimum_digits": 1,
+		"dynamic_digit_sizing": true,
+		"digit_profiles": {
+			1: {"font_size": 20, "minimum_width": 0.0},
+			2: {"font_size": 20, "minimum_width": 0.0},
+			3: {"font_size": 20, "minimum_width": 0.0},
+			4: {"font_size": 20, "minimum_width": 0.0},
+			5: {"font_size": 18, "minimum_width": 0.0},
+			6: {"font_size": 16, "minimum_width": 0.0},
+			7: {"font_size": 14, "minimum_width": 0.0},
+			8: {"font_size": 13, "minimum_width": 0.0},
+		},
+		"overflow_font_size": 13,
+		"vertical_padding": 2.0,
+		"icon_size": Vector2(UITokensScript.RESOURCE_BALANCE_ICON_SIZE, UITokensScript.RESOURCE_BALANCE_ICON_SIZE),
+		"content_gap": UITokensScript.resource_balance_icon_value_gap(),
+		"horizontal_padding": 0.0,
+		"font_color": Color("#304767"),
+		"outline_size": 1,
+		"shadow_offset_y": 0,
 	})
 	coin_label = coin_roll_display.primary_label
 	coin_balance_roll_clip = coin_roll_display.clip
 	coin_balance_roll_secondary = coin_roll_display.secondary_label
-	row.add_child(_coin_resource_badge(coin_roll_display))
+	_add_topbar_item(row, _coin_resource_badge(coin_roll_display))
+	_add_topbar_item(row, _build_diamond_badge())
 	level_heart_label = _build_heart_display()
-	row.add_child(level_heart_label)
-	tutorial_skip_button = _small_button("跳")
-	tutorial_skip_button.tooltip_text = "跳过新手教程"
-	tutorial_skip_button.pressed.connect(func() -> void: tutorial_requested.emit())
-	tutorial_skip_button.hide()
-	row.add_child(tutorial_skip_button)
-	row.add_child(_build_diamond_badge())
-	settings_button = _small_button("", Vector2(58, 52), 22)
+	_add_topbar_item(row, level_heart_label)
+	settings_button = _small_button("", Vector2(48, 48), 22)
 	settings_button.icon = SETTINGS_ICON
+	settings_button.expand_icon = true
+	settings_button.add_theme_constant_override("icon_max_width", 36)
 	settings_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	settings_button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	settings_button.tooltip_text = "设置"
 	settings_button.pressed.connect(func() -> void: settings_requested.emit())
-	row.add_child(settings_button)
+	_add_topbar_item(row, settings_button)
+	_topbar_action_slot = Control.new()
+	_topbar_action_slot.name = "LevelTopBarActionSlot"
+	_topbar_action_slot.custom_minimum_size = Vector2(48, 48)
+	_topbar_action_slot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_topbar_action_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tutorial_skip_button = _small_button("跳过", Vector2(48, 48), 13)
+	tutorial_skip_button.tooltip_text = "跳过新手教程"
+	tutorial_skip_button.pressed.connect(func() -> void: tutorial_requested.emit())
+	tutorial_skip_button.hide()
+	tutorial_skip_button.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_topbar_action_slot.add_child(tutorial_skip_button)
+	tutorial_skip_button.visibility_changed.connect(_refresh_topbar_action_slot)
 	if _level_select_enabled:
-		level_select_button = _small_button("选关")
+		level_select_button = _small_button("选关", Vector2(42, 48), 13)
 		level_select_button.tooltip_text = "选择关卡"
 		level_select_button.pressed.connect(func() -> void: level_select_requested.emit())
-		row.add_child(level_select_button)
+		level_select_button.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_topbar_action_slot.add_child(level_select_button)
+		level_select_button.visibility_changed.connect(_refresh_topbar_action_slot)
+	_add_topbar_item(row, _topbar_action_slot)
+	_refresh_topbar_action_slot()
 	return panel
 
 
+func _add_topbar_item(row: HBoxContainer, item: Control) -> void:
+	if _topbar_previous_item:
+		var spacer := Control.new()
+		spacer.name = "TopBarDistributedGap"
+		spacer.custom_minimum_size.x = 2
+		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(spacer)
+		_topbar_gap_records.append({"gap": spacer, "before": _topbar_previous_item, "after": item})
+	row.add_child(item)
+	_topbar_previous_item = item
+	item.visibility_changed.connect(_refresh_topbar_spacers)
+	_refresh_topbar_spacers()
+
+
+func _refresh_topbar_spacers() -> void:
+	for record in _topbar_gap_records:
+		var before := record["before"] as Control
+		var after := record["after"] as Control
+		var spacer := record["gap"] as Control
+		spacer.visible = before.visible and after.visible
+
+
+func _refresh_topbar_action_slot() -> void:
+	if not is_instance_valid(_topbar_action_slot):
+		return
+	var has_visible_action := (is_instance_valid(level_select_button) and level_select_button.visible) or tutorial_skip_button.visible
+	_topbar_action_slot.visible = has_visible_action
+	_refresh_topbar_spacers()
+
+
 func _build_diamond_badge() -> Control:
-	var badge := HBoxContainer.new()
-	badge.name = "LevelDiamondBalance"
-	badge.custom_minimum_size = Vector2(60, 42)
-	badge.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	badge.alignment = BoxContainer.ALIGNMENT_CENTER
-	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	badge.add_theme_constant_override("separation", 4)
-	var icon := TextureRect.new()
-	icon.texture = DIAMOND_ICON
-	icon.custom_minimum_size = Vector2(24, 24)
-	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	badge.add_child(icon)
-	diamond_balance_label = Label.new()
-	diamond_balance_label.text = "0"
-	diamond_balance_label.custom_minimum_size.x = 23
-	diamond_balance_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	diamond_balance_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	diamond_balance_label.add_theme_font_size_override("font_size", 20)
-	diamond_balance_label.add_theme_color_override("font_color", Color("#188BB5"))
-	badge.add_child(diamond_balance_label)
-	return badge
+	var label := Label.new()
+	label.name = "DiamondCount"
+	label.text = "0"
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_font_size_override("font_size", _resource_count_font_size(0))
+	label.add_theme_color_override("font_color", INK)
+	label.add_theme_constant_override("outline_size", 1)
+	label.add_theme_color_override("font_outline_color", INK)
+	diamond_resource_badge = _build_resource_badge("LevelDiamondBalance", DIAMOND_ICON, label, 86.0)
+	diamond_balance_label = label
+	diamond_balance_label.custom_minimum_size.x = coin_roll_display.counter_width_for_value(0)
+	_resize_resource_badge(diamond_resource_badge, diamond_balance_label.custom_minimum_size.x, 86.0)
+	return diamond_resource_badge
+
+
+func _resource_count_font_size(value: int) -> int:
+	var digit_count := str(maxi(0, value)).length()
+	if digit_count <= 4:
+		return 20
+	if digit_count == 5:
+		return 18
+	if digit_count == 6:
+		return 16
+	if digit_count == 7:
+		return 14
+	return 13
 
 
 func _build_level_header() -> Control:
@@ -591,28 +677,92 @@ func _build_action_bar() -> Control:
 
 
 func _build_heart_display() -> Control:
-	var panel := PanelContainer.new()
-	panel.name = "LevelHeartBadge"
-	panel.tooltip_text = "本关生命"
-	panel.custom_minimum_size = Vector2(116, 42)
-	panel.add_theme_stylebox_override("panel", _card_style(CARD, 18, true, 4))
-	var hearts := HBoxContainer.new()
-	hearts.name = "HeartSlots"
-	hearts.alignment = BoxContainer.ALIGNMENT_CENTER
-	hearts.add_theme_constant_override("separation", 2)
-	panel.add_child(hearts)
-	for index in range(INITIAL_HEART_COUNT):
-		var heart := TextureRect.new()
-		heart.name = "Heart%d" % (index + 1)
-		heart.custom_minimum_size = Vector2(32, 38)
-		heart.texture = HEART_ICON
-		heart.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		heart.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		heart.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		heart.pivot_offset = Vector2(16, 19)
-		hearts.add_child(heart)
-		level_heart_slots.append(heart)
-	return panel
+	var label := Label.new()
+	label.name = "HeartCount"
+	label.text = str(INITIAL_HEART_COUNT)
+	label.custom_minimum_size.x = coin_roll_display.counter_width_for_value(INITIAL_HEART_COUNT)
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_color_override("font_color", INK)
+	label.add_theme_font_size_override("font_size", 20)
+	label.add_theme_constant_override("outline_size", 1)
+	label.add_theme_color_override("font_outline_color", INK)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	heart_resource_badge = _build_resource_badge("LevelHeartBadge", HEART_ICON, label, 86.0)
+	heart_resource_badge.tooltip_text = "本关生命"
+	var heart := heart_resource_badge.get_node("HeartIcon") as TextureRect
+	level_heart_slots.append(heart)
+	level_heart_count_label = label
+	_resize_resource_badge(heart_resource_badge, label.custom_minimum_size.x, 86.0)
+	return heart_resource_badge
+
+
+func _build_resource_badge(node_name: String, texture: Texture2D, count: Control, minimum_width: float) -> Control:
+	var resource_name := node_name.trim_prefix("Level").trim_suffix("Badge").trim_suffix("Balance")
+	var badge := Control.new()
+	badge.name = node_name
+	badge.custom_minimum_size = Vector2(minimum_width, 56)
+	badge.layout_direction = Control.LAYOUT_DIRECTION_LTR
+	badge.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var capsule := PanelContainer.new()
+	capsule.name = "%sCapsule" % resource_name
+	capsule.custom_minimum_size.y = 40
+	badge.add_child(capsule)
+	capsule.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	capsule.offset_left = 18
+	capsule.offset_top = 8
+	capsule.offset_bottom = -8
+	capsule.layout_direction = Control.LAYOUT_DIRECTION_LTR
+	capsule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	capsule.add_theme_stylebox_override("panel", _resource_capsule_style(resource_name))
+	var margin := MarginContainer.new()
+	margin.name = "%sContent" % resource_name
+	margin.layout_direction = Control.LAYOUT_DIRECTION_LTR
+	margin.add_theme_constant_override("margin_left", 24)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_top", 0)
+	margin.add_theme_constant_override("margin_bottom", 0)
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	capsule.add_child(margin)
+	count.layout_direction = Control.LAYOUT_DIRECTION_LTR
+	count.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.add_child(count)
+	var icon := TextureRect.new()
+	icon.name = "%sIcon" % resource_name
+	# Ignore the imported SVG's intrinsic minimum BEFORE assigning texture/rect.
+	# Otherwise size=42 is clamped to e.g. 256, and changing expand_mode later
+	# does not shrink a TextureRect hosted by a plain Control.
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.texture = texture
+	icon.custom_minimum_size = Vector2(42, 42)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_child(icon)
+	icon.set_anchors_and_offsets_preset(Control.PRESET_CENTER_LEFT)
+	icon.offset_left = 0
+	icon.offset_right = 42
+	icon.offset_top = -21
+	icon.offset_bottom = 21
+	return badge
+
+
+func _resize_resource_badge(badge: Control, count_width: float, minimum_width: float = 92.0) -> void:
+	if not is_instance_valid(badge):
+		return
+	badge.custom_minimum_size.x = maxf(minimum_width, count_width + 58.0)
+
+
+func _resource_capsule_style(resource_name: String) -> StyleBoxTexture:
+	var style := StyleBoxTexture.new()
+	style.texture = RESOURCE_CAPSULES[resource_name]
+	for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+		style.set_texture_margin(side, 14)
+	style.content_margin_left = 2
+	style.content_margin_right = 2
+	style.content_margin_top = 2
+	style.content_margin_bottom = 3
+	return style
 
 
 func _small_button(text: String, minimum_size: Vector2 = Vector2(40, 40), font_size: int = 18) -> Button:
@@ -631,21 +781,22 @@ func _small_button(text: String, minimum_size: Vector2 = Vector2(40, 40), font_s
 	return button
 
 
-func _coin_resource_badge(display: Control) -> PanelContainer:
-	var panel := PanelContainer.new()
-	panel.name = "LevelCoinBadge"
-	panel.custom_minimum_size = Vector2(112, 48)
-	panel.add_theme_stylebox_override("panel", _card_style(CARD, 18, true, 8))
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 6)
-	margin.add_theme_constant_override("margin_right", 6)
-	margin.add_theme_constant_override("margin_top", 2)
-	margin.add_theme_constant_override("margin_bottom", 2)
-	panel.add_child(margin)
+func _coin_resource_badge(display: Control) -> Control:
+	coin_resource_badge = _build_resource_badge("LevelCoinBadge", HUD_COIN_ICON, display, 100.0)
+	display.layout_direction = Control.LAYOUT_DIRECTION_LTR
+	display.alignment = BoxContainer.ALIGNMENT_CENTER
+	display.coin_icon.hide()
+	if display.content_gap_spacer:
+		display.content_gap_spacer.hide()
 	display.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	display.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	margin.add_child(display)
-	return panel
+	_resize_resource_badge(coin_resource_badge, display.counter_width(), 100.0)
+	display.minimum_size_changed.connect(_sync_coin_badge_width)
+	return coin_resource_badge
+
+
+func _sync_coin_badge_width() -> void:
+	_resize_resource_badge(coin_resource_badge, coin_roll_display.counter_width(), 100.0)
 
 
 func _piece_texture_rect(minimum_size: Vector2) -> TextureRect:

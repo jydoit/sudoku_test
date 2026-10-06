@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="84" height="84" viewBox="136 79 76 82">
+  <!-- Extracted from the approved level_topbar_independent.svg design. -->
+  <defs><linearGradient id="coin" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#fff09b"/><stop offset=".46" stop-color="#ffc135"/><stop offset="1" stop-color="#d27b10"/></linearGradient></defs>
+  <circle cx="174" cy="121" r="34" fill="#a95e0a"/>
+  <circle cx="174" cy="117" r="32" fill="url(#coin)" stroke="#f4a522" stroke-width="3"/>
+  <circle cx="174" cy="117" r="24" fill="none" stroke="#ffe492" stroke-width="2.5"/>
+  <path d="m160 127 3-18 11 8 11-8 3 18z M163 132h22" fill="none" stroke="#a35d0b" stroke-width="3.5" stroke-linejoin="round"/>
+</svg>
