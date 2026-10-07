@@ -1,5 +1,9 @@
 extends Control
 
+# A platform adapter must call finished on close, cancellation or load failure.
+# No connected adapter means unavailable; this signal never fabricates a reward.
+signal rewarded_ad_requested(finished: Callable)
+
 const LevelStoreScript = preload("res://scripts/level_store.gd")
 const GameBoardScript = preload("res://scripts/game_board.gd")
 const LevelDirectorScript = preload("res://scripts/level_director.gd")
@@ -244,6 +248,8 @@ var in_tutorial: bool:
 
 var home_screen: Control
 var shop_page: Control
+var _shop_return_to_game := false
+var _ad_request_serial := 0
 var hidden_diamond_overlay: Control
 var game_screen: Control
 var formal_level_page
@@ -404,6 +410,7 @@ func _ready() -> void:
 	audio_controller.set_audio_preferences(music_enabled, sfx_enabled, haptics_enabled)
 	_configure_font_fallbacks()
 	LevelDirectorScript.record_retention_if_needed(director_progress, _today_string(), int(Time.get_unix_time_from_system()))
+	CompositeLevelDirectorScript.record_retention_if_needed(composite_director_progress, _today_string(), int(Time.get_unix_time_from_system()))
 	_build_ui()
 	_apply_layout_direction()
 	current_level_index = clampi(current_level_index, 0, levels.size() - 1)
@@ -470,6 +477,9 @@ func _on_startup_splash_finished() -> void:
 
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST and shop_page and shop_page.visible:
+		_close_shop()
+		return
 	match what:
 		NOTIFICATION_APPLICATION_PAUSED:
 			_application_paused = true
@@ -483,10 +493,18 @@ func _notification(what: int) -> void:
 			return
 	if _application_paused or not _application_focused:
 		run_accuracy.commit_pending()
-		_cancel_hidden_diamond_event()
+		if hidden_diamond_controller and hidden_diamond_controller.has_external_pause():
+			hidden_diamond_controller.pause_for("external_focus")
+		else:
+			_cancel_hidden_diamond_event()
 		if is_node_ready() and not current_level.is_empty():
 			_save_game()
 	elif is_node_ready():
+		hidden_diamond_controller.resume_after("external_focus")
+		var normal_changed := LevelDirectorScript.record_retention_if_needed(director_progress, _today_string(), int(Time.get_unix_time_from_system()))
+		var composite_changed := CompositeLevelDirectorScript.record_retention_if_needed(composite_director_progress, _today_string(), int(Time.get_unix_time_from_system()))
+		if normal_changed or composite_changed:
+			_save_game()
 		# Only unoffered events may start here; interrupted ones stay consumed.
 		call_deferred("_maybe_start_hidden_diamond_event")
 
@@ -573,7 +591,7 @@ func _build_ui() -> void:
 	home_composite_button = home_screen.composite_button
 	shop_page = ShopPageScript.new()
 	shop_page.configure(Callable(localization, "text"))
-	shop_page.home_requested.connect(_show_home)
+	shop_page.home_requested.connect(_close_shop)
 	shop_page.exchange_requested.connect(_exchange_diamond_for_coins)
 	add_child(shop_page)
 	shop_page.hide()
@@ -701,6 +719,7 @@ func _build_dialog_controller() -> void:
 	dialog_controller.set_localizer(Callable(localization, "text"))
 	dialog_controller.action_selected.connect(_on_dialog_action_selected)
 	dialog_controller.cancelled.connect(_on_dialog_cancelled)
+	dialog_controller.closed.connect(func(dialog_id: String) -> void: call_deferred("_on_commerce_dialog_closed", dialog_id))
 	add_child(dialog_controller)
 	composite_paid_entry_content = CompositePaidEntryContentScript.new()
 	composite_paid_entry_content.configure(Callable(localization, "text"))
@@ -1108,7 +1127,7 @@ func _on_assembly_return_requested(piece_id: int, preferred_slot_index: int = -1
 	assembly_view.update_state(composite_placements, _assembly_allowed_origins(), composite_tray_slots)
 	if returned_slot >= 0:
 		audio_controller.play_block_return()
-		assembly_view.focus_tray_slot(returned_slot, false)
+		assembly_view.focus_tray_slot(returned_slot)
 		assembly_view.play_return_feedback(returned_slot)
 	# Do not block the release event on JSON serialization and file I/O. The
 	# updated tray is already visible; persist the same state after this frame.
@@ -1578,6 +1597,7 @@ func _spend_coins_for_tool(tool: String) -> bool:
 
 
 func _show_coin_shortage_dialog(tool: String, price: int) -> void:
+	hidden_diamond_controller.pause_for("coin_shortage")
 	pending_coin_tool = tool
 	pending_coin_price = price
 	pending_rewarded_coin_grant = CoinEconomyScript.rewarded_ad_coin_grant(
@@ -2397,7 +2417,7 @@ func _next_level() -> void:
 	var next_index := int(next_schedule["levelIndex"])
 	_load_level(next_index, false, next_schedule)
 	_record_formal_level_entry()
-	LevelDirectorScript.record_next_level_opened(director_progress)
+	LevelDirectorScript.record_next_level_opened(director_progress, int(Time.get_unix_time_from_system()))
 	_save_game()
 	if bool(next_schedule.get("isMilestoneChallenge", false)):
 		_show_toast("难度挑战：本关根据最近表现安排")
@@ -2575,7 +2595,7 @@ func _on_dialog_action_selected(dialog_id: String, action_id: String) -> void:
 				_start_tutorial_step(0)
 		"coin_shortage":
 			if action_id == "rewarded":
-				_show_toast("激励广告入口占位：SDK 回调成功后发放 %d 金币" % pending_rewarded_coin_grant)
+				_request_rewarded_ad()
 			elif action_id == "purchase":
 				_show_shop("coins")
 		"home_composite_coin_shortage":
@@ -2592,6 +2612,28 @@ func _on_dialog_action_selected(dialog_id: String, action_id: String) -> void:
 func _on_dialog_cancelled(dialog_id: String) -> void:
 	if dialog_id == "tutorial_resume":
 		_start_tutorial_step(0)
+
+
+func _on_commerce_dialog_closed(dialog_id: String) -> void:
+	if dialog_id == "coin_shortage" and not dialog_controller.is_dialog_open("coin_shortage"):
+		# Runs after action_selected so the shop/ad acquires its pause first.
+		hidden_diamond_controller.resume_after("coin_shortage")
+
+
+func _request_rewarded_ad() -> void:
+	_ad_request_serial += 1
+	var request := _ad_request_serial
+	hidden_diamond_controller.pause_for("rewarded_ad")
+	var finished := func() -> void:
+		if request != _ad_request_serial:
+			return
+		_ad_request_serial += 1
+		hidden_diamond_controller.resume_after("rewarded_ad")
+	if rewarded_ad_requested.get_connections().is_empty():
+		_show_toast(_t("即将开放"))
+		finished.call()
+	else:
+		rewarded_ad_requested.emit(finished)
 
 
 func _refresh_language_picker() -> void:
@@ -3083,6 +3125,7 @@ func _update_level_picker() -> void:
 
 func _show_home() -> void:
 	run_accuracy.commit_pending()
+	_shop_return_to_game = false
 	_cancel_hidden_diamond_event()
 	if shop_page:
 		shop_page.hide()
@@ -3239,6 +3282,7 @@ func _apply_home_composite_round_entry(quote: Dictionary) -> void:
 	)
 	if not bool(transaction.get("success", false)):
 		return
+	CompositeLevelDirectorScript.record_next_round_opened(composite_director_progress, home_composite_round, int(Time.get_unix_time_from_system()))
 	var entry_cost := int(transaction.get("amount", 0))
 	_sync_home_composite_shared_coin_balance()
 	_update_home()
@@ -3372,16 +3416,31 @@ func _record_formal_level_entry() -> void:
 
 
 func _show_shop(tab: String = "diamonds") -> void:
-	_cancel_hidden_diamond_event()
 	if not shop_page:
 		return
+	if not shop_page.visible:
+		_shop_return_to_game = game_screen and game_screen.visible and not is_completed and not is_failed
+	if _shop_return_to_game:
+		hidden_diamond_controller.pause_for("shop")
+	else:
+		_cancel_hidden_diamond_event()
 	if home_screen:
 		home_screen.hide()
 	if game_screen:
 		game_screen.hide()
 	shop_page.select_tab(tab)
+	shop_page.set_return_to_game(_shop_return_to_game)
 	shop_page.present(coin_count, player_wallet.diamond_balance)
 	shop_page.show()
+
+
+func _close_shop() -> void:
+	if _shop_return_to_game:
+		_shop_return_to_game = false
+		_show_game()
+		hidden_diamond_controller.resume_after("shop")
+	else:
+		_show_home()
 
 
 func _exchange_diamond_for_coins(offer_id: String) -> void:
@@ -3473,6 +3532,7 @@ func _update_hidden_diamond_hud(data: Dictionary) -> void:
 
 
 func _cancel_hidden_diamond_event() -> void:
+	_ad_request_serial += 1
 	if hidden_diamond_controller:
 		hidden_diamond_controller.suspend()
 	if hidden_diamond_overlay:

@@ -9,6 +9,7 @@ const ButtonContent = preload("res://scripts/components/centered_button_content.
 const CoinIcon = preload("res://assets/ui/coin.svg")
 const DiamondIcon = preload("res://assets/ui/diamond.svg")
 const HomeIcon = preload("res://assets/ui/home.svg")
+const BackIcon = preload("res://assets/ui/back.svg")
 const CoinsArt = preload("res://assets/ui/shop/coins_pile.svg")
 const DiamondsArt = preload("res://assets/ui/shop/diamonds_pile.svg")
 const NAVY := Color("#173B69")
@@ -30,6 +31,7 @@ var _grid: GridContainer
 var _offer_buttons: Array[Button] = []
 var _coin_count := 0
 var _diamond_count := 0
+var _return_to_game := false
 
 
 func configure(localizer: Callable = Callable()) -> void:
@@ -70,10 +72,16 @@ func select_tab(tab: String) -> void:
 
 func refresh_localized_text() -> void:
 	_title.text = _t("商店")
-	_home_button.tooltip_text = _t("返回首页")
+	set_return_to_game(_return_to_game)
 	_diamond_tab.get_meta("content").caption.text = _t("钻石")
 	_coin_tab.get_meta("content").caption.text = _t("金币")
 	select_tab(active_tab)
+
+
+func set_return_to_game(value: bool) -> void:
+	_return_to_game = value
+	_home_button.icon = BackIcon if value else HomeIcon
+	_home_button.tooltip_text = _t("返回关卡" if value else "返回首页")
 
 
 func _build() -> void:

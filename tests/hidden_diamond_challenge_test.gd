@@ -21,6 +21,7 @@ func _run() -> void:
 	_test_policy()
 	_test_controller()
 	_test_time_baselines()
+	await _test_commerce_pause()
 	await _test_game_integration()
 	print("HIDDEN DIAMOND CHALLENGE TARGETED TEST: %d failures" % _failures)
 	quit(1 if _failures > 0 else 0)
@@ -230,6 +231,46 @@ func _test_game_integration() -> void:
 	await create_timer(1.4).timeout
 	_expect(game.hidden_diamond_controller.event["kind"] == "time" and game.hidden_diamond_controller._deadline_msec > 0, "A time challenge must start only its own countdown")
 	_expect(game.hidden_diamond_controller.event["limit"] == 30, "The migrated 5x5 history must have a 30-second challenge")
+	var before_shop: Array = game.cell_states.duplicate(true)
+	var seconds_before_shop: int = game.hidden_diamond_controller._seconds_left()
+	game._show_coin_shortage_dialog("hint", 10)
+	await create_timer(0.1).timeout
+	game.dialog_controller._activate_action("purchase")
+	await process_frame
+	_expect(game.shop_page.visible and game._shop_return_to_game and game.hidden_diamond_controller.is_paused(), "Shortage-to-shop transition must retain a pause and return destination")
+	_expect(game.hidden_diamond_controller.phase == "active", "Shop cannot fail an active challenge")
+	_expect(game.shop_page._home_button.tooltip_text == game._t("返回关卡"), "In-level shop uses a return-to-level control")
+	_expect(Rect2(Vector2.ZERO, Vector2(root.size)).encloses(game.shop_page._home_button.get_global_rect()), "Return button must fit the existing mobile safe layout")
+	await create_timer(0.1).timeout
+	game._close_shop()
+	_expect(not game.hidden_diamond_controller.is_paused() and game.hidden_diamond_controller.phase == "active", "Closing shop must resume the same challenge")
+	_expect(game.cell_states == before_shop and game.hidden_diamond_controller._seconds_left() == seconds_before_shop, "Shop preserves board and remaining seconds")
+	game._show_coin_shortage_dialog("hint", 10)
+	game.dialog_controller._activate_action("later")
+	await process_frame
+	_expect(not game.hidden_diamond_controller.is_paused(), "Cancelling shortage releases its pause")
+	game._show_coin_shortage_dialog("hint", 10)
+	game.dialog_controller._activate_action("rewarded")
+	await process_frame
+	_expect(not game.hidden_diamond_controller.is_paused() and game.player_wallet.diamond_balance == balance + 1, "Unavailable ad adapter resumes without awarding mock currency")
+	var callbacks: Array = []
+	game.rewarded_ad_requested.connect(func(finished: Callable) -> void: callbacks.append(finished))
+	game._show_coin_shortage_dialog("hint", 10)
+	game.dialog_controller._activate_action("rewarded")
+	await process_frame
+	game.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	_expect(game.hidden_diamond_controller.phase == "active" and game.hidden_diamond_controller.is_paused(), "A known external ad's focus loss must pause, not cancel")
+	callbacks[0].call()
+	callbacks[0].call()
+	_expect(game.hidden_diamond_controller.is_paused(), "Ad close callback cannot resume before application focus returns")
+	game.notification(Node.NOTIFICATION_APPLICATION_RESUMED)
+	_expect(not game.hidden_diamond_controller.is_paused() and game.hidden_diamond_controller.phase == "active", "External flow fully closes before challenge resumes")
+	game._request_rewarded_ad()
+	game.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+	game.notification(Node.NOTIFICATION_APPLICATION_FOCUS_IN)
+	_expect(game.hidden_diamond_controller.is_paused(), "Returning focus before ad closure must not resume the board")
+	callbacks[1].call()
+	_expect(not game.hidden_diamond_controller.is_paused(), "Ad closure after focus also releases its pause")
 	if DisplayServer.get_name() != "headless":
 		await _capture("time-540x1170.png")
 	game.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
@@ -248,6 +289,48 @@ func _test_game_integration() -> void:
 	_expect(game.hidden_diamond_controller.progress["modes"]["normal"] == normal_mode, "Block-stage gating must not mutate the normal cadence")
 	game.queue_free()
 	await process_frame
+
+
+func _test_commerce_pause() -> void:
+	var controller = _controller("time")
+	controller.begin_challenge()
+	var before: int = controller._seconds_left()
+	controller.pause_for("coin_shortage")
+	controller.pause_for("shop")
+	controller.pause_for("shop")
+	controller.resume_after("coin_shortage")
+	var elapsed: float = controller._measured_seconds()
+	await create_timer(0.08).timeout
+	controller._process(100.0)
+	controller.record_action(5)
+	_expect(controller._seconds_left() == before and controller._measured_seconds() == elapsed and controller._moves == 0, "Commerce pause freezes timer, baseline clock and board moves")
+	controller.resume_after("shop")
+	controller.resume_after("shop")
+	_expect(not controller.is_paused() and controller._seconds_left() == before, "Repeated callbacks cannot add time or leave a stuck pause")
+	controller.pause_for("purchase")
+	controller.suspend()
+	controller.resume_after("purchase")
+	_expect(controller.phase == "resolved" and not controller.is_paused(), "Cancellation discards pause receipts; late callbacks cannot revive a challenge")
+	controller.free()
+	controller = _controller("moves")
+	controller.begin_challenge()
+	controller.pause_for("shop")
+	controller.record_action(1)
+	_expect(controller._moves == 0 and controller._deadline_msec == 0, "A moves challenge stays frozen without acquiring a time deadline")
+	controller.resume_after("shop")
+	controller.record_action(1)
+	_expect(controller._moves == 1, "Moves resume once the commerce screen is closed")
+	controller.free()
+	controller = _controller("time")
+	controller.pause_for("shop")
+	controller.begin_challenge()
+	_expect(controller.phase == "intro", "An intro dismissed under a commerce screen cannot start the timer")
+	controller.resume_after("shop")
+	_expect(controller.phase == "active", "Deferred intro starts only when the commerce screen closes")
+	controller._deadline_msec = Time.get_ticks_msec() - 1
+	controller.pause_for("shop")
+	_expect(controller.phase == "resolved", "An already expired challenge cannot be rescued by opening shop")
+	controller.free()
 
 
 func _capture(filename: String) -> void:

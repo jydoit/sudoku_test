@@ -24,6 +24,9 @@ var _deadline_msec := 0
 var _last_seconds := -1
 var _pending_cell := Vector2i(-1, -1)
 var _pending_until := 0
+var _pause_reasons: Dictionary = {}
+var _paused_at_msec := -1
+var _begin_requested := false
 
 
 func restore(saved: Dictionary, ids: Array, legacy_runs: Array) -> void:
@@ -74,6 +77,10 @@ func present_board(untouched: bool = true) -> void:
 func begin_challenge() -> void:
 	if phase != "intro" or not _playing:
 		return
+	if is_paused():
+		_begin_requested = true
+		return
+	_begin_requested = false
 	phase = "active"
 	_measure_started_msec = Time.get_ticks_msec()
 	_deadline_msec = Time.get_ticks_msec() + int(event["limit"]) * 1000 if event["kind"] == "time" else 0
@@ -81,11 +88,54 @@ func begin_challenge() -> void:
 
 
 func intro_blocks_input() -> bool:
-	return phase == "intro"
+	return phase == "intro" or is_paused()
+
+
+func pause_for(reason: String) -> void:
+	if not _playing or _context.is_empty() or _pause_reasons.has(reason):
+		return
+	if _pause_reasons.is_empty():
+		# Commit input that happened before the modal; pausing cannot erase a
+		# spent move or rescue a challenge whose deadline already passed.
+		_flush_pending_tap()
+		if _time_expired():
+			_resolve(false)
+		_paused_at_msec = Time.get_ticks_msec()
+	_pause_reasons[reason] = true
+	_publish_hud()
+
+
+func resume_after(reason: String) -> void:
+	if not _pause_reasons.has(reason):
+		return
+	_pause_reasons.erase(reason)
+	if not _pause_reasons.is_empty():
+		return
+	var paused_msec := maxi(0, Time.get_ticks_msec() - _paused_at_msec)
+	if _deadline_msec > 0:
+		_deadline_msec += paused_msec
+	if _measure_started_msec >= 0:
+		_measure_started_msec += paused_msec
+	_paused_at_msec = -1
+	if _begin_requested:
+		begin_challenge()
+	_publish_hud()
+
+
+func is_paused() -> bool:
+	return not _pause_reasons.is_empty()
+
+
+func has_external_pause() -> bool:
+	return _pause_reasons.has("rewarded_ad") or _pause_reasons.has("purchase") or _pause_reasons.has("external_focus")
+
+
+func _clock_msec() -> int:
+	return _paused_at_msec if is_paused() else Time.get_ticks_msec()
 
 
 func record_action(found: int, kind: String = "action", cell: Vector2i = Vector2i(-1, -1), double_tap_window_ms: int = 320) -> void:
-	if not _playing or phase == "intro" or _context.is_empty():
+	if not _playing or phase == "intro" or is_paused() or _context.is_empty():
 		return
 	if kind == "assist":
 		_assisted = true
@@ -138,6 +188,9 @@ func suspend() -> void:
 	if _playing:
 		_measure_valid = false
 	_playing = false
+	_pause_reasons.clear()
+	_paused_at_msec = -1
+	_begin_requested = false
 	_clear_pending_tap()
 	hud_changed.emit({})
 
@@ -150,11 +203,11 @@ func leave_board() -> void:
 
 
 func _measured_seconds() -> float:
-	return maxf(0.0, float(Time.get_ticks_msec() - _measure_started_msec) / 1000.0) if _measure_started_msec != -1 else 0.0
+	return maxf(0.0, float(_clock_msec() - _measure_started_msec) / 1000.0) if _measure_started_msec != -1 else 0.0
 
 
 func _process(_delta: float) -> void:
-	if not _playing or phase == "intro":
+	if not _playing or phase == "intro" or is_paused():
 		return
 	# Use the same monotonic clock as the deadline, not frame deltas, which can
 	# be clamped under stalls or scaled by Engine.time_scale.
@@ -182,11 +235,11 @@ func _resolve(won: bool) -> void:
 
 
 func _time_expired() -> bool:
-	return phase == "active" and event["kind"] == "time" and Time.get_ticks_msec() >= _deadline_msec
+	return phase == "active" and event["kind"] == "time" and _clock_msec() >= _deadline_msec
 
 
 func _seconds_left() -> int:
-	return maxi(0, ceili(float(_deadline_msec - Time.get_ticks_msec()) / 1000.0))
+	return maxi(0, ceili(float(_deadline_msec - _clock_msec()) / 1000.0))
 
 
 func _publish_hud() -> void:

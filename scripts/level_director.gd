@@ -2,6 +2,7 @@ class_name LevelDirector
 extends RefCounted
 
 const OpeningKingHintControllerScript = preload("res://scripts/controllers/opening_king_hint_controller.gd")
+const NormalFeaturesScript = preload("res://scripts/normal_recommendation_features.gd")
 
 const FIXED_OPENING_COUNT := 10
 const RECENT_WINDOW := 5
@@ -68,6 +69,9 @@ static func normalize_progress(progress: Dictionary) -> Dictionary:
 		progress["completedLevelIds"] = []
 	if not progress.has("banditState") or not progress["banditState"] is Dictionary:
 		progress["banditState"] = {}
+	for key in ["normalFeatureStats", "openingHintStats"]:
+		if not progress.get(key) is Dictionary:
+			progress[key] = {}
 	var played := {}
 	var stored_played = progress.get("playedLevelIds", [])
 	if stored_played is Array:
@@ -156,7 +160,7 @@ static func schedule_for_display_level(levels: Array, display_level: int, progre
 	var selected_difficulty := str(arm.get("difficulty", "simple"))
 	var index := _choose_level_index(
 		levels, challenge_index if is_milestone else level_index, selected_size, selected_difficulty,
-		progress["playedLevelIds"] if is_milestone else completed_ids, recent_ids, rng, not is_milestone
+		progress["playedLevelIds"] if is_milestone else completed_ids, recent_ids, rng, not is_milestone, progress
 	)
 	if index < 0:
 		return {}
@@ -187,6 +191,9 @@ static func schedule_for_display_level(levels: Array, display_level: int, progre
 	schedule["noToolStreak"] = int(arm.get("noToolStreak", _no_tool_streak(progress)))
 	schedule["difficultyFloor"] = str(recommendation_context.get("difficultyFloor", ""))
 	schedule["preSizeSixDifficultyPressure"] = bool(arm.get("preSizeSixDifficultyPressure", false))
+	schedule["normalFeatureVersion"] = NormalFeaturesScript.VERSION
+	schedule["normalFeatures"] = NormalFeaturesScript.measure(level)
+	schedule["normalFeatureBuckets"] = NormalFeaturesScript.buckets(schedule["normalFeatures"], int(level.get("rows", 0)))
 	_apply_opening_king_hint_policy(schedule, level, progress)
 	return schedule
 
@@ -395,6 +402,7 @@ static func record_completion(progress: Dictionary, level: Dictionary, schedule:
 	})
 	while runs.size() > MAX_RUN_HISTORY:
 		runs.pop_front()
+	_attach_normal_feedback(progress, runs.back(), schedule)
 
 
 static func record_failure(progress: Dictionary, level: Dictionary, schedule: Dictionary, elapsed_seconds: float, moves: int, hints: int, completed_date: String = "", completed_unix: int = 0, direct_finds: int = 0) -> void:
@@ -437,9 +445,10 @@ static func record_failure(progress: Dictionary, level: Dictionary, schedule: Di
 	})
 	while runs.size() > MAX_RUN_HISTORY:
 		runs.pop_front()
+	_attach_normal_feedback(progress, runs.back(), schedule)
 
 
-static func record_next_level_opened(progress: Dictionary) -> void:
+static func record_next_level_opened(progress: Dictionary, now_unix: int = 0) -> void:
 	normalize_progress(progress)
 	var runs: Array = progress["recentRuns"]
 	if runs.is_empty():
@@ -447,34 +456,92 @@ static func record_next_level_opened(progress: Dictionary) -> void:
 	var run: Dictionary = runs[runs.size() - 1]
 	if not bool(run.get("nextLevelObserved", false)):
 		run["nextLevelObserved"] = true
-		_update_run_metric(progress, run, "nextLevel", true)
-	_add_reward_bonus(progress, run, NEXT_LEVEL_OPEN_BONUS, "openedNextLevel")
+		var timestamp := int(run.get("completedUnix", 0))
+		var timely := now_unix <= 0 or timestamp <= 0 or now_unix - timestamp < NEXT_LEVEL_WINDOW_SECONDS
+		_update_run_metric(progress, run, "nextLevel", timely)
+		if timely:
+			_add_reward_bonus(progress, run, NEXT_LEVEL_OPEN_BONUS, "openedNextLevel")
+	_observe_normal_feedback(progress, run)
 
 
-static func record_retention_if_needed(progress: Dictionary, today: String, now_unix: int = 0) -> void:
+static func record_retention_if_needed(progress: Dictionary, today: String, now_unix: int = 0) -> bool:
 	normalize_progress(progress)
 	var runs: Array = progress["recentRuns"]
 	if runs.is_empty() or now_unix <= 0:
-		return
+		return false
+	var changed := false
 	for run in runs:
 		if not run is Dictionary:
 			continue
 		var completed_date := str(run.get("completedDate", ""))
 		var completed_unix := int(run.get("completedUnix", 0))
 		var age_seconds := now_unix - completed_unix
-		if bool(run.get("retentionObserved", false)) or completed_unix <= 0:
+		if completed_unix <= 0:
 			continue
-		if completed_date != "" and completed_date != today and age_seconds >= 0 and age_seconds < RETENTION_WINDOW_SECONDS:
-			run["retentionObserved"] = true
-			_update_run_metric(progress, run, "retention", true)
-			_add_reward_bonus(progress, run, RETENTION_BONUS, "retainedNextDay")
-		elif age_seconds >= RETENTION_WINDOW_SECONDS:
-			run["retentionObserved"] = true
-			_update_run_metric(progress, run, "retention", false)
+		if not bool(run.get("retentionObserved", false)):
+			if completed_date != "" and completed_date != today and age_seconds >= 0 and age_seconds < RETENTION_WINDOW_SECONDS:
+				run["retentionObserved"] = true
+				_update_run_metric(progress, run, "retention", true)
+				_add_reward_bonus(progress, run, RETENTION_BONUS, "retainedNextDay")
+				changed = true
+			elif age_seconds >= RETENTION_WINDOW_SECONDS:
+				run["retentionObserved"] = true
+				_update_run_metric(progress, run, "retention", false)
+				changed = true
 
 		if not bool(run.get("nextLevelObserved", false)) and age_seconds >= NEXT_LEVEL_WINDOW_SECONDS:
 			run["nextLevelObserved"] = true
 			_update_run_metric(progress, run, "nextLevel", false)
+			changed = true
+		changed = _observe_normal_feedback(progress, run) or changed
+	return changed
+
+
+static func _attach_normal_feedback(progress: Dictionary, run: Dictionary, schedule: Dictionary) -> void:
+	if int(schedule.get("normalFeatureVersion", 0)) != NormalFeaturesScript.VERSION:
+		return
+	var buckets := NormalFeaturesScript.buckets(schedule.get("normalFeatures", {}), int(run.get("size", 0)))
+	if buckets.is_empty():
+		return
+	run["normalFeatureVersion"] = NormalFeaturesScript.VERSION
+	run["normalFeatures"] = schedule["normalFeatures"].duplicate(true)
+	run["normalFeatureBuckets"] = buckets
+	if str(schedule.get("openingKingPolicy", "")) == "engagement_posterior":
+		run["openingHintCount"] = (schedule.get("kingPositions", []) as Array).size()
+	_observe_normal_feedback(progress, run)
+
+
+static func _observe_normal_feedback(progress: Dictionary, run: Dictionary) -> bool:
+	if int(run.get("normalFeatureVersion", 0)) != NormalFeaturesScript.VERSION:
+		return false
+	var buckets: Dictionary = run.get("normalFeatureBuckets", {})
+	var size := int(run.get("size", 0))
+	var difficulty := str(run.get("difficulty", ""))
+	for dimension in NormalFeaturesScript.DIMENSIONS:
+		if not NormalFeaturesScript.BUCKETS.has(buckets.get(dimension, "")):
+			return false
+	var receipts: Dictionary = run.get("normalFeatureObserved", {})
+	var changed := false
+	for metric in ["completion", "nextLevel", "retention"]:
+		if bool(receipts.get(metric, false)) or (metric != "completion" and not bool(run.get(metric + "Observed", false))):
+			continue
+		var success_field: String = {"completion": "completed", "nextLevel": "openedNextLevel", "retention": "retainedNextDay"}[metric]
+		var entries: Array = []
+		for dimension in NormalFeaturesScript.DIMENSIONS:
+			entries.append(["normalFeatureStats", NormalFeaturesScript.stats_key(size, difficulty, dimension, buckets[dimension])])
+		var count := int(run.get("openingHintCount", 0))
+		if count in [1, 2]:
+			entries.append(["openingHintStats", NormalFeaturesScript.hint_key(size, difficulty, buckets["spatialEntropy"], count)])
+		for entry in entries:
+			var stats: Dictionary = progress[entry[0]].get(entry[1], {})
+			_update_beta_metric(stats, metric, bool(run.get(success_field, false)))
+			if metric == "completion":
+				stats["plays"] = int(stats.get("plays", 0)) + 1
+			progress[entry[0]][entry[1]] = stats
+		receipts[metric] = true
+		changed = true
+	run["normalFeatureObserved"] = receipts
+	return changed
 
 
 static func _make_schedule(level: Dictionary, index: int, display: int, mode: String, is_milestone: bool, allowed_sizes: Array, selected_size: int, selected_difficulty: String) -> Dictionary:
@@ -502,23 +569,21 @@ static func _apply_opening_king_hint_policy(schedule: Dictionary, level: Diction
 	if str(schedule.get("mode", "")) == "post_challenge":
 		schedule["openingKingPolicy"] = "post_challenge_preserved"
 		return
-	if decided_count == 0:
-		schedule["openingKingPolicy"] = "no_decided_hint"
-		return
-
 	var display := int(schedule.get("displayLevel", 1))
 	var level_id := int(level.get("levelId", schedule.get("levelId", -1)))
 	var rng := _make_rng(display, "opening_hint_policy:%d:%d" % [level_id, _progress_signature(progress)])
-	var displayed_count := OpeningKingHintControllerScript.adjusted_hint_count(
-		decided_count,
-		int(level.get("rows", schedule.get("selectedSize", 0))),
-		progress,
-		rng.randf()
+	var count := NormalFeaturesScript.choose_hint_count(
+		level, schedule.get("normalFeatureBuckets", {}), progress, rng, sample_engagement_reward
 	)
-	schedule["openingKingDisplayedCount"] = displayed_count
-	schedule["openingKingPolicy"] = "three_no_tool_adjustment" if displayed_count != decided_count else "decided_count_preserved"
-	if displayed_count < decided_count:
-		schedule["kingPositions"] = decided_positions.slice(0, displayed_count)
+	var candidates := _opening_king_candidates(level)
+	var positions: Array = []
+	while positions.size() < count and not candidates.is_empty():
+		var pick := rng.randi_range(0, candidates.size() - 1)
+		positions.append(candidates.pop_at(pick))
+	schedule["kingPositions"] = positions
+	schedule["openingKingDecidedCount"] = positions.size()
+	schedule["openingKingDisplayedCount"] = positions.size()
+	schedule["openingKingPolicy"] = "engagement_posterior"
 
 
 static func _opening_king_positions(level: Dictionary, display: int, level_index: int, is_fixed: bool) -> Array:
@@ -535,14 +600,7 @@ static func _opening_king_positions(level: Dictionary, display: int, level_index
 	if not _should_reveal_dynamic_kings(display):
 		return []
 
-	var solution: Array = level.get("solution", [])
-	var candidates: Array = []
-	for ordinal in KING_SOLUTION_ORDINALS:
-		var solution_index := int(ordinal) - 1
-		if solution_index >= 0 and solution_index < solution.size():
-			var coordinate = solution[solution_index]
-			if coordinate is Array and coordinate.size() >= 2:
-				candidates.append([int(coordinate[0]), int(coordinate[1])])
+	var candidates := _opening_king_candidates(level)
 	if candidates.is_empty():
 		return []
 
@@ -554,6 +612,18 @@ static func _opening_king_positions(level: Dictionary, display: int, level_index
 		var pick := rng.randi_range(0, available.size() - 1)
 		result.append(available[pick])
 		available.remove_at(pick)
+	return result
+
+
+static func _opening_king_candidates(level: Dictionary) -> Array:
+	var result: Array = []
+	var solution: Array = level.get("solution", [])
+	for ordinal in KING_SOLUTION_ORDINALS:
+		var index := int(ordinal) - 1
+		if index < solution.size():
+			var coordinate = solution[index]
+			if coordinate is Array and coordinate.size() >= 2:
+				result.append([int(coordinate[0]), int(coordinate[1])])
 	return result
 
 
@@ -868,10 +938,7 @@ static func _thompson_arm(arms: Array, progress: Dictionary, rng: RandomNumberGe
 		var size := int(arm["size"])
 		var difficulty := str(arm["difficulty"])
 		var stats: Dictionary = progress["statsByArm"].get(_arm_key(size, difficulty), {})
-		var completion := _beta_sample(stats, "completion", rng)
-		var next_level := _beta_sample(stats, "nextLevel", rng)
-		var retention := _beta_sample(stats, "retention", rng)
-		var score := completion * 0.20 + next_level * 0.45 + retention * 0.35
+		var score := sample_engagement_reward(stats, rng)
 		score += tool_weight * _expected_tool_value(size, difficulty)
 		if no_tool_streak >= NO_TOOL_DIFFICULTY_STREAK:
 			score += _difficulty_score(difficulty) * 0.08
@@ -1006,7 +1073,7 @@ static func _unplayed_level_index(levels: Array, level_index: Dictionary, arms: 
 	return result
 
 
-static func _choose_level_index(levels: Array, level_index: Dictionary, size: int, difficulty: String, completed_ids: Array, recent_ids: Array, rng: RandomNumberGenerator, allow_repeats: bool = true) -> int:
+static func _choose_level_index(levels: Array, level_index: Dictionary, size: int, difficulty: String, completed_ids: Array, recent_ids: Array, rng: RandomNumberGenerator, allow_repeats: bool = true, feature_progress: Variant = null) -> int:
 	var candidates := _candidate_indices(levels, level_index, [size], [difficulty], completed_ids, recent_ids, false, false)
 	if candidates.is_empty() and allow_repeats:
 		candidates = _candidate_indices(levels, level_index, [size], [difficulty], completed_ids, recent_ids, true, false)
@@ -1014,6 +1081,8 @@ static func _choose_level_index(levels: Array, level_index: Dictionary, size: in
 		candidates = _candidate_indices(levels, level_index, [size], [difficulty], completed_ids, recent_ids, true, true)
 	if candidates.is_empty():
 		return -1
+	if feature_progress is Dictionary:
+		return NormalFeaturesScript.select_index(levels, candidates, feature_progress, rng, sample_engagement_reward)
 	return int(candidates[rng.randi_range(0, candidates.size() - 1)])
 
 
@@ -1161,6 +1230,15 @@ static func _size_plays(progress: Dictionary, size: int) -> int:
 	for difficulty in DIFFICULTY_ORDER:
 		total += _arm_plays(progress, size, difficulty)
 	return total
+
+
+static func sample_engagement_reward(stats: Dictionary, rng: RandomNumberGenerator) -> float:
+	# Shared by base arms and composite structural features. Keep the original
+	# metric weights and sampling order, rather than inventing a skill reward.
+	var completion := _beta_sample(stats, "completion", rng)
+	var next_level := _beta_sample(stats, "nextLevel", rng)
+	var retention := _beta_sample(stats, "retention", rng)
+	return completion * 0.20 + next_level * 0.45 + retention * 0.35
 
 
 static func _beta_sample(stats: Dictionary, metric: String, rng: RandomNumberGenerator) -> float:

@@ -937,7 +937,10 @@ func _test_tray_return_slot_focus(view) -> void:
 	view._drag_source = "board"
 	view._return_slot_index = -1
 	view._prepare_return_slot_focus()
-	assert(view._return_slot_index == 3, "Returning a board piece should focus its current completed slot")
+	var returned_placements := view.placements.duplicate()
+	returned_placements.erase("3")
+	var expected_slots := CompositeLevelScript.sanitize_tray_slots(view.assembly_data, returned_placements)
+	assert(view._return_slot_index == expected_slots.find(3), "Returning a board piece should preview its final sorted slot")
 	view.focus_tray_slot(view._return_slot_index, false)
 	assert(view.tray_scroll < view._tray_max_scroll(), "The tray should move away from its tail to focus the selected empty slot")
 	view.assembly_data = saved_data
@@ -947,6 +950,7 @@ func _test_tray_return_slot_focus(view) -> void:
 	view._drag_piece_id = -1
 	view._drag_source = ""
 	view._return_slot_index = -1
+	view._return_preview_slots.clear()
 	view.queue_redraw()
 
 

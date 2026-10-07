@@ -21,7 +21,9 @@ const TRAY_CELL_SIZE := 21.0
 const TRAY_SLOT_HEIGHT := 94.0
 const TRAY_SLOT_GAP := 8.0
 const DRAG_THRESHOLD := 6.0
-const SCROLL_DIRECTION_BIAS := 0.78
+const TRAY_PICKUP_THRESHOLD := 10.0
+const TRAY_SCROLL_THRESHOLD := 16.0
+const SCROLL_DIRECTION_BIAS := 1.35
 const WHEEL_SCROLL_STEP := 54.0
 const PAN_SCROLL_SCALE := 42.0
 const RETURN_FOCUS_DURATION := 0.18
@@ -48,7 +50,6 @@ var _tray_feedback_strength := 0.0
 var _tray_feedback_tween: Tween
 var _localizer: Callable
 
-var _piece_hit_rects: Dictionary = {}
 var _pointer_down := false
 var _pointer_id := -1
 var _press_position := Vector2.ZERO
@@ -56,10 +57,14 @@ var _last_pointer := Vector2.ZERO
 var _press_piece_id := -1
 var _drag_piece_id := -1
 var _drag_source := ""
+var _board_grab_offset_cells := Vector2.ZERO
+var _board_grab_valid := false
 var _interaction_mode := ""
 var _preview_origin := Vector2i(-99, -99)
 var _last_announced_snap_origin := Vector2i(-99, -99)
 var _return_slot_index := -1
+var _return_preview_slots: Array = []
+var _return_scroll_before := 0.0
 var _intro_active := false
 var _intro_guided_piece_id := -1
 var _intro_guided_origin := Vector2i(-99, -99)
@@ -84,6 +89,7 @@ var _hint_piece_id := -1
 var _hint_origin := Vector2i(-99, -99)
 var _intro_tween: Tween
 var _tray_focus_tween: Tween
+var _tray_focus_target_scroll := -1.0
 var _flatten_tween: Tween
 
 
@@ -318,7 +324,6 @@ func _set_tray_feedback_strength(value: float) -> void:
 func _draw() -> void:
 	if not active or assembly_data.is_empty() or not board_target or not tray_target:
 		return
-	_piece_hit_rects.clear()
 	_draw_board()
 	_draw_tray()
 	if _intro_active:
@@ -457,6 +462,7 @@ func _draw_tray() -> void:
 	draw_rect(tray_rect, tray_edge, false, 3.0)
 
 	var slots := _tray_slot_layout()
+	var displayed_piece_ids := _return_preview_slots if _return_slot_index >= 0 else tray_slot_piece_ids
 	var max_scroll := _tray_max_scroll()
 	tray_scroll = clampf(tray_scroll, 0.0, max_scroll)
 
@@ -470,7 +476,7 @@ func _draw_tray() -> void:
 		)
 		if slot_rect.end.x < tray_rect.position.x or slot_rect.position.x > tray_rect.end.x:
 			continue
-		var piece_id := int(tray_slot_piece_ids[slot_index]) if slot_index < tray_slot_piece_ids.size() else -1
+		var piece_id := int(displayed_piece_ids[slot_index]) if slot_index < displayed_piece_ids.size() else -1
 		if slot_index == _return_slot_index and _drag_source == "board" and _drag_piece_id >= 0:
 			var focus_piece := _piece_by_id(_drag_piece_id)
 			_draw_slot_frame(slot_rect, _region_color(int(focus_piece.get("regionId", 1))), 1.0 * tray_alpha, true)
@@ -499,7 +505,6 @@ func _draw_tray() -> void:
 			if slot_feedback > 0.0:
 				_draw_return_slot_feedback(slot_rect, region_color, slot_feedback, tray_alpha)
 			continue
-		_piece_hit_rects[piece_id] = slot_rect
 		if piece_id == _drag_piece_id:
 			draw_rect(slot_rect.grow(-8.0), Color(1.0, 1.0, 1.0, 0.16 * tray_alpha), false, 2.0)
 		else:
@@ -554,9 +559,7 @@ func _draw_dragging_piece() -> void:
 		return
 	var geometry := _board_geometry()
 	var cell_size: float = geometry["cellSize"]
-	var bounds := _piece_bounds(piece)
-	var draw_size := Vector2(bounds.size.x, bounds.size.y) * cell_size
-	var origin := _last_pointer - Vector2(draw_size.x * 0.5, draw_size.y + cell_size * DRAG_LIFT_CELLS)
+	var origin := _last_pointer - _pointer_offset_for_piece(piece, cell_size)
 	var color := _region_color(int(piece.get("regionId", 1)))
 	for cell in _piece_local_cells(piece):
 		var rect := Rect2(origin + Vector2(cell.x, cell.y) * cell_size, Vector2.ONE * cell_size)
@@ -598,7 +601,11 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
 		var touch_position := _canvas_to_local(touch.position)
-		if touch.pressed:
+		if touch.canceled and touch.index == _pointer_id:
+			_clear_return_preview(true)
+			_reset_pointer()
+			queue_redraw()
+		elif touch.pressed:
 			_pointer_pressed(touch_position, touch.index)
 		else:
 			_pointer_released(touch_position, touch.index)
@@ -618,6 +625,9 @@ func _pointer_pressed(position: Vector2, pointer_id: int) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	_pointer_down = true
+	# Freeze automatic scrolling before hit-testing the current slot geometry.
+	if _tray_focus_tween and _tray_focus_tween.is_valid():
+		_tray_focus_tween.kill()
 	_pointer_id = pointer_id
 	_press_position = position
 	_last_pointer = position
@@ -626,10 +636,7 @@ func _pointer_pressed(position: Vector2, pointer_id: int) -> void:
 	_drag_source = ""
 	if tray_rect.has_point(position):
 		_drag_source = "tray"
-		for piece_id in _piece_hit_rects.keys():
-			if (_piece_hit_rects[piece_id] as Rect2).has_point(position) and not placements.has(str(piece_id)):
-				_press_piece_id = int(piece_id)
-				break
+		_press_piece_id = _tray_piece_at_position(position)
 		if _intro_active and _press_piece_id != _intro_guided_piece_id:
 			_reset_pointer()
 			get_viewport().set_input_as_handled()
@@ -640,6 +647,11 @@ func _pointer_pressed(position: Vector2, pointer_id: int) -> void:
 		if placed_piece >= 0:
 			_press_piece_id = placed_piece
 			_drag_source = "board"
+			var geometry := _board_geometry()
+			var placed_origin: Array = placements[str(placed_piece)]
+			var origin := Vector2(int(placed_origin[1]), int(placed_origin[0]))
+			_board_grab_offset_cells = (position - (geometry["rect"] as Rect2).position) / float(geometry["cellSize"]) - origin
+			_board_grab_valid = true
 	get_viewport().set_input_as_handled()
 
 
@@ -652,18 +664,17 @@ func _pointer_moved(position: Vector2, pointer_id: int) -> void:
 			not _intro_active
 			and
 			_drag_source == "tray"
-			and absf(delta.x) > DRAG_THRESHOLD
+			and _tray_max_scroll() > 0.0
+			and absf(delta.x) >= TRAY_SCROLL_THRESHOLD
 			and absf(delta.x) >= absf(delta.y) * SCROLL_DIRECTION_BIAS
 		)
 		if horizontal_scroll:
 			_interaction_mode = "scroll"
 		elif _press_piece_id >= 0 and delta.length() > DRAG_THRESHOLD and (
 			_drag_source == "board"
-			or (_drag_source == "tray" and delta.y > DRAG_THRESHOLD * 0.55 and absf(delta.y) > absf(delta.x))
+			or (_drag_source == "tray" and delta.y >= TRAY_PICKUP_THRESHOLD and delta.y >= absf(delta.x))
 		):
 			_start_drag(_press_piece_id, position)
-		elif _drag_source == "tray" and _press_piece_id < 0 and absf(delta.x) > DRAG_THRESHOLD:
-			_interaction_mode = "scroll"
 	if _interaction_mode == "scroll":
 		_scroll_tray(_last_pointer.x - position.x)
 	elif _interaction_mode == "drag":
@@ -671,7 +682,7 @@ func _pointer_moved(position: Vector2, pointer_id: int) -> void:
 		if _drag_source == "board" and _tray_rect().grow(RETURN_HOTZONE_MARGIN).has_point(position):
 			_prepare_return_slot_focus()
 		else:
-			_return_slot_index = -1
+			_clear_return_preview(true)
 			var next_origin := _origin_for_pointer(position)
 			_preview_origin = next_origin
 			if _origin_allowed(_drag_piece_id, next_origin) and next_origin != _last_announced_snap_origin:
@@ -697,11 +708,14 @@ func _pointer_released(position: Vector2, pointer_id: int) -> void:
 	var completes_intro := false
 	if _interaction_mode == "drag" and _drag_piece_id >= 0:
 		_last_pointer = position
+		# Touch release may arrive without the last motion event. Both destinations
+		# must be resolved from this position, never from the previous preview.
+		_preview_origin = _origin_for_pointer(position)
 		var in_return_hotzone := _tray_rect().grow(RETURN_HOTZONE_MARGIN).has_point(position)
 		if _drag_source == "board" and in_return_hotzone:
 			# Release can arrive without a final motion event on touch screens. Resolve
 			# the target from the release position itself so returning is immediate.
-			_prepare_return_slot_focus(false)
+			_prepare_return_slot_focus()
 			if _return_slot_index >= 0:
 				return_piece_id = _drag_piece_id
 				return_slot_index = _return_slot_index
@@ -715,6 +729,8 @@ func _pointer_released(position: Vector2, pointer_id: int) -> void:
 			)
 		else:
 			rejected = true
+	if return_piece_id < 0:
+		_clear_return_preview(true)
 	_reset_pointer()
 	queue_redraw()
 	get_viewport().set_input_as_handled()
@@ -755,10 +771,13 @@ func _reset_pointer() -> void:
 	_press_piece_id = -1
 	_drag_piece_id = -1
 	_drag_source = ""
+	_board_grab_offset_cells = Vector2.ZERO
+	_board_grab_valid = false
 	_interaction_mode = ""
 	_preview_origin = Vector2i(-99, -99)
 	_last_announced_snap_origin = Vector2i(-99, -99)
 	_return_slot_index = -1
+	_return_preview_slots.clear()
 
 
 func _reset_feedback() -> void:
@@ -787,25 +806,27 @@ func _origin_for_pointer(position: Vector2) -> Vector2i:
 	var board_rect: Rect2 = geometry["rect"]
 	var cell_size: float = geometry["cellSize"]
 	var piece := _piece_by_id(_drag_piece_id)
-	var bounds := _piece_bounds(piece)
-	var col := int(round((position.x - board_rect.position.x) / cell_size - float(bounds.size.x) * 0.5))
-	var row := int(round((position.y - board_rect.position.y) / cell_size - float(bounds.size.y) - DRAG_LIFT_CELLS))
-	var raw_origin := Vector2i(col, row)
+	var visual_origin := position - _pointer_offset_for_piece(piece, cell_size)
+	var raw_origin := Vector2i(((visual_origin - board_rect.position) / cell_size).round())
 	return _nearest_snap_origin(position, piece, raw_origin, board_rect.position, cell_size)
 
 
-func _nearest_snap_origin(position: Vector2, piece: Dictionary, fallback: Vector2i, board_origin: Vector2, cell_size: float) -> Vector2i:
+func _pointer_offset_for_piece(piece: Dictionary, cell_size: float) -> Vector2:
+	if _drag_source == "board" and _board_grab_valid:
+		return _board_grab_offset_cells * cell_size
 	var bounds := _piece_bounds(piece)
+	return Vector2(float(bounds.size.x) * 0.5, float(bounds.size.y) + DRAG_LIFT_CELLS) * cell_size
+
+
+func _nearest_snap_origin(position: Vector2, piece: Dictionary, fallback: Vector2i, board_origin: Vector2, cell_size: float) -> Vector2i:
+	var pointer_offset := _pointer_offset_for_piece(piece, cell_size)
 	var best_origin := fallback
 	var best_distance := cell_size * SNAP_RADIUS_CELLS
 	for raw in allowed_by_piece.get(str(_drag_piece_id), []):
 		if not raw is Array or raw.size() < 2:
 			continue
 		var origin := Vector2i(int(raw[1]), int(raw[0]))
-		var snap_pointer := board_origin + Vector2(
-			(float(origin.x) + float(bounds.size.x) * 0.5) * cell_size,
-			(float(origin.y + bounds.size.y) + DRAG_LIFT_CELLS) * cell_size
-		)
+		var snap_pointer := board_origin + Vector2(origin) * cell_size + pointer_offset
 		var distance := position.distance_to(snap_pointer)
 		if distance <= best_distance:
 			best_distance = distance
@@ -869,6 +890,15 @@ func _tray_slot_rect(slot_index: int) -> Rect2:
 	)
 
 
+func _tray_piece_at_position(position: Vector2) -> int:
+	# Hit regions must not depend on _draw having run since the last scroll/sort.
+	for index in range(tray_slot_piece_ids.size()):
+		var piece_id := int(tray_slot_piece_ids[index])
+		if piece_id >= 0 and not placements.has(str(piece_id)) and _tray_slot_rect(index).has_point(position):
+			return piece_id
+	return -1
+
+
 func _piece_for_initial_slot(slot_index: int) -> Dictionary:
 	var pieces: Array = assembly_data.get("pieces", [])
 	for piece in pieces:
@@ -880,9 +910,25 @@ func _piece_for_initial_slot(slot_index: int) -> Dictionary:
 func _prepare_return_slot_focus(animated: bool = true) -> void:
 	if _return_slot_index >= 0:
 		return
-	_return_slot_index = tray_slot_piece_ids.find(_drag_piece_id)
+	# Preview the same automatic order the controller will commit on release.
+	var preview_placements := placements.duplicate()
+	preview_placements.erase(str(_drag_piece_id))
+	_return_preview_slots = CompositeLevel.sanitize_tray_slots(assembly_data, preview_placements)
+	_return_scroll_before = tray_scroll
+	_return_slot_index = _return_preview_slots.find(_drag_piece_id)
 	if _return_slot_index >= 0:
 		focus_tray_slot(_return_slot_index, animated)
+
+
+func _clear_return_preview(restore_scroll: bool) -> void:
+	if _return_slot_index < 0:
+		return
+	if restore_scroll:
+		if _tray_focus_tween and _tray_focus_tween.is_valid():
+			_tray_focus_tween.kill()
+		_set_tray_scroll(_return_scroll_before)
+	_return_slot_index = -1
+	_return_preview_slots.clear()
 
 
 func focus_tray_slot(slot_index: int, animated: bool = true) -> void:
@@ -895,8 +941,12 @@ func focus_tray_slot(slot_index: int, animated: bool = true) -> void:
 		0.0,
 		_tray_max_scroll()
 	)
+	# A return commit must not restart or snap an already-running preview scroll.
+	if animated and _tray_focus_tween and _tray_focus_tween.is_valid() and is_equal_approx(target_scroll, _tray_focus_target_scroll):
+		return
 	if _tray_focus_tween and _tray_focus_tween.is_valid():
 		_tray_focus_tween.kill()
+	_tray_focus_target_scroll = target_scroll
 	if not animated or is_equal_approx(tray_scroll, target_scroll):
 		_set_tray_scroll(target_scroll)
 		return
