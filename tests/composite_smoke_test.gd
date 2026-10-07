@@ -154,6 +154,11 @@ func _run() -> void:
 	game._start_home_composite_flow()
 	await process_frame
 	assert(game.dialog_controller.is_dialog_open("home_composite_locked"), "Tapping the locked block entry should open its requirement dialog")
+	var locked_dialog_title := game.dialog_controller.find_child("DialogTitle", true, false) as Label
+	var locked_dialog_message := game.dialog_controller.find_child("DialogMessage", true, false) as Label
+	assert(locked_dialog_title.text == game._t("拼块玩法"), "The locked entry dialog should avoid repeating that the mode is locked")
+	assert(locked_dialog_message.text == game._t("第 %d 关解锁", [composite_unlock_display]), "The locked entry should only state when block gameplay unlocks")
+	assert(not locked_dialog_message.text.contains("6×6"), "The player-facing unlock prompt should not expose board-size implementation details")
 	assert(not game.home_composite_entry_active, "A locked block entry must not create an isolated gameplay session")
 	assert(game.formal_progress_snapshot == snapshot_before_locked_tap, "A locked entry must not mutate the formal progress snapshot")
 	game.dialog_controller.hide_dialog(true)
@@ -181,7 +186,6 @@ func _run() -> void:
 	assert(str(game.active_schedule.get("compositePatternSelectionMode", "")) == "opening_cycle", "The first four rounds should expose the deterministic opening cycle")
 	assert(str(game.active_schedule.get("compositeBaseDifficultyClass", "")) == str(game.current_level.get("difficulty", "")), "The block director should retain the ordinary recommendation difficulty class")
 	assert(game.composite_data.get("validLayouts", []).size() == 1, "The debug flow should stop after its first legal layout")
-	assert(not game.active_schedule.has("assemblyPrebuiltData"), "Transient prebuilt assembly data must be consumed before the schedule is saved")
 	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [1]), "The isolated entry should display its round number")
 	assert(game.level_label.get_parent().get_combined_minimum_size().x <= 527.0, "The assembly header must fit the 539px viewport after safe margins")
 	assert(not game.level_select_button.visible, "The isolated block challenge should hide formal level selection")
@@ -311,6 +315,14 @@ func _run() -> void:
 	assert(game._home_composite_resume_round() == 4, "A completed saved block round should advance the next entry instead of replaying the completed round")
 	game._update_home()
 	assert(game.home_composite_button.text == game._t("拼块玩法 · -%d 金币", [2]), "A new round after the daily quota should display its entry cost")
+	var shortage_quote: Dictionary = game._home_composite_round_quote(4)
+	game._show_home_composite_coin_shortage(shortage_quote)
+	var composite_shortage_message := game.dialog_controller.find_child("DialogMessage", true, false) as Label
+	assert(composite_shortage_message.text == game._t("本局需要 %d 金币", [int(shortage_quote.get("entryCost", 0))]), "The block-entry shortage prompt should only state the round's coin cost")
+	assert(composite_shortage_message.text.length() <= 30, "The block-entry shortage prompt should stay concise")
+	var composite_shop_button: Button = game.dialog_controller.find_child("DialogAction_shop", true, false)
+	assert(composite_shop_button != null and composite_shop_button.text == game._t("前往商店"), "Block-entry shortage should link to the shop")
+	game.dialog_controller.hide_dialog(true)
 	game.home_composite_history = unfinished_history
 	game.composite_coin_progress = saved_coin_progress
 	var crown_history: Dictionary = unfinished_history.duplicate(true)
@@ -320,7 +332,6 @@ func _run() -> void:
 	crown_state["finalSolution"] = history_layout["solution"].duplicate(true)
 	crown_state["layoutSignature"] = str(history_layout["signature"])
 	crown_history["compositeState"] = crown_state
-	crown_history["activeSchedule"]["assemblyLayoutSignature"] = str(history_layout["signature"])
 	crown_history["isCompleted"] = false
 	game.home_composite_history = crown_history
 	game._start_home_composite_flow()
@@ -337,17 +348,30 @@ func _run() -> void:
 	assert(not tutorial_recommendation.is_empty(), "The opening director should provide a tutorial-ready round")
 	level_index = int(tutorial_recommendation.get("levelIndex", -1))
 	var schedule: Dictionary = tutorial_recommendation.get("schedule", {})
-	assert(bool(schedule.get("assemblyEnabled", false)), "The opening tutorial schedule should enable assembly")
+	assert(str(schedule.get("mode", "")) == "home_composite", "Block recommendations belong to the independent home entry")
+	assert(game._capture_formal_progress_snapshot(), "The fixture must preserve the formal board before entering block gameplay")
+	game.home_composite_progress_snapshot = game.formal_progress_snapshot.duplicate(true)
+	game.formal_progress_snapshot.clear()
+	game.home_composite_entry_active = true
+	game.home_composite_round = 1
 	game._load_level(level_index, false, schedule)
 	game._show_game()
 	await process_frame
 	assert(game._is_assembly_phase(), "Composite schedule should start in assembly")
+	game.home_composite_round = 10
+	game._maybe_start_hidden_diamond_event()
+	assert(not game.hidden_diamond_overlay.visible and not game.hidden_diamond_event_ids.has("composite_round_10"), "Assembly must not start or consume the hidden diamond event")
+	game.composite_phase = "transition"
+	game._maybe_start_hidden_diamond_event()
+	assert(not game.hidden_diamond_overlay.visible and not game.hidden_diamond_event_ids.has("composite_round_10"), "Flattening must not start or consume the hidden diamond event")
+	game.composite_phase = "assembly"
+	game.home_composite_round = 1
 	assert(game.composite_intro_running and game.assembly_view.is_intro_active(), "The first composite level should start the automatic placement walkthrough")
 	assert(game.assembly_view.input_locked, "The automatic walkthrough must lock board input while keeping its skip control available")
 	game._show_home()
 	await process_frame
 	assert(not game.composite_tutorial_seen and not game.composite_intro_running, "Leaving the guide must cancel it without persisting the seen state")
-	game._show_game()
+	game._start_home_composite_flow()
 	await process_frame
 	await process_frame
 	assert(game.assembly_view.is_intro_active(), "Returning to an unseen block guide should offer it again")
@@ -443,7 +467,9 @@ func _run() -> void:
 	root.add_child(game)
 	await process_frame
 	await process_frame
-	assert(game._is_assembly_phase(), "Restart should resume the assembly phase")
+	game._start_home_composite_flow()
+	await process_frame
+	assert(game._is_assembly_phase(), "Re-entering block gameplay after restart should resume the assembly phase")
 	assert(game.composite_placements.has(str(first_piece_id)), "Restart should restore placed blocks")
 	assert(game.composite_placement_history.back() == first_piece_id, "Restart should restore the order used for automatic deadlock revival")
 	var revive_origin: Array = game.composite_placements[str(first_piece_id)].duplicate()
@@ -467,6 +493,27 @@ func _run() -> void:
 		game._on_assembly_placement_requested(piece_id, runtime_layout["placements"][str(piece_id)])
 	await create_timer(1.05).timeout
 	assert(game.composite_phase == "crown", "Completing the construction zone should enter the crown phase")
+	game.home_composite_round = 10
+	game.hidden_diamond_controller.progress["modes"]["composite"]["next"] = 10
+	game._prepare_hidden_diamond_board(true)
+	game._maybe_start_hidden_diamond_event()
+	assert(game.hidden_diamond_overlay.visible and game.hidden_diamond_event_ids.has("composite_round_10"), "The hidden diamond event may start only after the transition has finished")
+	var before_background_states: Array = game.cell_states.duplicate(true)
+	var before_background_diamonds: int = game.player_wallet.diamond_balance
+	game.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+	game.notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	assert(not game.hidden_diamond_overlay.visible and not game.hidden_diamond_overlay.is_processing(), "Backgrounding must discard the hidden event, including its timer")
+	assert(game.hidden_diamond_controller._deadline_msec == 0 and not game.game_screen.hidden_diamond_hud.visible, "Expired event counters must not resume")
+	game.notification(Node.NOTIFICATION_APPLICATION_FOCUS_IN)
+	game._maybe_start_hidden_diamond_event()
+	assert(not game.hidden_diamond_overlay.visible, "Focus-in alone cannot restart an event while the app is still paused")
+	game.notification(Node.NOTIFICATION_APPLICATION_RESUMED)
+	await process_frame
+	game._maybe_start_hidden_diamond_event()
+	assert(not game.hidden_diamond_overlay.visible and game.hidden_diamond_event_ids.has("composite_round_10"), "Returning to the foreground must not reoffer the interrupted event")
+	assert(game.composite_phase == "crown" and game.cell_states == before_background_states, "After background expiration the original crown board must remain unchanged")
+	assert(game.player_wallet.diamond_balance == before_background_diamonds, "An interrupted event must not grant diamonds")
+	game.home_composite_round = 1
 	assert(game.progress_row.visible and game.clear_button.visible and game.crown_find_button.visible and game.hint_button.visible, "Crown UI should return after the transition")
 	assert(not game.hint_button.disabled, "Formal Hint must be re-enabled after leaving the assembly phase")
 	assert(not game.assembly_view.visible, "Assembly view should leave after conversion")
@@ -475,7 +522,7 @@ func _run() -> void:
 	game._update_hint_button()
 	game._use_hint()
 	assert(game.hint_count == 0 and not game.board.guide_cells.is_empty(), "Formal Hint should remain usable and draw its X-only guide after conversion")
-	var final_signature := str(game.active_schedule.get("assemblyLayoutSignature", ""))
+	var final_signature := str(game.composite_final_layout.get("signature", ""))
 	assert(not final_signature.is_empty(), "Final assembly signature should be locked")
 	game._save_game()
 	game.queue_free()
@@ -485,8 +532,10 @@ func _run() -> void:
 	root.add_child(game)
 	await process_frame
 	await process_frame
-	assert(game.composite_phase == "crown", "Restart after conversion should stay in crown mode")
-	assert(str(game.active_schedule.get("assemblyLayoutSignature", "")) == final_signature, "Restart should keep the same generated color layout")
+	game._start_home_composite_flow()
+	await process_frame
+	assert(game.composite_phase == "crown", "Re-entering block gameplay after conversion should stay in crown mode")
+	assert(str(game.composite_final_layout.get("signature", "")) == final_signature, "Restart should keep the same generated color layout")
 	game.queue_free()
 	await process_frame
 
@@ -571,7 +620,6 @@ func _load_multi_piece_home_fixture(game) -> void:
 			if offline_data.get("pieces", []).size() < 2:
 				continue
 			var schedule := LevelDirectorScript.manual_schedule_for_level(game.levels, level_index, 1, "home_composite")
-			schedule["assemblyEnabled"] = true
 			schedule["assemblySeed"] = int(offline_data.get("seed", 0))
 			schedule["assemblyDifficultyPattern"] = pattern
 			schedule["homeCompositeRound"] = game.home_composite_round
@@ -889,7 +937,10 @@ func _test_tray_return_slot_focus(view) -> void:
 	view._drag_source = "board"
 	view._return_slot_index = -1
 	view._prepare_return_slot_focus()
-	assert(view._return_slot_index == 3, "Returning a board piece should focus its current completed slot")
+	var returned_placements := view.placements.duplicate()
+	returned_placements.erase("3")
+	var expected_slots := CompositeLevelScript.sanitize_tray_slots(view.assembly_data, returned_placements)
+	assert(view._return_slot_index == expected_slots.find(3), "Returning a board piece should preview its final sorted slot")
 	view.focus_tray_slot(view._return_slot_index, false)
 	assert(view.tray_scroll < view._tray_max_scroll(), "The tray should move away from its tail to focus the selected empty slot")
 	view.assembly_data = saved_data
@@ -899,6 +950,7 @@ func _test_tray_return_slot_focus(view) -> void:
 	view._drag_piece_id = -1
 	view._drag_source = ""
 	view._return_slot_index = -1
+	view._return_preview_slots.clear()
 	view.queue_redraw()
 
 

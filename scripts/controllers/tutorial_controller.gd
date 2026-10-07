@@ -7,6 +7,7 @@ const PHASE_HINT := 3
 const PHASE_HINT_PLACE := 4
 const PHASE_CROWN_FIND := 5
 const PHASE_DONE := 6
+const PHASE_HINT_MARK := 7
 
 var completed := false
 var started := false
@@ -79,7 +80,10 @@ func finish() -> void:
 
 func guides() -> Dictionary:
 	var result := {}
-	if interaction_stage == PHASE_PLACE or interaction_stage == PHASE_HINT_PLACE:
+	if interaction_stage == PHASE_HINT_MARK:
+		if hint_target.x >= 0:
+			result[hint_target] = "exclude_empty"
+	elif interaction_stage == PHASE_PLACE or interaction_stage == PHASE_HINT_PLACE:
 		var place_target := current_place_target()
 		if place_target.x >= 0:
 			result[place_target] = "place"
@@ -91,6 +95,14 @@ func guides() -> Dictionary:
 
 
 func press(cell: Vector2i, from_drag: bool = false) -> Dictionary:
+	if interaction_stage == PHASE_HINT_MARK:
+		if cell != hint_target or hint_target.x < 0 or str(_states[cell.y][cell.x]) != "empty":
+			return {"valid": false, "reason": "unexpected", "focus": hint_target}
+		_push_history()
+		_states[cell.y][cell.x] = "blocked"
+		hint_target = next_solution_cell()
+		interaction_stage = PHASE_HINT_PLACE
+		return {"valid": true, "cell": cell, "states": _states, "hint_marked": true, "target": hint_target}
 	if interaction_stage != PHASE_ADJACENT and interaction_stage != PHASE_ROW_COL:
 		return {"valid": false, "reason": "phase", "focus": focus_target()}
 	var expected := next_single_map_exclusion_cell()
@@ -162,9 +174,11 @@ func use_hint() -> Dictionary:
 	if interaction_stage != PHASE_HINT:
 		return {"valid": false, "focus": focus_target()}
 	hint_button_taught = true
-	var result := _activate_direct_clue("color")
-	result["valid"] = true
-	return result
+	hint_target = next_hint_exclusion_cell()
+	if hint_target.x < 0:
+		return {"valid": false, "reason": "no_exclusion", "focus": focus_target()}
+	interaction_stage = PHASE_HINT_MARK
+	return {"valid": true, "action": "mark_exclusion", "target": hint_target, "phase": interaction_stage}
 
 
 func use_crown_find() -> Dictionary:
@@ -202,6 +216,8 @@ func undo() -> Dictionary:
 
 
 func focus_target() -> Vector2i:
+	if interaction_stage == PHASE_HINT_MARK:
+		return hint_target
 	if interaction_stage == PHASE_PLACE or interaction_stage == PHASE_HINT_PLACE:
 		return current_place_target()
 	if interaction_stage == PHASE_ADJACENT or interaction_stage == PHASE_ROW_COL:
@@ -236,6 +252,8 @@ func _push_history() -> void:
 
 func hand_action(tutorial_kind: String) -> String:
 	if tutorial_kind == "single_map":
+		if interaction_stage == PHASE_HINT_MARK:
+			return "single"
 		if interaction_stage == PHASE_PLACE or interaction_stage == PHASE_HINT_PLACE:
 			return "double"
 		if interaction_stage == PHASE_ROW_COL:
@@ -296,6 +314,17 @@ func next_single_map_exclusion_cell() -> Vector2i:
 	for cell in valid_exclusion_cells():
 		if _states[cell.y][cell.x] == "empty":
 			return cell
+	return Vector2i(-1, -1)
+
+
+func next_hint_exclusion_cell() -> Vector2i:
+	var rows := _states.size()
+	var solutions := solution_cells()
+	for row in range(rows):
+		for col in range(_states[row].size()):
+			var cell := Vector2i(col, row)
+			if _states[row][col] == "empty" and not solutions.has(cell):
+				return cell
 	return Vector2i(-1, -1)
 
 

@@ -18,6 +18,18 @@ const ROYAL_EDGE_BOTTOM := Color("#8CC8E5")
 const SUCCESS_GREEN := Color("#48B985")
 const WARNING_YELLOW := Color("#FFF1BD")
 const DANGER_RED := Color("#F25D72")
+const RELIEF_GOLD_LIGHT := Color("#FFF1B8")
+const RELIEF_GOLD := Color("#F2BE55")
+const RELIEF_GOLD_DARK := Color("#B37523")
+const RELIEF_BLUE_LIGHT := Color("#58AFF1")
+const RELIEF_BLUE_DARK := Color("#2464B0")
+const RELIEF_BLUE_EDGE := Color("#18457B")
+const RELIEF_CREAM_LIGHT := Color("#FFFEF4")
+const RELIEF_CREAM_DARK := Color("#EDDFBA")
+const RELIEF_WARNING_LIGHT := Color("#F88A6E")
+const RELIEF_WARNING_DARK := Color("#C8484C")
+const RELIEF_DEPTH := 5.0
+const RELIEF_RADIUS := 18.0
 const ASSEMBLY_TRAY := Color("#20283A")
 const ASSEMBLY_TRAY_EDGE := Color("#111827")
 const ASSEMBLY_BOARD_SURFACE := Color("#EEEAE3")
@@ -51,6 +63,8 @@ const CROWN_BASE_FONT_RATIO := 0.66
 const CROWN_FEEDBACK_FONT_DELTA := 0.05
 const OPENING_CROWN_FONT_DELTA := 0.16
 const CROWN_MAX_FONT_RATIO := 0.72
+const GOLDEN_RATIO := 1.61803398875
+const RESOURCE_BALANCE_ICON_SIZE := 24.0
 
 const REGION_COLOR_NAMES := ["蓝色", "红色", "绿色", "金色", "紫色", "橙色", "青色", "粉色", "青柠色", "靛蓝色"]
 const REGION_PATTERN_NAMES := ["散点纹", "三竖线纹", "爪印纹", "双弧纹", "菱形点阵", "斜线纹", "圆环纹", "双横线纹", "弧叶纹", "菱形纹"]
@@ -95,6 +109,28 @@ const WRONG_X_BACKDROP_RADIUS_RATIO := 0.32
 
 static func cell_gap(cell_size: float) -> float:
 	return maxf(CELL_GAP_MIN, round(cell_size * CELL_GAP_RATIO))
+
+
+static func resource_balance_icon_value_gap() -> float:
+	return round(RESOURCE_BALANCE_ICON_SIZE / GOLDEN_RATIO)
+
+
+static func raised_button_style(color: Color, radius: int = 16, pressed: bool = false, disabled: bool = false) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color.darkened(0.04) if pressed else color
+	style.border_color = color.darkened(0.16 if disabled else 0.24)
+	style.set_corner_radius_all(radius)
+	style.set_border_width_all(1)
+	style.border_width_bottom = 2 if pressed or disabled else 5
+	style.shadow_color = Color(0.10, 0.20, 0.32, 0.08 if pressed or disabled else 0.17)
+	style.shadow_size = 2 if pressed or disabled else 4
+	style.shadow_offset = Vector2(0, 1 if pressed or disabled else 3)
+	# Keep content geometry identical across states to avoid label reflow.
+	style.content_margin_left = 0
+	style.content_margin_right = 0
+	style.content_margin_top = 2
+	style.content_margin_bottom = 5
+	return style
 
 
 static func cell_corner_radius(cell_size: float) -> int:

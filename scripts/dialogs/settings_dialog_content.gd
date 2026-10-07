@@ -43,6 +43,9 @@ func configure(localizer: Callable = Callable()) -> void:
 	language_picker.focus_mode = Control.FOCUS_ALL
 	language_picker.add_theme_font_size_override("font_size", 16)
 	language_picker.add_theme_color_override("font_color", Color("#26334A"))
+	language_picker.add_theme_color_override("font_hover_color", Color("#26334A"))
+	language_picker.add_theme_color_override("font_pressed_color", Color("#26334A"))
+	language_picker.add_theme_color_override("font_focus_color", Color("#26334A"))
 	language_picker.add_theme_stylebox_override("normal", _button_style(Color("#F1F4F7"), 12))
 	row.add_child(language_picker)
 

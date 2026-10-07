@@ -3,6 +3,7 @@ extends RefCounted
 
 const LevelDirectorScript = preload("res://scripts/level_director.gd")
 const CompositePlacementEngineScript = preload("res://scripts/rules/composite_placement_engine.gd")
+const RecommendationFeaturesScript = preload("res://scripts/composite_recommendation_features.gd")
 
 const PATTERNS := ["simple", "medium", "hard"]
 const MIN_BOARD_SIZE := 6
@@ -24,6 +25,8 @@ static func normalize_progress(progress: Dictionary) -> Dictionary:
 		progress["patternStatsBySize"] = {}
 	if not progress.has("recentRuns") or not progress["recentRuns"] is Array:
 		progress["recentRuns"] = []
+	if not progress.has("statsByFeature") or not progress["statsByFeature"] is Dictionary:
+		progress["statsByFeature"] = {}
 	return progress
 
 
@@ -89,6 +92,8 @@ static func recommend(
 	var offline_data: Dictionary = {}
 	var exploration := 0.0
 	var selection_mode := "opening_cycle"
+	var feature_selection := {}
+	var feature_quality_fallback := false
 	if round_number >= 1 and round_number <= OPENING_PATTERN_CYCLE.size():
 		var preferred_pattern := str(OPENING_PATTERN_CYCLE[round_number - 1])
 		if round_number == 1:
@@ -108,6 +113,21 @@ static func recommend(
 			pattern = preferred_pattern if patterns.has(preferred_pattern) else _opening_fallback_pattern(patterns)
 			offline_data = _find_entry(composite_entries, level_id, pattern)
 	else:
+		var pools := _feature_candidate_pools(catalog_levels, composite_entries, selected_level, selector_progress)
+		var qualified: Dictionary = pools["qualified"]
+		if qualified.is_empty():
+			# Keep the selected size/base difficulty and the existing dedupe tier.
+			# A depleted catalog is explicit. Prefer a basic pattern rather than
+			# presenting a degenerate two-piece cut as a Hard challenge.
+			var fallback_pools: Dictionary = pools["fallback"]
+			for fallback_pattern in PATTERNS:
+				if fallback_pools.has(fallback_pattern):
+					qualified = {fallback_pattern: fallback_pools[fallback_pattern]}
+					break
+			feature_quality_fallback = true
+		patterns = PATTERNS.filter(func(value: String) -> bool: return qualified.has(value))
+		if patterns.is_empty():
+			return {}
 		var rng := RandomNumberGenerator.new()
 		rng.seed = _recommendation_seed(round_number, formal_display_level, progress)
 		exploration = exploration_probability(progress, size)
@@ -117,13 +137,21 @@ static func recommend(
 		else:
 			selection_mode = "posterior_multinomial"
 			pattern = _sample_pattern_from_posterior(progress, size, patterns, rng)
-		offline_data = _find_entry(composite_entries, level_id, pattern)
+		feature_selection = RecommendationFeaturesScript.select(
+			qualified[pattern], pattern, selection_mode == "random_exploration", progress, size, rng
+		)
+		if feature_selection.is_empty():
+			return {}
+		var candidate: Dictionary = feature_selection["candidate"]
+		selected_level = candidate["level"]
+		source_index = int(selected_level["compositeSourceIndex"])
+		level_id = int(selected_level["levelId"])
+		offline_data = candidate["data"]
 	if offline_data.is_empty():
 		return {}
 	_ensure_pattern_size(progress, size, patterns)
 
 	var schedule := LevelDirectorScript.manual_schedule_for_level(levels, source_index, 1, "home_composite")
-	schedule["assemblyEnabled"] = true
 	schedule["assemblySeed"] = int(offline_data.get("seed", 0))
 	schedule["assemblyDifficultyPattern"] = pattern
 	schedule["homeCompositeRound"] = maxi(1, round_number)
@@ -133,11 +161,55 @@ static func recommend(
 	schedule["compositeRecommendationDisplay"] = recommendation_display
 	schedule["compositePatternSelectionMode"] = selection_mode
 	schedule["compositeExplorationProbability"] = exploration
+	schedule["assemblyRecommendationFeatures"] = RecommendationFeaturesScript.measure(offline_data)
+	schedule["assemblyFeatureVersion"] = RecommendationFeaturesScript.BUCKET_VERSION
+	schedule["assemblyFeatureBuckets"] = RecommendationFeaturesScript.feature_buckets(schedule["assemblyRecommendationFeatures"])
+	schedule["assemblyFeatureSampledReward"] = feature_selection.get("sampledReward", 0.0)
+	schedule["assemblyFeatureExplorationDimension"] = feature_selection.get("explorationDimension", "")
+	schedule["assemblyFeatureExplorationBucket"] = feature_selection.get("explorationBucket", "")
+	schedule["assemblyFeatureQualityFallback"] = feature_quality_fallback
 	return {
 		"levelIndex": source_index,
 		"difficultyPattern": pattern,
 		"schedule": schedule
 	}
+
+
+static func _feature_candidate_pools(
+	catalog_levels: Array, entries, selected_level: Dictionary, selector_progress: Dictionary
+) -> Dictionary:
+	var index := LevelDirectorScript.build_level_index(catalog_levels)
+	var completed := LevelDirectorScript._completed_ids(selector_progress)
+	var recent := LevelDirectorScript._recent_level_ids(selector_progress, LevelDirectorScript.DEDUPE_HISTORY_WINDOW)
+	var eligible: Array = []
+	# Reuse the ordinary director's exact dedupe tiers; re-ranking must not
+	# resurrect filtered candidates or widen the selected recommendation arm.
+	for relaxation in [[false, false], [true, false], [true, true]]:
+		eligible = LevelDirectorScript._candidate_indices(
+			catalog_levels, index, [int(selected_level.get("rows", 0))], [str(selected_level.get("difficulty", ""))],
+			completed, recent, relaxation[0], relaxation[1]
+		)
+		if not eligible.is_empty():
+			break
+	var qualified := {}
+	var fallback := {}
+	for candidate_index in eligible:
+		var level: Dictionary = catalog_levels[int(candidate_index)]
+		var level_id := int(level.get("levelId", -1))
+		for pattern in _available_patterns(entries, level_id):
+			var data := _find_entry(entries, level_id, str(pattern))
+			var features := RecommendationFeaturesScript.measure(data)
+			if RecommendationFeaturesScript.feature_buckets(features).is_empty():
+				continue
+			var candidate := {"level": level, "data": data, "features": features}
+			if not fallback.has(pattern):
+				fallback[pattern] = []
+			fallback[pattern].append(candidate)
+			if RecommendationFeaturesScript.meets_minimum(features, str(pattern)):
+				if not qualified.has(pattern):
+					qualified[pattern] = []
+				qualified[pattern].append(candidate)
+	return {"qualified": qualified, "fallback": fallback}
 
 
 static func _opening_two_piece_candidate(
@@ -212,6 +284,15 @@ static func record_result(
 			selector_progress, level, selector_schedule, elapsed_seconds, moves, hints,
 			completed_date, completed_unix, direct_finds
 		)
+	# Attach immutable structural evidence to the authoritative reward run.
+	# Later engagement callbacks update this very run, not whichever level is
+	# currently on screen. Old runs without measurements are not guessed/backfilled.
+	var reward_run: Dictionary = selector_progress["recentRuns"].back()
+	reward_run["homeCompositeRound"] = int(schedule.get("homeCompositeRound", 1))
+	reward_run["assemblyDifficultyPattern"] = str(schedule.get("assemblyDifficultyPattern", "medium"))
+	reward_run["assemblyFeatureVersion"] = RecommendationFeaturesScript.BUCKET_VERSION
+	reward_run["assemblyFeatureBuckets"] = RecommendationFeaturesScript.feature_buckets(schedule.get("assemblyRecommendationFeatures", {}))
+	RecommendationFeaturesScript.observe_run(progress, reward_run)
 
 	var size := int(level.get("rows", schedule.get("selectedSize", 0)))
 	var pattern := str(schedule.get("assemblyDifficultyPattern", "medium"))
@@ -249,10 +330,45 @@ static func record_result(
 		"elapsedSeconds": elapsed_seconds,
 		"moves": moves,
 		"hints": hints,
-		"directFinds": direct_finds
+		"directFinds": direct_finds,
+		"assemblyFeatures": schedule.get("assemblyRecommendationFeatures", {}).duplicate(true),
+		"assemblyFeatureBuckets": reward_run["assemblyFeatureBuckets"].duplicate(true),
+		"featureExplorationDimension": str(schedule.get("assemblyFeatureExplorationDimension", "")),
+		"featureExplorationBucket": str(schedule.get("assemblyFeatureExplorationBucket", "")),
+		"featureQualityFallback": bool(schedule.get("assemblyFeatureQualityFallback", false))
 	})
 	while runs.size() > MAX_RUN_HISTORY:
 		runs.pop_front()
+
+
+static func record_next_round_opened(progress: Dictionary, round_number: int, now_unix: int = 0) -> void:
+	normalize_progress(progress)
+	var selector: Dictionary = progress["levelRecommendationProgress"]
+	var runs: Array = selector["recentRuns"]
+	if runs.is_empty():
+		return
+	var previous: Dictionary = runs.back()
+	if not bool(previous.get("completed", false)) or int(previous.get("homeCompositeRound", -1)) != round_number - 1:
+		return
+	if bool(previous.get("nextLevelObserved", false)):
+		return
+	var completed_unix := int(previous.get("completedUnix", 0))
+	if now_unix > 0 and completed_unix > 0 and now_unix - completed_unix >= LevelDirectorScript.NEXT_LEVEL_WINDOW_SECONDS:
+		previous["nextLevelObserved"] = true
+		LevelDirectorScript._update_run_metric(selector, previous, "nextLevel", false)
+	else:
+		LevelDirectorScript.record_next_level_opened(selector)
+	RecommendationFeaturesScript.observe_run(progress, previous)
+
+
+static func record_retention_if_needed(progress: Dictionary, today: String, now_unix: int) -> bool:
+	normalize_progress(progress)
+	var selector: Dictionary = progress["levelRecommendationProgress"]
+	var changed := LevelDirectorScript.record_retention_if_needed(selector, today, now_unix)
+	for run in selector["recentRuns"]:
+		if run is Dictionary:
+			changed = RecommendationFeaturesScript.observe_run(progress, run) or changed
+	return changed
 
 
 static func exploration_probability(progress: Dictionary, size: int) -> float:

@@ -1,5 +1,9 @@
 extends Control
 
+# A platform adapter must call finished on close, cancellation or load failure.
+# No connected adapter means unavailable; this signal never fabricates a reward.
+signal rewarded_ad_requested(finished: Callable)
+
 const LevelStoreScript = preload("res://scripts/level_store.gd")
 const GameBoardScript = preload("res://scripts/game_board.gd")
 const LevelDirectorScript = preload("res://scripts/level_director.gd")
@@ -15,6 +19,8 @@ const CompositeLevelStoreScript = preload("res://scripts/composite_level_store.g
 const CompositeLevelDirectorScript = preload("res://scripts/composite_level_director.gd")
 const AssemblyViewScript = preload("res://scripts/assembly_view.gd")
 const HomePageScript = preload("res://scripts/pages/home_page.gd")
+const ShopPageScript = preload("res://scripts/pages/shop_page.gd")
+const ShopCatalogScript = preload("res://scripts/services/shop_catalog.gd")
 const FormalLevelPageScript = preload("res://scripts/pages/formal_level_page.gd")
 const CompositeLevelPageScript = preload("res://scripts/pages/composite_level_page.gd")
 const ResultPageScript = preload("res://scripts/pages/result_page.gd")
@@ -25,6 +31,7 @@ const SettingsDialogContentScript = preload("res://scripts/dialogs/settings_dial
 const OpeningKingOverlayScript = preload("res://scripts/overlays/opening_king_overlay.gd")
 const SplashOverlayScript = preload("res://scripts/overlays/splash_overlay.gd")
 const TutorialOverlayScript = preload("res://scripts/overlays/tutorial_overlay.gd")
+const HiddenDiamondOverlayScript = preload("res://scripts/overlays/hidden_diamond_overlay.gd")
 const FeedbackLayerScript = preload("res://scripts/overlays/feedback_layer.gd")
 const TutorialControllerScript = preload("res://scripts/controllers/tutorial_controller.gd")
 const CompositeGameControllerScript = preload("res://scripts/controllers/composite_game_controller.gd")
@@ -34,15 +41,17 @@ const CrownRuleEngineScript = preload("res://scripts/rules/crown_rule_engine.gd"
 const CompositePlacementEngineScript = preload("res://scripts/rules/composite_placement_engine.gd")
 const FormalGameControllerScript = preload("res://scripts/controllers/formal_game_controller.gd")
 const PlayerWalletScript = preload("res://scripts/services/player_wallet.gd")
+const HiddenDiamondControllerScript = preload("res://scripts/controllers/hidden_diamond_controller.gd")
 const CompositeEntryServiceScript = preload("res://scripts/services/composite_entry_service.gd")
 const GameSaveServiceScript = preload("res://scripts/storage/game_save_service.gd")
 const RunResultServiceScript = preload("res://scripts/services/run_result_service.gd")
+const RunAccuracyScript = preload("res://scripts/controllers/run_accuracy.gd")
 const ARROW_RIGHT_ICON: Texture2D = preload("res://assets/ui/arrow_right.svg")
 const UI_FONT: Font = preload("res://assets/fonts/NotoSansSC-Regular.ttf")
 const ARABIC_FONT: Font = preload("res://assets/fonts/NotoSansArabic-Regular.ttf")
 const SAVE_PATH := "user://color_queens_save.json"
 const SAVE_PATH_OVERRIDE_SETTING := "color_king/testing/save_path"
-const SAVE_VERSION := 16
+const SAVE_VERSION := 21
 const INITIAL_COIN_COUNT := 2
 const INITIAL_HINT_COUNT := 2
 const INITIAL_HEART_COUNT := 3
@@ -61,6 +70,7 @@ const TUTORIAL_PHASE_ADJACENT := TutorialControllerScript.PHASE_ADJACENT
 const TUTORIAL_PHASE_ROW_COL := TutorialControllerScript.PHASE_ROW_COL
 const TUTORIAL_PHASE_HINT := TutorialControllerScript.PHASE_HINT
 const TUTORIAL_PHASE_HINT_PLACE := TutorialControllerScript.PHASE_HINT_PLACE
+const TUTORIAL_PHASE_HINT_MARK := TutorialControllerScript.PHASE_HINT_MARK
 const TUTORIAL_PHASE_CROWN_FIND := TutorialControllerScript.PHASE_CROWN_FIND
 const TUTORIAL_PHASE_DONE := TutorialControllerScript.PHASE_DONE
 const REGION_COLOR_NAMES = UITokensScript.REGION_COLOR_NAMES
@@ -104,6 +114,11 @@ var director_progress: Dictionary = {}
 var composite_director_progress: Dictionary = {}
 var composite_coin_progress: Dictionary = CompositeCoinPolicyScript.default_progress()
 var player_wallet = PlayerWalletScript.new(INITIAL_COIN_COUNT)
+var hidden_diamond_controller
+var hidden_diamond_event_ids: Array:
+	get: return hidden_diamond_controller.offered_ids if hidden_diamond_controller else []
+var _application_paused := false
+var _application_focused := true
 var economy_progress: Dictionary:
 	get: return player_wallet.economy_progress
 	set(value): player_wallet.economy_progress = value
@@ -122,6 +137,7 @@ var run_started_unix := 0
 var run_move_count := 0
 var run_hint_count := 0
 var run_direct_find_count := 0
+var run_accuracy = RunAccuracyScript.new()
 var run_coin_exchange_count: int:
 	get: return player_wallet.run_exchange_count
 	set(value): player_wallet.run_exchange_count = value
@@ -231,6 +247,10 @@ var in_tutorial: bool:
 		if tutorial_controller: tutorial_controller.active = value
 
 var home_screen: Control
+var shop_page: Control
+var _shop_return_to_game := false
+var _ad_request_serial := 0
+var hidden_diamond_overlay: Control
 var game_screen: Control
 var formal_level_page
 var composite_level_page
@@ -260,6 +280,8 @@ var level_heart_label: Control:
 	get: return game_screen.level_heart_label if game_screen else null
 var level_heart_slots: Array[TextureRect]:
 	get: return game_screen.level_heart_slots if game_screen else []
+var level_heart_count_label: Label:
+	get: return game_screen.level_heart_count_label if game_screen else null
 var progress_bar: ProgressBar:
 	get: return game_screen.progress_bar if game_screen else null
 var progress_label: Label:
@@ -360,6 +382,12 @@ var splash_overlay
 
 
 func _ready() -> void:
+	hidden_diamond_controller = HiddenDiamondControllerScript.new()
+	add_child(hidden_diamond_controller)
+	hidden_diamond_controller.progress_changed.connect(_save_game)
+	hidden_diamond_controller.announcement_requested.connect(_show_hidden_diamond_announcement)
+	hidden_diamond_controller.hud_changed.connect(_update_hidden_diamond_hud)
+	hidden_diamond_controller.settled.connect(_on_hidden_diamond_finished)
 	formal_controller = FormalGameControllerScript.new()
 	tutorial_controller = TutorialControllerScript.new()
 	composite_controller = CompositeGameControllerScript.new()
@@ -382,10 +410,14 @@ func _ready() -> void:
 	audio_controller.set_audio_preferences(music_enabled, sfx_enabled, haptics_enabled)
 	_configure_font_fallbacks()
 	LevelDirectorScript.record_retention_if_needed(director_progress, _today_string(), int(Time.get_unix_time_from_system()))
+	CompositeLevelDirectorScript.record_retention_if_needed(composite_director_progress, _today_string(), int(Time.get_unix_time_from_system()))
 	_build_ui()
 	_apply_layout_direction()
 	current_level_index = clampi(current_level_index, 0, levels.size() - 1)
 	var resume_schedule := _schedule_for_current_level()
+	if resume_schedule.is_empty():
+		_show_fatal_error("没有找到可用关卡")
+		return
 	current_level_index = int(resume_schedule.get("levelIndex", current_level_index))
 	_load_level(current_level_index, true, resume_schedule, home_composite_entry_active)
 	if _should_play_startup_splash():
@@ -444,6 +476,39 @@ func _on_startup_splash_finished() -> void:
 	_complete_initial_route()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST and shop_page and shop_page.visible:
+		_close_shop()
+		return
+	match what:
+		NOTIFICATION_APPLICATION_PAUSED:
+			_application_paused = true
+		NOTIFICATION_APPLICATION_RESUMED:
+			_application_paused = false
+		NOTIFICATION_APPLICATION_FOCUS_OUT:
+			_application_focused = false
+		NOTIFICATION_APPLICATION_FOCUS_IN:
+			_application_focused = true
+		_:
+			return
+	if _application_paused or not _application_focused:
+		run_accuracy.commit_pending()
+		if hidden_diamond_controller and hidden_diamond_controller.has_external_pause():
+			hidden_diamond_controller.pause_for("external_focus")
+		else:
+			_cancel_hidden_diamond_event()
+		if is_node_ready() and not current_level.is_empty():
+			_save_game()
+	elif is_node_ready():
+		hidden_diamond_controller.resume_after("external_focus")
+		var normal_changed := LevelDirectorScript.record_retention_if_needed(director_progress, _today_string(), int(Time.get_unix_time_from_system()))
+		var composite_changed := CompositeLevelDirectorScript.record_retention_if_needed(composite_director_progress, _today_string(), int(Time.get_unix_time_from_system()))
+		if normal_changed or composite_changed:
+			_save_game()
+		# Only unoffered events may start here; interrupted ones stay consumed.
+		call_deferred("_maybe_start_hidden_diamond_event")
+
+
 func _exit_tree() -> void:
 	if composite_levels is CompositeLevelStore:
 		composite_levels.finish_pending_loads()
@@ -460,12 +525,12 @@ func _prime_composite_level_data() -> void:
 	if unlocked.is_empty():
 		return
 	var primary_size := int(unlocked.back())
-	if bool(active_schedule.get("assemblyEnabled", false)):
+	if home_composite_entry_active:
 		primary_size = int(active_schedule.get("selectedSize", primary_size))
 	# Restoring an assembly run needs its complete board data immediately. During a
 	# normal startup, start the preferred size first but do not hold back the home
 	# screen while the binary resource is decoded.
-	if bool(active_schedule.get("assemblyEnabled", false)):
+	if home_composite_entry_active:
 		composite_levels.load_size(primary_size)
 	else:
 		composite_levels.request_size_async(primary_size)
@@ -520,9 +585,20 @@ func _build_ui() -> void:
 		audio_controller.play_ui_tap()
 		_replay_tutorial_preserving_progress()
 	)
+	home_screen.shop_requested.connect(func() -> void: _show_shop())
 	add_child(home_screen)
 	home_start_button = home_screen.start_button
 	home_composite_button = home_screen.composite_button
+	shop_page = ShopPageScript.new()
+	shop_page.configure(Callable(localization, "text"))
+	shop_page.home_requested.connect(_close_shop)
+	shop_page.exchange_requested.connect(_exchange_diamond_for_coins)
+	add_child(shop_page)
+	shop_page.hide()
+	hidden_diamond_overlay = HiddenDiamondOverlayScript.new()
+	hidden_diamond_overlay.configure(Callable(localization, "text"))
+	hidden_diamond_overlay.dismissed.connect(hidden_diamond_controller.begin_challenge)
+	add_child(hidden_diamond_overlay)
 
 	formal_level_page = FormalLevelPageScript.new()
 	formal_level_page.configure(coin_count, Callable(localization, "text"), debug_level_selection_enabled)
@@ -619,6 +695,7 @@ func _activate_level_page(use_composite_page: bool) -> void:
 		composite_level_page.hide()
 	game_screen = target
 	target.set_coin_balance(coin_count)
+	target.set_diamond_balance(player_wallet.diamond_balance)
 	target.board.set_haptics_enabled(haptics_enabled)
 	if tutorial_overlay:
 		tutorial_overlay.set_board(board)
@@ -642,6 +719,7 @@ func _build_dialog_controller() -> void:
 	dialog_controller.set_localizer(Callable(localization, "text"))
 	dialog_controller.action_selected.connect(_on_dialog_action_selected)
 	dialog_controller.cancelled.connect(_on_dialog_cancelled)
+	dialog_controller.closed.connect(func(dialog_id: String) -> void: call_deferred("_on_commerce_dialog_closed", dialog_id))
 	add_child(dialog_controller)
 	composite_paid_entry_content = CompositePaidEntryContentScript.new()
 	composite_paid_entry_content.configure(Callable(localization, "text"))
@@ -695,11 +773,14 @@ func _schedule_for_manual_level(index: int) -> Dictionary:
 
 
 func _sync_director_completed_levels() -> void:
-	LevelDirectorScript.normalize_progress(director_progress)
 	director_progress["completedLevelIds"] = completed_levels.duplicate()
+	LevelDirectorScript.normalize_progress(director_progress)
 
 
 func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = {}, force_resume: bool = false) -> void:
+	hidden_diamond_controller.leave_board()
+	if hidden_diamond_overlay:
+		hidden_diamond_overlay.dismiss()
 	_cancel_opening_king_intro()
 	result_page.stop_petals()
 	in_tutorial = false
@@ -712,11 +793,18 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 		level_picker.disabled = false
 	if schedule.is_empty():
 		schedule = _schedule_for_manual_level(index)
-	active_schedule = schedule.duplicate(true)
+	active_schedule = GameSaveServiceScript.clean_schedule(schedule) if home_composite_entry_active else GameSaveServiceScript.formal_schedule(schedule)
 	current_level_index = int(active_schedule.get("levelIndex", index))
 	current_level_index = clampi(current_level_index, 0, levels.size() - 1)
 	player_level_number = maxi(1, int(active_schedule.get("displayLevel", player_level_number)))
 	current_level = levels[current_level_index].duplicate(true)
+	if not home_composite_entry_active:
+		# A migrated, already assembled board is ordinary puzzle data, not a
+		# reason to re-enter the retired mainline assembly flow.
+		var layout: Dictionary = active_schedule.get("boardLayout", {})
+		if _board_layout_is_valid(layout.get("regions"), layout.get("solution")):
+			current_level["regions"] = layout["regions"].duplicate(true)
+			current_level["solution"] = layout["solution"].duplicate(true)
 	_prepare_composite_level(allow_resume)
 	_activate_level_page(composite_mode)
 	is_completed = false
@@ -735,11 +823,13 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 		is_completed = resume_completed
 		is_failed = resume_failed
 		heart_count = clampi(heart_count, 0, current_heart_limit)
+		_observe_restored_accuracy()
 		if run_started_unix <= 0:
 			run_started_unix = int(Time.get_unix_time_from_system())
 	else:
 		cell_states = _blank_states(rows, cols)
 		heart_count = current_heart_limit
+		run_accuracy.reset()
 		run_started_unix = int(Time.get_unix_time_from_system())
 		run_move_count = 0
 		run_hint_count = 0
@@ -778,6 +868,7 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 	_validate_and_update(false)
 	_apply_composite_phase_ui()
 	if not _is_assembly_phase():
+		_prepare_hidden_diamond_board(not can_resume)
 		_request_opening_king_reveal()
 	_update_home()
 	if is_completed:
@@ -788,6 +879,8 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 		_prepare_failure_result_page()
 		completion_overlay.show()
 		_save_game()
+	else:
+		call_deferred("_maybe_start_hidden_diamond_event")
 
 
 func _prepare_composite_level(allow_resume: bool) -> void:
@@ -801,13 +894,15 @@ func _prepare_composite_level(allow_resume: bool) -> void:
 	composite_tray_slots.clear()
 	composite_deadlocked = false
 	composite_final_layout.clear()
+	if not home_composite_entry_active or int(current_level.get("rows", 0)) < CompositeLevelDirectorScript.MIN_BOARD_SIZE:
+		return
 	var level_id := int(current_level.get("levelId", -1))
 	var saved_matches := allow_resume and int(resume_composite_state.get("levelId", -2)) == level_id
 	var saved_phase := str(resume_composite_state.get("phase", "")) if saved_matches else ""
 	if saved_matches and (saved_phase == "crown" or saved_phase == "transition"):
 		var final_regions = resume_composite_state.get("finalRegions", [])
 		var final_solution = resume_composite_state.get("finalSolution", [])
-		if _composite_final_level_is_valid(final_regions, final_solution):
+		if _board_layout_is_valid(final_regions, final_solution):
 			composite_mode = true
 			composite_phase = "crown"
 			current_level["regions"] = final_regions.duplicate(true)
@@ -819,26 +914,13 @@ func _prepare_composite_level(allow_resume: bool) -> void:
 			}
 			return
 
-	if not bool(active_schedule.get("assemblyEnabled", false)) or int(current_level.get("rows", 0)) < 6:
-		return
 	var difficulty_pattern := str(active_schedule.get("assemblyDifficultyPattern", ""))
 	if difficulty_pattern.is_empty():
 		difficulty_pattern = str(current_level.get("difficulty", "medium"))
-	var seed := int(resume_composite_state.get("seed", 0)) if saved_matches else int(active_schedule.get("assemblySeed", 0))
-	var prebuilt_composite = active_schedule.get("assemblyPrebuiltData", {})
-	active_schedule.erase("assemblyPrebuiltData")
-	if _prebuilt_composite_matches(prebuilt_composite, seed, difficulty_pattern):
-		composite_data = (prebuilt_composite as Dictionary).duplicate(true)
-	else:
-		composite_data = CompositeLevelStoreScript.find(
-			composite_levels,
-			int(current_level.get("levelId", -1)),
-			difficulty_pattern
-		)
+	composite_data = CompositeLevelStoreScript.find(composite_levels, level_id, difficulty_pattern)
 	if composite_data.is_empty():
-		active_schedule["assemblyEnabled"] = false
 		return
-		active_schedule["assemblySeed"] = int(composite_data.get("seed", seed))
+	active_schedule["assemblySeed"] = int(composite_data.get("seed", 0))
 	active_schedule["assemblyDifficultyPattern"] = str(composite_data.get("difficulty", difficulty_pattern))
 	composite_mode = true
 	composite_phase = "assembly"
@@ -868,11 +950,7 @@ func _prepare_composite_level(allow_resume: bool) -> void:
 	)
 
 
-func _prebuilt_composite_matches(raw_data, seed: int, difficulty_pattern: String) -> bool:
-	return CompositePlacementEngineScript.prebuilt_matches(raw_data, current_level, seed, difficulty_pattern)
-
-
-func _composite_final_level_is_valid(regions, solution) -> bool:
+func _board_layout_is_valid(regions, solution) -> bool:
 	return CompositePlacementEngineScript.final_level_is_valid(current_level, regions, solution)
 
 
@@ -1049,7 +1127,7 @@ func _on_assembly_return_requested(piece_id: int, preferred_slot_index: int = -1
 	assembly_view.update_state(composite_placements, _assembly_allowed_origins(), composite_tray_slots)
 	if returned_slot >= 0:
 		audio_controller.play_block_return()
-		assembly_view.focus_tray_slot(returned_slot, false)
+		assembly_view.focus_tray_slot(returned_slot)
 		assembly_view.play_return_feedback(returned_slot)
 	# Do not block the release event on JSON serialization and file I/O. The
 	# updated tray is already visible; persist the same state after this frame.
@@ -1110,18 +1188,19 @@ func _complete_composite_assembly(layout: Dictionary) -> void:
 		return
 	current_level["regions"] = composite_final_layout["regions"].duplicate(true)
 	current_level["solution"] = composite_final_layout["solution"].duplicate(true)
-	active_schedule["assemblyLayoutSignature"] = str(composite_final_layout.get("signature", ""))
 	active_king_positions.clear()
 	cell_states = _blank_states(int(current_level["rows"]), int(current_level["cols"]))
 	board.set_level(current_level, cell_states, REGION_COLORS)
 	composite_phase = "crown"
+	_prepare_hidden_diamond_board(true)
 	_apply_composite_phase_ui()
 	_validate_and_update(false)
 	_save_game()
+	call_deferred("_maybe_start_hidden_diamond_event")
 
 
 func _composite_save_state() -> Dictionary:
-	return composite_controller.save_state(current_level, active_schedule)
+	return composite_controller.save_state(current_level)
 
 
 func _maybe_play_composite_intro() -> void:
@@ -1217,6 +1296,7 @@ func _play_opening_king_intro(cells: Array) -> void:
 	)
 	if completed:
 		_validate_and_update(false)
+		call_deferred("_maybe_start_hidden_diamond_event")
 
 
 func _cancel_opening_king_intro(keep_pending: bool = false) -> void:
@@ -1294,6 +1374,8 @@ func _is_piece_state(state: String) -> bool:
 
 
 func _on_cell_pressed(row: int, col: int) -> void:
+	if _hidden_intro_blocks_input():
+		return
 	if _is_assembly_phase():
 		return
 	if in_tutorial:
@@ -1306,6 +1388,11 @@ func _on_cell_pressed(row: int, col: int) -> void:
 	hint_engine.reset_session()
 	board.set_guides({})
 	cell_states = result["states"]
+	var cell := Vector2i(col, row)
+	run_accuracy.record_mark(
+		cell, CrownRuleEngineScript.is_solution_cell(current_level, cell),
+		str(result["state"]) == "blocked", true, board.DOUBLE_TAP_MAX_MS
+	)
 	if str(result["state"]) == "blocked":
 		audio_controller.play_mark()
 	else:
@@ -1313,11 +1400,14 @@ func _on_cell_pressed(row: int, col: int) -> void:
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
 	run_move_count += 1
+	_record_hidden_diamond_action("tap", Vector2i(col, row))
 	_validate_and_update(true)
 	_save_game()
 
 
 func _on_cell_double_pressed(row: int, col: int) -> void:
+	if _hidden_intro_blocks_input():
+		return
 	if _is_assembly_phase():
 		return
 	if in_tutorial:
@@ -1330,7 +1420,9 @@ func _on_cell_double_pressed(row: int, col: int) -> void:
 	hint_engine.reset_session()
 	board.set_guides({})
 	cell_states = result["states"]
+	run_accuracy.record_double(Vector2i(col, row), bool(result["correct"]))
 	board.set_states(cell_states)
+	_record_hidden_diamond_action("double", Vector2i(col, row))
 	if bool(result["correct"]):
 		board.play_correct_feedback(row, col)
 		var found_count := _piece_positions().size()
@@ -1353,6 +1445,8 @@ func _on_cell_double_pressed(row: int, col: int) -> void:
 
 
 func _on_cell_drag_started(row: int, col: int) -> void:
+	if _hidden_intro_blocks_input():
+		return
 	if _is_assembly_phase():
 		return
 	if in_tutorial:
@@ -1368,6 +1462,8 @@ func _on_cell_drag_started(row: int, col: int) -> void:
 
 
 func _on_cell_dragged(row: int, col: int) -> void:
+	if _hidden_intro_blocks_input():
+		return
 	if _is_assembly_phase():
 		return
 	if in_tutorial:
@@ -1377,6 +1473,8 @@ func _on_cell_dragged(row: int, col: int) -> void:
 
 
 func _on_cell_drag_ended() -> void:
+	if _hidden_intro_blocks_input():
+		return
 	if _is_assembly_phase():
 		return
 	if in_tutorial:
@@ -1385,6 +1483,7 @@ func _on_cell_drag_ended() -> void:
 	if formal_controller.drag_mode == "":
 		return
 	if formal_controller.end_drag():
+		_record_hidden_diamond_action()
 		_validate_and_update(true)
 		_save_game()
 
@@ -1398,6 +1497,10 @@ func _apply_drag_cell(row: int, col: int) -> void:
 func _apply_formal_drag_result(result: Dictionary) -> void:
 	cell_states = result["states"]
 	var cell: Vector2i = result["cell"]
+	var already_excluded := bool(run_accuracy.save_state()["excludedLion"])
+	run_accuracy.record_mark(cell, CrownRuleEngineScript.is_solution_cell(current_level, cell), str(result["state"]) == "blocked")
+	if not already_excluded and bool(run_accuracy.save_state()["excludedLion"]):
+		_queue_save_game_after_frame()
 	if str(result["state"]) == "blocked":
 		audio_controller.play_mark()
 	else:
@@ -1405,7 +1508,26 @@ func _apply_formal_drag_result(result: Dictionary) -> void:
 	board.set_states(cell_states)
 	board.play_cell_feedback(cell.y, cell.x)
 
+
+func _observe_restored_accuracy() -> void:
+	run_accuracy.commit_pending()
+	if in_tutorial or _is_assembly_phase():
+		return
+	# Undo may restore the temporary first-tap X of a completed double tap.
+	# Once restored as an ordinary X it is a genuine exclusion, not a gesture.
+	for row in range(cell_states.size()):
+		for col in range(cell_states[row].size()):
+			var state := str(cell_states[row][col])
+			var cell := Vector2i(col, row)
+			if state == "blocked" and CrownRuleEngineScript.is_solution_cell(current_level, cell):
+				run_accuracy.record_mark(cell, true, true)
+			elif state == "wrong":
+				run_accuracy.record_double(cell, false)
+
+
 func _undo() -> void:
+	if _hidden_intro_blocks_input():
+		return
 	if in_tutorial:
 		_use_tutorial_undo()
 		return
@@ -1414,7 +1536,9 @@ func _undo() -> void:
 	if result.is_empty():
 		return
 	cell_states = result["states"]
+	_observe_restored_accuracy()
 	board.set_states(cell_states)
+	_record_hidden_diamond_action()
 	_validate_and_update(false)
 	run_move_count += 1
 	audio_controller.play_erase()
@@ -1422,6 +1546,8 @@ func _undo() -> void:
 
 
 func _clear_board() -> void:
+	if _hidden_intro_blocks_input():
+		return
 	if composite_intro_running and _is_assembly_phase():
 		return
 	if _is_assembly_phase():
@@ -1434,10 +1560,12 @@ func _clear_board() -> void:
 	var result: Dictionary = formal_controller.clear_board()
 	if result.is_empty():
 		return
+	run_accuracy.commit_pending()
 	cell_states = result["states"]
 	hint_engine.reset_session()
 	board.set_states(cell_states)
 	board.set_guides({})
+	_record_hidden_diamond_action()
 	_validate_and_update(false)
 	run_move_count += 1
 	audio_controller.play_clear()
@@ -1469,6 +1597,7 @@ func _spend_coins_for_tool(tool: String) -> bool:
 
 
 func _show_coin_shortage_dialog(tool: String, price: int) -> void:
+	hidden_diamond_controller.pause_for("coin_shortage")
 	pending_coin_tool = tool
 	pending_coin_price = price
 	pending_rewarded_coin_grant = CoinEconomyScript.rewarded_ad_coin_grant(
@@ -1476,22 +1605,15 @@ func _show_coin_shortage_dialog(tool: String, price: int) -> void:
 		coin_count,
 		_economy_display_level()
 	)
-	var tool_name := "逻辑提示"
-	if tool == CoinEconomyScript.TOOL_CROWN_FIND:
-		tool_name = "皇冠位置提醒"
-	elif tool == CoinEconomyScript.TOOL_REVIVE:
-		tool_name = "保留棋盘复活"
 	var shortage := maxi(0, price - coin_count)
-	tool_name = _t(tool_name)
-	var message := _t("%s需要 %d 金币。\n当前持有 %d，还差 %d。\n\n可购买金币，或主动观看一次激励广告补足本次需求。", [tool_name, price, coin_count, shortage])
 	dialog_controller.show_dialog(
 		"coin_shortage",
 		"金币不足",
-		message,
+		_t("还差 %d 金币", [shortage]),
 		"",
 		[
 			{"id": "later", "text": "稍后再说", "variant": "secondary"},
-			{"id": "purchase", "text": "购买金币", "variant": "weak"},
+			{"id": "purchase", "text": _t("前往商店"), "variant": "weak"},
 			{"id": "rewarded", "text": _t("观看广告 +%d", [pending_rewarded_coin_grant]), "variant": "primary"}
 		],
 		UITokensScript.DIALOG_STANDARD_WIDTH,
@@ -1500,6 +1622,8 @@ func _show_coin_shortage_dialog(tool: String, price: int) -> void:
 
 
 func _use_hint() -> void:
+	if _hidden_intro_blocks_input():
+		return
 	if composite_intro_running and _is_assembly_phase():
 		return
 	if _is_assembly_phase():
@@ -1530,11 +1654,15 @@ func _use_hint() -> void:
 	_update_coin_label()
 	_update_hint_button()
 	run_hint_count += 1
+	run_accuracy.commit_pending()
+	_record_hidden_diamond_action("assist")
 	audio_controller.play_hint()
 	_save_game()
 
 
 func _use_crown_find() -> void:
+	if _hidden_intro_blocks_input():
+		return
 	if composite_intro_running and _is_assembly_phase():
 		return
 	if _is_assembly_phase():
@@ -1554,6 +1682,7 @@ func _use_crown_find() -> void:
 	if not uses_free_count and not _spend_coins_for_tool(CoinEconomyScript.TOOL_CROWN_FIND):
 		return
 
+	run_accuracy.commit_pending()
 	_push_history()
 	hint_engine.reset_session()
 	board.set_guides({})
@@ -1564,6 +1693,7 @@ func _use_crown_find() -> void:
 	audio_controller.play_crown_reveal()
 	board.set_states(cell_states)
 	board.play_cell_feedback(target.y, target.x)
+	_record_hidden_diamond_action("assist")
 	_validate_and_update(true)
 	run_move_count += 1
 	_update_crown_find_button()
@@ -1638,6 +1768,7 @@ func _clearable_marks_empty() -> bool:
 
 
 func _start_tutorial_step(index: int) -> void:
+	_cancel_hidden_diamond_event()
 	if dialog_controller and dialog_controller.visible:
 		dialog_controller.hide_dialog(true)
 	_activate_level_page(false)
@@ -1754,7 +1885,7 @@ func _on_tutorial_drag_ended() -> void:
 
 
 func _on_tutorial_single_map_pressed(row: int, col: int) -> void:
-	if tutorial_interaction_stage == TUTORIAL_PHASE_ADJACENT or tutorial_interaction_stage == TUTORIAL_PHASE_ROW_COL:
+	if tutorial_interaction_stage == TUTORIAL_PHASE_ADJACENT or tutorial_interaction_stage == TUTORIAL_PHASE_ROW_COL or tutorial_interaction_stage == TUTORIAL_PHASE_HINT_MARK:
 		_on_tutorial_single_map_exclusion(row, col, false)
 		return
 	if tutorial_interaction_stage == TUTORIAL_PHASE_HINT:
@@ -1832,6 +1963,13 @@ func _on_tutorial_single_map_exclusion(row: int, col: int, from_drag: bool) -> v
 	board.set_states(cell_states)
 	board.play_cell_feedback(row, col)
 	_update_tutorial_progress()
+	if bool(result.get("hint_marked", false)):
+		_show_direct_tutorial_crown_clue(
+			"提示标出的是可以排除的位置。继续双击找到下一个皇冠。",
+			result.get("target", Vector2i(-1, -1))
+		)
+		_save_game()
+		return
 	_advance_tutorial_single_map_after_exclusions()
 	_save_game()
 
@@ -2049,17 +2187,19 @@ func _use_tutorial_hint() -> void:
 		_focus_current_single_map_tutorial_target(0.12)
 		return
 	audio_controller.play_hint()
-	_show_direct_tutorial_crown_clue(
-		"每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。",
-		result.get("target", Vector2i(-1, -1))
-	)
+	coach_label.text = _runtime_text("提示会标出可排除的位置。把高亮格标记为 X。")
+	coach_label.add_theme_color_override("font_color", Color("#31506D"))
+	coach_label.add_theme_font_size_override("font_size", COACH_TUTORIAL_SIZE)
+	_set_tutorial_guides()
+	_update_tutorial_action_bar()
+	_focus_tutorial_cell(result.get("target", Vector2i(-1, -1)), 0.18)
 	_save_game()
 
 
 func _focus_current_single_map_tutorial_target(delay: float = 0.18) -> void:
 	if tutorial_interaction_stage == TUTORIAL_PHASE_PLACE or tutorial_interaction_stage == TUTORIAL_PHASE_HINT_PLACE:
 		_focus_tutorial_cell(_current_tutorial_place_target(), delay)
-	elif tutorial_interaction_stage == TUTORIAL_PHASE_ADJACENT or tutorial_interaction_stage == TUTORIAL_PHASE_ROW_COL:
+	elif tutorial_interaction_stage == TUTORIAL_PHASE_ADJACENT or tutorial_interaction_stage == TUTORIAL_PHASE_ROW_COL or tutorial_interaction_stage == TUTORIAL_PHASE_HINT_MARK:
 		_focus_tutorial_cell(_next_tutorial_single_map_exclusion_cell(), delay)
 	elif tutorial_interaction_stage == TUTORIAL_PHASE_HINT:
 		_focus_tutorial_control(hint_button, delay)
@@ -2145,9 +2285,11 @@ func _finish_tutorial(skipped: bool) -> void:
 func _complete_level() -> void:
 	if is_completed or is_failed:
 		return
+	run_accuracy.commit_pending()
+	hidden_diamond_controller.complete_board()
 	is_completed = true
 	if home_composite_entry_active:
-		var result: Dictionary = RunResultServiceScript.composite_completion(active_schedule, current_heart_limit, heart_count)
+		var result: Dictionary = RunResultServiceScript.composite_completion(active_schedule, current_heart_limit, heart_count, run_accuracy.save_state())
 		var composite_reward := int(result["reward"])
 		var composite_reward_transaction := player_wallet.grant(composite_reward, "composite_completion")
 		CompositeCoinPolicyScript.record_round_completed(composite_coin_progress, composite_reward)
@@ -2164,7 +2306,7 @@ func _complete_level() -> void:
 	var level_id := int(current_level["levelId"])
 	if not completed_levels.has(level_id):
 		completed_levels.append(level_id)
-	var result: Dictionary = RunResultServiceScript.formal_completion(player_level_number, current_heart_limit, heart_count)
+	var result: Dictionary = RunResultServiceScript.formal_completion(player_level_number, current_heart_limit, heart_count, run_accuracy.save_state())
 	var reward := int(result["reward"])
 	var reward_transaction := player_wallet.grant(reward, "formal_completion")
 	CoinEconomyScript.record_completion(
@@ -2175,7 +2317,8 @@ func _complete_level() -> void:
 		current_heart_limit,
 		heart_count,
 		reward,
-		run_coin_exchange_count
+		run_coin_exchange_count,
+		run_accuracy.save_state()
 	)
 	_record_level_result()
 	_update_home()
@@ -2189,12 +2332,12 @@ func _complete_level() -> void:
 
 func _prepare_success_result_page(reward: int = 0, reward_transaction: Dictionary = {}) -> void:
 	_set_result_overlay_mode("success")
-	var excellent := CoinRewardPolicyScript.is_excellent_completion(current_heart_limit, heart_count)
+	var excellent := CoinRewardPolicyScript.is_excellent_completion(current_heart_limit, heart_count, run_accuracy.save_state())
 	if reward <= 0:
 		if home_composite_entry_active:
 			reward = CompositeCoinPolicyScript.completion_reward(excellent)
 		else:
-			reward = CoinRewardPolicyScript.completion_reward(player_level_number, current_heart_limit, heart_count)
+			reward = CoinRewardPolicyScript.completion_reward(player_level_number, current_heart_limit, heart_count, run_accuracy.save_state())
 	var balance_after := maxi(0, int(reward_transaction.get("balanceAfter", coin_count)))
 	var balance_before := maxi(0, int(reward_transaction.get("balanceBefore", balance_after - reward)))
 	var next_quote := _home_composite_round_quote(home_composite_round + 1) if home_composite_entry_active else {}
@@ -2266,11 +2409,15 @@ func _next_level() -> void:
 	if in_tutorial:
 		_next_tutorial_step()
 		return
+	var next_schedule := LevelDirectorScript.schedule_for_display_level(levels, player_level_number + 1, director_progress)
+	if next_schedule.is_empty():
+		_show_toast("没有找到可用关卡")
+		return
 	player_level_number += 1
-	var next_schedule := LevelDirectorScript.schedule_for_display_level(levels, player_level_number, director_progress)
-	var next_index := int(next_schedule.get("levelIndex", 0))
+	var next_index := int(next_schedule["levelIndex"])
 	_load_level(next_index, false, next_schedule)
-	LevelDirectorScript.record_next_level_opened(director_progress)
+	_record_formal_level_entry()
+	LevelDirectorScript.record_next_level_opened(director_progress, int(Time.get_unix_time_from_system()))
 	_save_game()
 	if bool(next_schedule.get("isMilestoneChallenge", false)):
 		_show_toast("难度挑战：本关根据最近表现安排")
@@ -2448,9 +2595,12 @@ func _on_dialog_action_selected(dialog_id: String, action_id: String) -> void:
 				_start_tutorial_step(0)
 		"coin_shortage":
 			if action_id == "rewarded":
-				_show_toast("激励广告入口占位：SDK 回调成功后发放 %d 金币" % pending_rewarded_coin_grant)
+				_request_rewarded_ad()
 			elif action_id == "purchase":
-				_show_toast("金币购买入口占位：接入支付后开放")
+				_show_shop("coins")
+		"home_composite_coin_shortage":
+			if action_id == "shop":
+				_show_shop("coins")
 		"settings":
 			if action_id == "apply":
 				_apply_selected_settings()
@@ -2462,6 +2612,28 @@ func _on_dialog_action_selected(dialog_id: String, action_id: String) -> void:
 func _on_dialog_cancelled(dialog_id: String) -> void:
 	if dialog_id == "tutorial_resume":
 		_start_tutorial_step(0)
+
+
+func _on_commerce_dialog_closed(dialog_id: String) -> void:
+	if dialog_id == "coin_shortage" and not dialog_controller.is_dialog_open("coin_shortage"):
+		# Runs after action_selected so the shop/ad acquires its pause first.
+		hidden_diamond_controller.resume_after("coin_shortage")
+
+
+func _request_rewarded_ad() -> void:
+	_ad_request_serial += 1
+	var request := _ad_request_serial
+	hidden_diamond_controller.pause_for("rewarded_ad")
+	var finished := func() -> void:
+		if request != _ad_request_serial:
+			return
+		_ad_request_serial += 1
+		hidden_diamond_controller.resume_after("rewarded_ad")
+	if rewarded_ad_requested.get_connections().is_empty():
+		_show_toast(_t("即将开放"))
+		finished.call()
+	else:
+		rewarded_ad_requested.emit(finished)
 
 
 func _refresh_language_picker() -> void:
@@ -2519,6 +2691,8 @@ func _refresh_localized_ui() -> void:
 	_update_tutorial_button()
 	if home_screen:
 		home_screen.refresh_localized_text()
+	if shop_page:
+		shop_page.refresh_localized_text()
 	if help_content:
 		help_content.refresh_localized_text()
 	if settings_content:
@@ -2601,9 +2775,10 @@ func _today_string() -> String:
 
 func _load_save() -> void:
 	var data: Dictionary = GameSaveServiceScript.normalize_loaded(
-		save_repository.load_data(),
+		save_repository.load_data(SAVE_VERSION),
 		{
 			"coinCount": INITIAL_COIN_COUNT,
+			"diamondCount": 0,
 			"hintCount": INITIAL_HINT_COUNT,
 			"crownFindCount": INITIAL_CROWN_FIND_COUNT,
 			"heartCount": INITIAL_HEART_COUNT
@@ -2615,6 +2790,8 @@ func _load_save() -> void:
 	current_level_index = int(data.get("currentLevelIndex", 0))
 	player_level_number = maxi(1, int(data.get("playerLevelNumber", current_level_index + 1)))
 	coin_count = int(data.get("coinCount", INITIAL_COIN_COUNT))
+	player_wallet.diamond_balance = maxi(0, int(data.get("diamondCount", 0)))
+	hidden_diamond_controller.restore(data.get("hiddenDiamondProgress", {}), data.get("hiddenDiamondEventIds", []), data["directorProgress"].get("recentRuns", []))
 	hint_count = maxi(0, int(data.get("hintCount", INITIAL_HINT_COUNT)))
 	crown_find_count = maxi(0, int(data.get("crownFindCount", INITIAL_CROWN_FIND_COUNT)))
 	completed_levels.assign(data.get("completedLevels", []))
@@ -2632,6 +2809,7 @@ func _load_save() -> void:
 	run_move_count = int(data.get("runMoveCount", 0))
 	run_hint_count = int(data.get("runHintCount", 0))
 	run_direct_find_count = int(data.get("runDirectFindCount", 0))
+	run_accuracy.restore(data.get("runAccuracy", {}))
 	run_coin_exchange_count = maxi(0, int(data.get("runCoinExchangeCount", 0)))
 	immediate_errors = bool(data.get("immediateErrors", true))
 	selected_language = str(data.get("selectedLanguage", ""))
@@ -2670,9 +2848,9 @@ func _capture_formal_progress_snapshot() -> bool:
 		"runMoveCount": run_move_count,
 		"runHintCount": run_hint_count,
 		"runDirectFindCount": run_direct_find_count,
-		"runCoinExchangeCount": run_coin_exchange_count,
-		"compositeTutorialSeen": composite_tutorial_seen
-	}, _composite_save_state())
+		"runAccuracy": run_accuracy.save_state(),
+		"runCoinExchangeCount": run_coin_exchange_count
+	})
 	return true
 
 
@@ -2710,10 +2888,9 @@ func _restore_formal_progress_snapshot() -> bool:
 	run_move_count = maxi(0, int(snapshot.get("runMoveCount", 0)))
 	run_hint_count = maxi(0, int(snapshot.get("runHintCount", 0)))
 	run_direct_find_count = maxi(0, int(snapshot.get("runDirectFindCount", 0)))
+	run_accuracy.restore(snapshot.get("runAccuracy", {}))
 	run_coin_exchange_count = maxi(0, int(snapshot.get("runCoinExchangeCount", 0)))
-	var snapshot_composite = snapshot.get("compositeState", {})
-	resume_composite_state = snapshot_composite.duplicate(true) if snapshot_composite is Dictionary else {}
-	composite_tutorial_seen = bool(snapshot.get("compositeTutorialSeen", composite_tutorial_seen))
+	resume_composite_state.clear()
 	formal_progress_snapshot.clear()
 	_load_level(current_level_index, true, active_schedule, true)
 	return true
@@ -2727,7 +2904,6 @@ func _restore_home_composite_progress() -> bool:
 		home_composite_round = 0
 		return false
 	var preserved_tutorial_snapshot := formal_progress_snapshot.duplicate(true)
-	var tutorial_seen_in_entry := composite_tutorial_seen
 	formal_progress_snapshot = snapshot
 	home_composite_progress_snapshot.clear()
 	home_composite_entry_active = false
@@ -2736,7 +2912,6 @@ func _restore_home_composite_progress() -> bool:
 	composite_intro_marks_seen = false
 	var restored := _restore_formal_progress_snapshot()
 	formal_progress_snapshot = preserved_tutorial_snapshot
-	composite_tutorial_seen = composite_tutorial_seen or tutorial_seen_in_entry
 	return restored
 
 
@@ -2758,6 +2933,7 @@ func _update_home_composite_history() -> void:
 		"runMoveCount": run_move_count,
 		"runHintCount": run_hint_count,
 		"runDirectFindCount": run_direct_find_count,
+		"runAccuracy": run_accuracy.save_state(),
 		"runCoinExchangeCount": run_coin_exchange_count
 	}, _composite_save_state())
 
@@ -2792,8 +2968,12 @@ func _save_game() -> void:
 		"runMoveCount": run_move_count,
 		"runHintCount": run_hint_count,
 		"runDirectFindCount": run_direct_find_count,
+		"runAccuracy": run_accuracy.save_state(),
 		"runCoinExchangeCount": run_coin_exchange_count,
 		"coinCount": coin_count,
+		"diamondCount": player_wallet.diamond_balance,
+		"hiddenDiamondEventIds": hidden_diamond_event_ids,
+		"hiddenDiamondProgress": hidden_diamond_controller.progress,
 		"heartCount": heart_count,
 		"crownFindCount": crown_find_count,
 		"completedLevels": completed_levels,
@@ -2868,6 +3048,7 @@ func _consume_heart_for_wrong_crown() -> void:
 func _fail_level() -> void:
 	if is_completed or is_failed:
 		return
+	_cancel_hidden_diamond_event()
 	is_failed = true
 	if home_composite_entry_active:
 		_record_home_composite_result(false)
@@ -2943,6 +3124,11 @@ func _update_level_picker() -> void:
 
 
 func _show_home() -> void:
+	run_accuracy.commit_pending()
+	_shop_return_to_game = false
+	_cancel_hidden_diamond_event()
+	if shop_page:
+		shop_page.hide()
 	_hide_tutorial_hand()
 	_cancel_opening_king_intro(false)
 	if assembly_view and assembly_view.is_intro_active():
@@ -3016,6 +3202,7 @@ func _start_home_composite_flow() -> void:
 		run_move_count = maxi(0, int(history.get("runMoveCount", 0)))
 		run_hint_count = maxi(0, int(history.get("runHintCount", 0)))
 		run_direct_find_count = maxi(0, int(history.get("runDirectFindCount", 0)))
+		run_accuracy.restore(history.get("runAccuracy", {}))
 		run_coin_exchange_count = maxi(0, int(history.get("runCoinExchangeCount", 0)))
 		var saved_composite = history.get("compositeState", {})
 		resume_composite_state = saved_composite.duplicate(true) if saved_composite is Dictionary else {}
@@ -3095,6 +3282,7 @@ func _apply_home_composite_round_entry(quote: Dictionary) -> void:
 	)
 	if not bool(transaction.get("success", false)):
 		return
+	CompositeLevelDirectorScript.record_next_round_opened(composite_director_progress, home_composite_round, int(Time.get_unix_time_from_system()))
 	var entry_cost := int(transaction.get("amount", 0))
 	_sync_home_composite_shared_coin_balance()
 	_update_home()
@@ -3123,14 +3311,15 @@ func _sync_home_composite_shared_coin_balance() -> void:
 
 func _show_home_composite_coin_shortage(quote: Dictionary) -> void:
 	var entry_cost := int(quote.get("entryCost", 0))
-	var good_reward := int(quote.get("goodReward", CompositeCoinPolicyScript.GOOD_COMPLETION_REWARD))
-	var excellent_reward := int(quote.get("excellentReward", CompositeCoinPolicyScript.EXCELLENT_COMPLETION_REWARD))
 	dialog_controller.show_dialog(
 		"home_composite_coin_shortage",
 		_t("金币不足"),
-		_t("今日免费拼块次数已用完。本局需要 %d 金币。通关后 Good 奖励 %d 金币，Excellent 奖励 %d 金币。", [entry_cost, good_reward, excellent_reward]),
+		_t("本局需要 %d 金币", [entry_cost]),
 		"",
-		[{"id": "confirm", "text": _t("知道了"), "variant": "primary"}],
+		[
+			{"id": "later", "text": _t("稍后再说"), "variant": "secondary"},
+			{"id": "shop", "text": _t("前往商店"), "variant": "primary"}
+		],
 		UITokensScript.DIALOG_STANDARD_WIDTH,
 		false
 	)
@@ -3183,8 +3372,8 @@ func _show_home_composite_locked_dialog() -> void:
 	var unlock_display := _home_composite_unlock_display_level()
 	dialog_controller.show_dialog(
 		"home_composite_locked",
-		_t("拼块玩法尚未解锁"),
-		_t("玩到第 %d 关，即可解锁 6×6 拼块玩法。", [unlock_display]),
+		_t("拼块玩法"),
+		_t("第 %d 关解锁", [unlock_display]),
 		"",
 		[{"id": "confirm", "text": _t("知道了"), "variant": "primary"}],
 		UITokensScript.DIALOG_STANDARD_WIDTH,
@@ -3200,15 +3389,14 @@ func _replay_tutorial_preserving_progress() -> void:
 	_show_toast("已进入新手教程，正式关卡进度已保存")
 
 
-func _simulate_new_user_flow() -> void:
-	_replay_tutorial_preserving_progress()
-
-
 func _show_game() -> void:
 	if home_screen:
 		home_screen.hide()
+	if shop_page:
+		shop_page.hide()
 	if game_screen:
 		game_screen.show()
+	_record_formal_level_entry()
 	_update_tutorial_button()
 	if board:
 		board.queue_redraw()
@@ -3217,6 +3405,145 @@ func _show_game() -> void:
 		call_deferred("_maybe_play_composite_intro")
 	else:
 		_play_pending_opening_king_reveal()
+		call_deferred("_maybe_start_hidden_diamond_event")
+
+
+func _record_formal_level_entry() -> void:
+	if in_tutorial or home_composite_entry_active or current_level.is_empty():
+		return
+	if LevelDirectorScript.record_level_started(director_progress, int(current_level.get("levelId", -1)), active_schedule):
+		_save_game()
+
+
+func _show_shop(tab: String = "diamonds") -> void:
+	if not shop_page:
+		return
+	if not shop_page.visible:
+		_shop_return_to_game = game_screen and game_screen.visible and not is_completed and not is_failed
+	if _shop_return_to_game:
+		hidden_diamond_controller.pause_for("shop")
+	else:
+		_cancel_hidden_diamond_event()
+	if home_screen:
+		home_screen.hide()
+	if game_screen:
+		game_screen.hide()
+	shop_page.select_tab(tab)
+	shop_page.set_return_to_game(_shop_return_to_game)
+	shop_page.present(coin_count, player_wallet.diamond_balance)
+	shop_page.show()
+
+
+func _close_shop() -> void:
+	if _shop_return_to_game:
+		_shop_return_to_game = false
+		_show_game()
+		hidden_diamond_controller.resume_after("shop")
+	else:
+		_show_home()
+
+
+func _exchange_diamond_for_coins(offer_id: String) -> void:
+	# Resolve the ID again at the transaction boundary; UI never supplies a price.
+	var offer := ShopCatalogScript.coin_offer(offer_id)
+	if offer.is_empty():
+		return
+	var transaction: Dictionary = player_wallet.exchange_diamonds_for_coins(int(offer["diamond_cost"]), ShopCatalogScript.COINS_PER_DIAMOND)
+	if not bool(transaction.get("success", false)):
+		return
+	# A shop exchange is account-wide, including while a tutorial or composite
+	# session has parked the formal board. Restoring that board must not undo it.
+	_sync_home_composite_shared_coin_balance()
+	if not formal_progress_snapshot.is_empty():
+		formal_progress_snapshot["coinCount"] = coin_count
+	_update_coin_label()
+	_update_level_diamond_balance()
+	_update_shop_page()
+	_save_game()
+	_show_toast(_t("已兑换 %d 金币", [int(transaction["coinsGranted"])]))
+
+
+func _update_shop_page() -> void:
+	if shop_page and shop_page.visible:
+		shop_page.present(coin_count, player_wallet.diamond_balance)
+
+
+func _maybe_start_hidden_diamond_event() -> void:
+	if _application_paused or not _application_focused:
+		return
+	if not hidden_diamond_overlay or hidden_diamond_overlay.visible or in_tutorial or is_completed or is_failed:
+		return
+	if not game_screen or not game_screen.is_visible_in_tree() or (home_screen and home_screen.visible) or (shop_page and shop_page.visible):
+		return
+	if opening_king_reveal_pending or (opening_king_overlay and opening_king_overlay.visible):
+		return
+	if home_composite_entry_active:
+		if not composite_mode or composite_phase != "crown":
+			return
+	hidden_diamond_controller.present_board(_hidden_diamond_board_untouched())
+
+
+func _on_hidden_diamond_finished(won: bool, reward: int) -> void:
+	if won:
+		player_wallet.diamond_balance += reward
+		_update_shop_page()
+		_update_level_diamond_balance()
+		_show_toast(_t("钻石 +%d", [reward]))
+	_save_game()
+
+
+func _prepare_hidden_diamond_board(measure_valid: bool) -> void:
+	hidden_diamond_controller.prepare_board({
+		"mode": "composite" if home_composite_entry_active else "normal",
+		"ordinal": home_composite_round if home_composite_entry_active else player_level_number,
+		"size": int(current_level.get("rows", 5)),
+		"schedule_mode": str(active_schedule.get("mode", "")),
+		"found": _piece_positions().size()
+	}, measure_valid)
+
+
+func _hidden_diamond_board_untouched() -> bool:
+	for row in range(cell_states.size()):
+		for col in range(cell_states[row].size()):
+			if str(cell_states[row][col]) != "empty" and not _is_king_cell(row, col):
+				return false
+	return true
+
+
+func _record_hidden_diamond_action(kind: String = "action", cell: Vector2i = Vector2i(-1, -1)) -> void:
+	if not in_tutorial and not _is_assembly_phase():
+		hidden_diamond_controller.record_action(_piece_positions().size(), kind, cell, board.DOUBLE_TAP_MAX_MS)
+
+
+func _hidden_intro_blocks_input() -> bool:
+	return hidden_diamond_controller and hidden_diamond_controller.intro_blocks_input()
+
+
+func _show_hidden_diamond_announcement(event: Dictionary) -> void:
+	hidden_diamond_overlay.present(event)
+
+
+func _update_hidden_diamond_hud(data: Dictionary) -> void:
+	for page in [formal_level_page, composite_level_page]:
+		if page and page.hidden_diamond_hud:
+			page.hidden_diamond_hud.present(data if page == game_screen else {})
+			if page == game_screen and not _is_assembly_phase():
+				page.progress_row.visible = data.is_empty()
+
+
+func _cancel_hidden_diamond_event() -> void:
+	_ad_request_serial += 1
+	if hidden_diamond_controller:
+		hidden_diamond_controller.suspend()
+	if hidden_diamond_overlay:
+		hidden_diamond_overlay.dismiss()
+
+
+func _update_level_diamond_balance() -> void:
+	if formal_level_page:
+		formal_level_page.set_diamond_balance(player_wallet.diamond_balance)
+	if composite_level_page:
+		composite_level_page.set_diamond_balance(player_wallet.diamond_balance)
 
 
 func _update_tutorial_button() -> void:
@@ -3292,6 +3619,8 @@ func _runtime_text(source: String, generic_source: String = "请跟随高亮提�
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if _hidden_intro_blocks_input():
+		return
 	if event.is_pressed() and not event.is_echo():
 		match event.keycode:
 			KEY_H:

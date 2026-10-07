@@ -3,23 +3,33 @@ extends Control
 signal start_requested
 signal composite_requested
 signal tutorial_requested
+signal shop_requested
 
 const UITokensScript = preload("res://scripts/ui_tokens.gd")
 const LION_KING_ICON = preload("res://assets/ui/lion_king.svg")
 const COLOR_KING_TITLE = preload("res://assets/ui/splash/color_king_title.svg")
+const ButtonContent = preload("res://scripts/components/centered_button_content.gd")
 
 var start_button: Button
 var composite_button: Button
 var tutorial_button: Button
+var shop_button: Button
 
 var _localizer: Callable
 var _view_data: Dictionary = {}
+var _safe_margin: MarginContainer
+var _shop_caption: Label
 
 
 func configure(localizer: Callable = Callable()) -> void:
 	_localizer = localizer
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_page()
+	resized.connect(_apply_safe_area)
+	if is_inside_tree():
+		_apply_safe_area()
+	else:
+		tree_entered.connect(_apply_safe_area, CONNECT_ONE_SHOT)
 
 
 func present(view_data: Dictionary) -> void:
@@ -47,6 +57,7 @@ func present(view_data: Dictionary) -> void:
 		composite_button.text = _t("拼块玩法")
 	composite_button.disabled = not tutorial_completed
 	tutorial_button.text = _t("新人流程")
+	_shop_caption.text = _t("商店")
 
 
 func refresh_localized_text() -> void:
@@ -69,16 +80,20 @@ func _build_page() -> void:
 	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(background)
 
-	add_child(_build_hero())
-	add_child(_build_primary_buttons())
+	_safe_margin = MarginContainer.new()
+	_safe_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(_safe_margin)
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 24)
+	_safe_margin.add_child(layout)
+	layout.add_child(_build_hero())
+	layout.add_child(_build_primary_buttons())
 
 
 func _build_hero() -> Control:
 	var hero := VBoxContainer.new()
-	hero.set_anchor(SIDE_LEFT, 0.08)
-	hero.set_anchor(SIDE_TOP, 0.12)
-	hero.set_anchor(SIDE_RIGHT, 0.92)
-	hero.set_anchor(SIDE_BOTTOM, 0.56)
+	hero.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hero.alignment = BoxContainer.ALIGNMENT_CENTER
 	hero.add_theme_constant_override("separation", 10)
 
 	var title := TextureRect.new()
@@ -99,40 +114,57 @@ func _build_hero() -> Control:
 	lion.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	lion.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	lion.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	lion.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	lion.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hero.add_child(lion)
 	return hero
 
 
 func _build_primary_buttons() -> Control:
 	var column := VBoxContainer.new()
-	column.set_anchor(SIDE_LEFT, 0.0)
-	column.set_anchor(SIDE_TOP, 0.63)
-	column.set_anchor(SIDE_RIGHT, 1.0)
-	column.set_anchor(SIDE_BOTTOM, 0.94)
-	column.offset_left = 36
-	column.offset_right = -36
+	column.name = "HomeMenu"
 	column.add_theme_constant_override("separation", 10)
 
+	shop_button = _royal_button("", Color("#1763A5"))
+	shop_button.custom_minimum_size.y = 60
+	var shop_content := ButtonContent.new()
+	shop_content.configure(shop_button, preload("res://assets/ui/store.svg"), 30)
+	_shop_caption = shop_content.caption
+	_shop_caption.text = _t("商店")
+	shop_button.pressed.connect(func() -> void: shop_requested.emit())
+	column.add_child(shop_button)
+
 	start_button = _royal_button("开始关卡", Color("#3E8DFF"))
-	start_button.custom_minimum_size.y = 70
+	start_button.custom_minimum_size.y = 62
 	start_button.pressed.connect(func() -> void: start_requested.emit())
 	column.add_child(start_button)
 
 	composite_button = _royal_button("拼块玩法", Color("#635BDB"))
-	composite_button.custom_minimum_size.y = 64
+	composite_button.custom_minimum_size.y = 58
 	composite_button.pressed.connect(func() -> void: composite_requested.emit())
 	column.add_child(composite_button)
 
 	tutorial_button = _royal_button("新人流程", UITokensScript.SURFACE_CARD)
-	tutorial_button.custom_minimum_size.y = 60
+	tutorial_button.custom_minimum_size.y = 54
 	tutorial_button.add_theme_color_override("font_color", Color("#287BFF"))
+	tutorial_button.add_theme_color_override("font_hover_color", Color("#287BFF"))
+	tutorial_button.add_theme_color_override("font_pressed_color", Color("#287BFF"))
+	tutorial_button.add_theme_color_override("font_focus_color", Color("#287BFF"))
 	tutorial_button.add_theme_color_override("font_shadow_color", Color(1.0, 1.0, 1.0, 0.0))
 	tutorial_button.add_theme_stylebox_override("hover", _card_style(Color("#F6FAFF"), 22, true))
 	tutorial_button.add_theme_stylebox_override("pressed", _button_style(Color("#E7F1FF"), 22))
 	tutorial_button.pressed.connect(func() -> void: tutorial_requested.emit())
 	column.add_child(tutorial_button)
 	return column
+
+
+func _apply_safe_area() -> void:
+	if not _safe_margin or not is_inside_tree():
+		return
+	var insets := UITokensScript.display_safe_insets(get_viewport_rect().size)
+	_safe_margin.add_theme_constant_override("margin_left", maxi(36, ceili(insets.x + 16)))
+	_safe_margin.add_theme_constant_override("margin_right", maxi(36, ceili(insets.z + 16)))
+	_safe_margin.add_theme_constant_override("margin_top", maxi(32, ceili(insets.y + 8)))
+	_safe_margin.add_theme_constant_override("margin_bottom", maxi(36, ceili(insets.w + 16)))
 
 
 func _royal_button(text_value: String, color: Color) -> Button:
@@ -143,6 +175,7 @@ func _royal_button(text_value: String, color: Color) -> Button:
 	button.add_theme_color_override("font_color", Color.WHITE)
 	button.add_theme_color_override("font_hover_color", Color.WHITE)
 	button.add_theme_color_override("font_pressed_color", Color.WHITE)
+	button.add_theme_color_override("font_focus_color", Color.WHITE)
 	button.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.16))
 	button.add_theme_constant_override("shadow_offset_x", 0)
 	button.add_theme_constant_override("shadow_offset_y", 2)
@@ -159,9 +192,12 @@ func _t(source: String, values: Array = []) -> String:
 	return source % values if not values.is_empty() else source
 
 
-func _button_style(color: Color, radius: int) -> StyleBoxFlat:
+func _button_style(color: Color, radius: int, border: Color = Color.TRANSPARENT) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = color
+	if border.a > 0.0:
+		style.border_color = border
+		style.set_border_width_all(2)
 	style.corner_radius_top_left = radius
 	style.corner_radius_top_right = radius
 	style.corner_radius_bottom_left = radius
@@ -171,6 +207,8 @@ func _button_style(color: Color, radius: int) -> StyleBoxFlat:
 
 func _card_style(color: Color, radius: int, shadow: bool = false) -> StyleBoxFlat:
 	var style := _button_style(color, radius)
+	style.border_color = Color("#E9C979")
+	style.set_border_width_all(2)
 	if shadow:
 		style.shadow_color = Color(0.16, 0.23, 0.34, 0.18)
 		style.shadow_size = 7

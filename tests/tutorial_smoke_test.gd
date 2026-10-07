@@ -73,9 +73,14 @@ func _run() -> void:
 
 	game._use_hint()
 	await process_frame
-	assert(game.tutorial_interaction_stage == game.TUTORIAL_PHASE_HINT_PLACE, "Hint should move to guided crown placement")
-	assert(game.coach_label.text == "每个颜色区域都要找到一个皇冠。现在这个区域只剩一个可选格，双击找到它。", "Hint should explain the color-region crown clue")
-	assert(game.board.tutorial_focus_cell == Vector2i(1, 0), "Hint should focus the next crown")
+	assert(game.tutorial_interaction_stage == game.TUTORIAL_PHASE_HINT_MARK, "Hint should first guide an exclusion mark")
+	assert(game.coach_label.text == "提示会标出可排除的位置。把高亮格标记为 X。", "Hint should teach an exclusion target instead of revealing a crown")
+	assert(game.board.tutorial_focus_cell == Vector2i(0, 0), "Hint should focus an empty non-solution cell")
+	game._on_cell_pressed(0, 0)
+	await process_frame
+	assert(game.cell_states[0][0] == "blocked", "Hint target should be marked as a normal X")
+	assert(game.tutorial_interaction_stage == game.TUTORIAL_PHASE_HINT_PLACE, "Marking the hinted X should move on to guided crown placement")
+	assert(game.board.tutorial_focus_cell == Vector2i(1, 0), "After marking X, tutorial should focus the next crown")
 	game._on_cell_pressed(0, 1)
 	assert(game.cell_states[0][1] == "empty", "Hinted crown still requires a double tap")
 	game._on_cell_double_pressed(0, 1)
@@ -160,7 +165,7 @@ func _run() -> void:
 
 	game._show_home()
 	await process_frame
-	game._simulate_new_user_flow()
+	game._replay_tutorial_preserving_progress()
 	await process_frame
 	assert(game.in_tutorial, "New user button should re-enter tutorial")
 	assert(not game.tutorial_completed, "Replaying tutorial should temporarily reset tutorial completion")

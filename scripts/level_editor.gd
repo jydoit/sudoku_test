@@ -202,6 +202,10 @@ func _rebuild_board() -> void:
 			button.size_flags_vertical = Control.SIZE_EXPAND_FILL
 			button.focus_mode = Control.FOCUS_NONE
 			button.add_theme_font_size_override("font_size", 22)
+			button.add_theme_color_override("font_color", INK)
+			button.add_theme_color_override("font_hover_color", INK)
+			button.add_theme_color_override("font_pressed_color", INK)
+			button.add_theme_color_override("font_focus_color", INK)
 			button.pressed.connect(_on_cell_pressed.bind(row, col))
 			board.add_child(button)
 	_refresh_cells()
@@ -220,6 +224,9 @@ func _refresh_cells() -> void:
 			button.text = "" if is_solution else str(region_id)
 			button.icon = CROWN_ICON if is_solution else null
 			button.add_theme_color_override("font_color", INK)
+			button.add_theme_color_override("font_hover_color", INK)
+			button.add_theme_color_override("font_pressed_color", INK)
+			button.add_theme_color_override("font_focus_color", INK)
 			button.add_theme_stylebox_override("normal", _button_style(color, 10))
 			button.add_theme_stylebox_override("hover", _button_style(color.lightened(0.08), 10))
 			button.add_theme_stylebox_override("pressed", _button_style(color.darkened(0.06), 10))
@@ -348,6 +355,9 @@ func _small_button(text: String) -> Button:
 	button.focus_mode = Control.FOCUS_NONE
 	button.add_theme_font_size_override("font_size", 15)
 	button.add_theme_color_override("font_color", INK)
+	button.add_theme_color_override("font_hover_color", INK)
+	button.add_theme_color_override("font_pressed_color", INK)
+	button.add_theme_color_override("font_focus_color", INK)
 	button.add_theme_stylebox_override("normal", _button_style(Color("#F1F4F7"), 12))
 	button.add_theme_stylebox_override("hover", _button_style(Color("#E7EDF2"), 12))
 	button.add_theme_stylebox_override("pressed", _button_style(Color("#DDE5EC"), 12))

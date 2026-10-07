@@ -14,12 +14,20 @@ static func base_reward_for_display_level(display_level: int) -> int:
 	return clampi(reward, 1, 5)
 
 
-static func is_excellent_completion(heart_limit: int, remaining_hearts: int) -> bool:
-	return heart_limit > 1 and remaining_hearts >= heart_limit
+static func is_excellent_completion(heart_limit: int, remaining_hearts: int, accuracy: Dictionary = {}) -> bool:
+	if heart_limit < 1 or remaining_hearts < heart_limit:
+		return false
+	if heart_limit > 1:
+		return true
+	return (
+		bool(accuracy.get("tracked", false))
+		and not bool(accuracy.get("excludedLion", true))
+		and not bool(accuracy.get("wrongCrown", true))
+	)
 
 
-static func completion_reward(display_level: int, heart_limit: int, remaining_hearts: int) -> int:
+static func completion_reward(display_level: int, heart_limit: int, remaining_hearts: int, accuracy: Dictionary = {}) -> int:
 	var base := base_reward_for_display_level(display_level)
-	if is_excellent_completion(heart_limit, remaining_hearts):
+	if is_excellent_completion(heart_limit, remaining_hearts, accuracy):
 		return int(ceil(float(base) * EXCELLENT_REWARD_MULTIPLIER))
 	return base

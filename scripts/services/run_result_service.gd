@@ -6,16 +6,16 @@ const CompositeLevelDirectorScript = preload("res://scripts/composite_level_dire
 const LevelDirectorScript = preload("res://scripts/level_director.gd")
 
 
-static func formal_completion(display_level: int, heart_limit: int, remaining_hearts: int) -> Dictionary:
+static func formal_completion(display_level: int, heart_limit: int, remaining_hearts: int, accuracy: Dictionary = {}) -> Dictionary:
 	return {
-		"reward": CoinRewardPolicyScript.completion_reward(display_level, heart_limit, remaining_hearts),
-		"excellent": CoinRewardPolicyScript.is_excellent_completion(heart_limit, remaining_hearts)
+		"reward": CoinRewardPolicyScript.completion_reward(display_level, heart_limit, remaining_hearts, accuracy),
+		"excellent": CoinRewardPolicyScript.is_excellent_completion(heart_limit, remaining_hearts, accuracy)
 	}
 
 
 
-static func composite_completion(active_schedule: Dictionary, heart_limit: int, remaining_hearts: int) -> Dictionary:
-	var excellent := CoinRewardPolicyScript.is_excellent_completion(heart_limit, remaining_hearts)
+static func composite_completion(active_schedule: Dictionary, heart_limit: int, remaining_hearts: int, accuracy: Dictionary = {}) -> Dictionary:
+	var excellent := CoinRewardPolicyScript.is_excellent_completion(heart_limit, remaining_hearts, accuracy)
 	return {
 		"reward": CompositeCoinPolicyScript.completion_reward(excellent),
 		"excellent": excellent,

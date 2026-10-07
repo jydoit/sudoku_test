@@ -85,7 +85,13 @@ func _build_composite_rules() -> void:
 	replay_button.text = "重播演示"
 	replay_button.custom_minimum_size.y = 48
 	replay_button.add_theme_font_size_override("font_size", 16)
+	replay_button.add_theme_color_override("font_color", UITokensScript.INK)
+	replay_button.add_theme_color_override("font_hover_color", UITokensScript.INK)
+	replay_button.add_theme_color_override("font_pressed_color", UITokensScript.INK)
+	replay_button.add_theme_color_override("font_focus_color", UITokensScript.INK)
 	replay_button.add_theme_stylebox_override("normal", _button_style(UITokensScript.SOFT_BLUE, 14))
+	replay_button.add_theme_stylebox_override("hover", _button_style(UITokensScript.SOFT_BLUE.lightened(0.04), 14))
+	replay_button.add_theme_stylebox_override("pressed", _button_style(UITokensScript.SOFT_BLUE.darkened(0.04), 14))
 	replay_button.pressed.connect(func() -> void: replay_composite_intro_requested.emit())
 	column.add_child(replay_button)
 

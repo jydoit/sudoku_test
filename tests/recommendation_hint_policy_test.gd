@@ -10,23 +10,14 @@ func _init() -> void:
 
 func _run() -> void:
 	var three_no_tool := _progress_with_no_tool_wins(3)
-	assert(OpeningKingHintControllerScript.consecutive_no_tool_wins(three_no_tool) == 3, "Three no-tool wins should activate hint reduction")
-	assert(OpeningKingHintControllerScript.adjusted_hint_count(1, 5, three_no_tool, 0.99) == 0, "Boards below size six should hide decided hints after three no-tool wins")
-	assert(OpeningKingHintControllerScript.adjusted_hint_count(2, 6, three_no_tool, 0.69) == 0, "Size six should hide all hints for the lower seventy-percent roll")
-	assert(OpeningKingHintControllerScript.adjusted_hint_count(2, 6, three_no_tool, 0.70) == 2, "Size six should preserve the decided count for the upper thirty-percent roll")
-	assert(OpeningKingHintControllerScript.adjusted_hint_count(1, 7, three_no_tool, 0.49) == 0, "A single size-seven hint should be hidden half of the time")
-	assert(OpeningKingHintControllerScript.adjusted_hint_count(1, 7, three_no_tool, 0.50) == 1, "A single size-seven hint should survive the upper half roll")
-	assert(OpeningKingHintControllerScript.adjusted_hint_count(2, 7, three_no_tool, 0.69) == 1, "Two size-seven hints should reduce to one with seventy-percent probability")
-	assert(OpeningKingHintControllerScript.adjusted_hint_count(2, 7, three_no_tool, 0.70) == 2, "Two size-seven hints should remain two with thirty-percent probability")
-	assert(OpeningKingHintControllerScript.adjusted_hint_count(3, 8, three_no_tool, 0.79) == 2, "Higher decided counts should reduce by one with eighty-percent probability")
-	assert(OpeningKingHintControllerScript.adjusted_hint_count(3, 8, three_no_tool, 0.80) == 3, "Higher decided counts should remain unchanged with twenty-percent probability")
+	assert(OpeningKingHintControllerScript.consecutive_no_tool_wins(three_no_tool) == 3, "No-tool wins still drive the existing difficulty pressure, not hint suppression")
 
 	var tool_used := _progress_with_no_tool_wins(2)
 	tool_used["recentRuns"].append({"completed": true, "toolUses": 1})
-	assert(OpeningKingHintControllerScript.adjusted_hint_count(2, 7, tool_used, 0.0) == 2, "Any recent tool use should preserve the decided hint count")
+	assert(OpeningKingHintControllerScript.consecutive_no_tool_wins(tool_used) == 0, "Tool use resets difficulty pressure")
 	var recent_failure := _progress_with_no_tool_wins(2)
 	recent_failure["recentRuns"].append({"completed": false, "toolUses": 0})
-	assert(OpeningKingHintControllerScript.adjusted_hint_count(2, 7, recent_failure, 0.0) == 2, "A recent failure should not be treated as no-tool mastery")
+	assert(OpeningKingHintControllerScript.consecutive_no_tool_wins(recent_failure) == 0, "Failure resets difficulty pressure")
 
 	assert(LevelDirectorScript._difficulty_floor_for_no_tool_streak(2) == "", "Two no-tool wins should not impose a difficulty floor")
 	assert(LevelDirectorScript._difficulty_floor_for_no_tool_streak(3) == "medium", "Three no-tool wins should remove Simple recommendations")
@@ -43,8 +34,8 @@ func _run() -> void:
 	var skilled_progress := _progress_with_no_tool_wins(6)
 	var normal_schedule := LevelDirectorScript.schedule_for_display_level(levels, 15, skilled_progress)
 	assert(["hard", "challenge"].has(str(normal_schedule.get("selectedDifficulty", ""))), "A six-win no-tool streak should keep ordinary pre-size-six recommendations at Hard or above")
-	assert(int(normal_schedule.get("openingKingDecidedCount", -1)) == 1, "Hint policy should run after the existing size-five count decision")
-	assert(int(normal_schedule.get("openingKingDisplayedCount", -1)) == 0 and normal_schedule.get("kingPositions", []).is_empty(), "A skilled size-five player should receive no opening king on ordinary dynamic levels")
+	assert(int(normal_schedule.get("openingKingDisplayedCount", -1)) in [1, 2], "Ordinary dynamic hints must learn one/two choices after level selection")
+	assert(str(normal_schedule.get("openingKingPolicy", "")) == "engagement_posterior", "No-tool streak must not override the learned opening hint action")
 
 	var post_challenge_progress := _progress_with_no_tool_wins(2)
 	post_challenge_progress["recentRuns"].append({
@@ -62,7 +53,7 @@ func _run() -> void:
 
 	var milestone_schedule := LevelDirectorScript.schedule_for_display_level(levels, 20, skilled_progress)
 	assert(bool(milestone_schedule.get("isMilestoneChallenge", false)) and milestone_schedule.get("kingPositions", []).is_empty(), "Ten-step milestone challenge handling must remain unchanged")
-	print("RECOMMENDATION HINT POLICY TEST PASSED: difficulty pressure, hint probabilities and milestone guards")
+	print("RECOMMENDATION HINT POLICY TEST PASSED: difficulty pressure, learned hints and milestone guards")
 	quit()
 
 

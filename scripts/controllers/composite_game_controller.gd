@@ -131,7 +131,7 @@ func assign_piece_to_tray(piece_id: int, preferred_slot_index: int = -1) -> int:
 	return tray_slots.find(piece_id)
 
 
-func save_state(current_level: Dictionary, active_schedule: Dictionary) -> Dictionary:
+func save_state(current_level: Dictionary) -> Dictionary:
 	if not mode or current_level.is_empty():
 		return {}
 	var result := {
@@ -148,8 +148,4 @@ func save_state(current_level: Dictionary, active_schedule: Dictionary) -> Dicti
 		result["layoutSignature"] = str(final_layout.get("signature", ""))
 		result["finalRegions"] = final_layout.get("regions", []).duplicate(true)
 		result["finalSolution"] = final_layout.get("solution", []).duplicate(true)
-	elif phase == "crown":
-		result["layoutSignature"] = str(active_schedule.get("assemblyLayoutSignature", ""))
-		result["finalRegions"] = current_level.get("regions", []).duplicate(true)
-		result["finalSolution"] = current_level.get("solution", []).duplicate(true)
 	return result

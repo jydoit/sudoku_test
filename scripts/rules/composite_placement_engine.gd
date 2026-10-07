@@ -3,20 +3,6 @@ extends RefCounted
 const CompositeLevelScript = preload("res://scripts/composite_level.gd")
 
 
-static func prebuilt_matches(raw_data, level: Dictionary, seed: int, difficulty_pattern: String) -> bool:
-	if not raw_data is Dictionary or raw_data.is_empty():
-		return false
-	var data := raw_data as Dictionary
-	return (
-		int(data.get("seed", 0)) == seed
-		and int(data.get("rows", 0)) == int(level.get("rows", 0))
-		and int(data.get("cols", 0)) == int(level.get("cols", 0))
-		and (difficulty_pattern.is_empty() or str(data.get("difficulty", "")) == CompositeLevelScript._normalize_difficulty(difficulty_pattern))
-		and not data.get("pieces", []).is_empty()
-		and not data.get("validLayouts", []).is_empty()
-	)
-
-
 static func final_level_is_valid(level: Dictionary, regions, solution) -> bool:
 	if not regions is Array or not solution is Array:
 		return false

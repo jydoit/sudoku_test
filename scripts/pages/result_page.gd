@@ -424,6 +424,9 @@ func configure(localizer: Callable = Callable()) -> void:
 	completion_next_button = _action_button("下一关", Color("#3E8DFF"))
 	completion_next_button.custom_minimum_size.y = 58
 	completion_next_button.add_theme_color_override("font_color", Color.WHITE)
+	completion_next_button.add_theme_color_override("font_hover_color", Color.WHITE)
+	completion_next_button.add_theme_color_override("font_pressed_color", Color.WHITE)
+	completion_next_button.add_theme_color_override("font_focus_color", Color.WHITE)
 	completion_next_button.add_theme_font_size_override("font_size", 24)
 	completion_next_button.pressed.connect(func() -> void: primary_requested.emit())
 	column.add_child(completion_next_button)
@@ -431,6 +434,9 @@ func configure(localizer: Callable = Callable()) -> void:
 	completion_replay_button = _action_button("主菜单", CARD)
 	completion_replay_button.custom_minimum_size.y = 54
 	completion_replay_button.add_theme_color_override("font_color", Color("#287BFF"))
+	completion_replay_button.add_theme_color_override("font_hover_color", Color("#287BFF"))
+	completion_replay_button.add_theme_color_override("font_pressed_color", Color("#287BFF"))
+	completion_replay_button.add_theme_color_override("font_focus_color", Color("#287BFF"))
 	completion_replay_button.add_theme_font_size_override("font_size", 22)
 	completion_replay_button.pressed.connect(func() -> void: secondary_requested.emit())
 	column.add_child(completion_replay_button)
@@ -1577,6 +1583,9 @@ func _action_button(text: String, color: Color = CARD) -> Button:
 	button.focus_mode = Control.FOCUS_NONE
 	button.add_theme_font_size_override("font_size", 17)
 	button.add_theme_color_override("font_color", INK)
+	button.add_theme_color_override("font_hover_color", INK)
+	button.add_theme_color_override("font_pressed_color", INK)
+	button.add_theme_color_override("font_focus_color", INK)
 	button.add_theme_color_override("font_disabled_color", Color("#B9BEC6"))
 	button.add_theme_stylebox_override("normal", _card_style(color, 20, true))
 	button.add_theme_stylebox_override("hover", _card_style(color.lightened(0.04), 20, true))
