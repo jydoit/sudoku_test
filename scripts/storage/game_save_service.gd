@@ -169,6 +169,8 @@ static func clean_schedule(schedule: Dictionary) -> Dictionary:
 	# Read-time migration only: no gameplay code consumes these retired flags.
 	clean.erase("assemblyEnabled")
 	clean.erase("assemblyPrebuiltData")
+	clean.erase("compositeCoinGoodReward")
+	clean.erase("compositeCoinExcellentReward")
 	return clean
 
 

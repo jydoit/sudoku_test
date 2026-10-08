@@ -208,8 +208,8 @@ func _run() -> void:
 		"composite": true,
 		"round": 3,
 		"displayLevel": game.player_level_number,
-		"reward": CompositeCoinPolicyScript.GOOD_COMPLETION_REWARD,
-		"coinBalanceBefore": formal_coins - CompositeCoinPolicyScript.GOOD_COMPLETION_REWARD,
+		"reward": 1,
+		"coinBalanceBefore": formal_coins - 1,
 		"coinBalance": formal_coins,
 		"entryCost": 0,
 		"paidEntry": false,
@@ -259,8 +259,8 @@ func _run() -> void:
 	game._show_game()
 	game._update_home()
 	game.localization.set_locale("en")
-	assert(game.result_page.composite_coin_text(2, 0, false) == "Daily free round · No entry coins deducted\nCompletion reward: 2 coins", "A free block result should clearly state that no entry coins were deducted")
-	assert(game.result_page.composite_coin_text(4, 2, true) == "Entry: -2 coins · Reward: +4 coins\nNet change: +2 coins", "A paid block result should clearly separate entry cost, reward, and net change")
+	assert(game.result_page.composite_coin_text(2, 0, false) == "Reward added to your coin balance", "A free Excellent block result should use the short reward message")
+	assert(game.result_page.composite_coin_text(2, 2, true) == "2 coins returned", "A paid Excellent block result should state the actual refund concisely")
 	assert(game.composite_data.get("validLayouts", []).size() == 1, "Recommended offline data should contain one approved layout")
 	assert(game.level_label.text == game._t("拼块挑战 · 第 %d 局", [3]), "The third round should display its round number")
 	if game.composite_data.get("pieces", []).size() < 2:
@@ -937,7 +937,7 @@ func _test_tray_return_slot_focus(view) -> void:
 	view._drag_source = "board"
 	view._return_slot_index = -1
 	view._prepare_return_slot_focus()
-	var returned_placements := view.placements.duplicate()
+	var returned_placements: Dictionary = view.placements.duplicate()
 	returned_placements.erase("3")
 	var expected_slots := CompositeLevelScript.sanitize_tray_slots(view.assembly_data, returned_placements)
 	assert(view._return_slot_index == expected_slots.find(3), "Returning a board piece should preview its final sorted slot")
@@ -958,12 +958,12 @@ func _test_composite_coin_policy() -> void:
 	var progress := CompositeCoinPolicyScript.default_progress()
 	var today := "2026-08-06"
 	assert(CompositeCoinPolicyScript.DAILY_FREE_ROUNDS == 3, "Each local day should provide three free block rounds")
-	assert(CompositeCoinPolicyScript.completion_reward(false) == 2, "A Good block completion should return two coins")
-	assert(CompositeCoinPolicyScript.completion_reward(true) == 4, "An Excellent block completion should return four coins")
-	var good_result := RunResultServiceScript.composite_completion({}, 3, 2)
-	var excellent_result := RunResultServiceScript.composite_completion({}, 3, 3)
-	assert(not bool(good_result.get("excellent", true)) and int(good_result.get("reward", 0)) == 2, "A block run with a wrong crown placement should settle as Good for two coins")
-	assert(bool(excellent_result.get("excellent", false)) and int(excellent_result.get("reward", 0)) == 4, "A mistake-free block run should settle as Excellent for four coins")
+	assert(CompositeCoinPolicyScript.completion_reward(false) == 1, "A Good free block completion must grant one coin")
+	assert(CompositeCoinPolicyScript.completion_reward(true) == 2, "An Excellent free block completion should grant two coins")
+	var good_result := RunResultServiceScript.composite_completion({}, 2, 2, {"tracked": true, "excludedLion": true, "wrongCrown": false})
+	var excellent_result := RunResultServiceScript.composite_completion({"compositePaidEntry": true, "compositeEntryCost": 2}, 2, 1, {"tracked": true, "excludedLion": false, "wrongCrown": true})
+	assert(not bool(good_result.get("excellent", true)) and int(good_result.get("reward", -1)) == 1, "Marking a true lion X settles a free round as Good, still for one coin")
+	assert(bool(excellent_result.get("excellent", false)) and int(excellent_result.get("reward", 0)) == 2, "A paid block Excellent returns the entry fee; heart loss alone does not lower this rating")
 	for round_number in range(1, 4):
 		var free_quote := CompositeCoinPolicyScript.round_quote(round_number, progress, today)
 		assert(not bool(free_quote.get("paid", true)) and int(free_quote.get("entryCost", -1)) == 0, "The first three block rounds of a day should be free")
@@ -971,15 +971,14 @@ func _test_composite_coin_policy() -> void:
 	var paid_quote := CompositeCoinPolicyScript.round_quote(4, progress, today)
 	assert(bool(paid_quote.get("paid", false)), "The fourth newly started block round of a day should require coins")
 	assert(int(paid_quote.get("entryCost", 0)) == 2, "Every paid block entry should cost two coins")
-	assert(int(paid_quote.get("goodReward", 0)) == 2 and int(paid_quote.get("excellentReward", 0)) == 4, "A paid quote should expose the fixed Good and Excellent returns")
-	assert(int(paid_quote.get("reward", 0)) == 2, "The legacy quote reward should retain the guaranteed Good return")
+	assert(not paid_quote.has("reward") and not paid_quote.has("goodReward"), "Entry quotes must not promise a fixed Good payout")
 	var wallet = PlayerWalletScript.new()
 	wallet.balance = 10
 	var paid_transaction := CompositeEntryServiceScript.apply_entry(paid_quote, wallet, progress, today)
 	assert(bool(paid_transaction.get("success", false)) and wallet.balance == 8, "Starting the fourth block round should deduct exactly two coins")
 	assert(int(progress.get("totalPaidRounds", 0)) == 1 and int(progress.get("totalEntryCoinsSpent", 0)) == 2, "Paid block entry should update its persisted economy totals")
 	CompositeCoinPolicyScript.record_round_completed(progress, int(excellent_result.get("reward", 0)))
-	assert(int(progress.get("totalRewardCoinsEarned", 0)) == 4, "Block completion should persist the actual Excellent reward")
+	assert(int(progress.get("totalRewardCoinsEarned", 0)) == 2, "Block completion should persist the actual entry-fee refund")
 	var late_paid_quote := CompositeCoinPolicyScript.round_quote(61, progress, today)
 	assert(int(late_paid_quote.get("entryCost", 0)) == 2, "Paid block entry should remain two coins regardless of round number")
 	var next_day_quote := CompositeCoinPolicyScript.round_quote(62, progress, "2026-08-07")

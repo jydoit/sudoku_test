@@ -487,15 +487,8 @@ func present_success(data: Dictionary) -> void:
 		# construction default or a balance left behind by the previous result.
 		result_coin_roll_display.set_value(balance_before)
 	result_coin_roll_row.visible = reward > 0
-	if composite and reward > 0:
-		var entry_cost := int(data.get("entryCost", 0))
-		if bool(data.get("paidEntry", false)) and entry_cost > 0:
-			result_tip_label.text = _t(
-				"入场扣除 %d 金币 · 通关奖励 %d 金币\n本局净增加 %d 金币",
-				[entry_cost, reward, reward - entry_cost]
-			)
-		else:
-			result_tip_label.text = _t("本局使用每日免费额度 · 未扣除金币\n通关奖励 %d 金币", [reward])
+	if composite:
+		result_tip_label.text = composite_coin_text(reward, int(data.get("entryCost", 0)), bool(data.get("paidEntry", false)))
 	else:
 		result_tip_label.text = _t("奖励已加入金币余额") if reward > 0 else _t("本关已完成，继续挑战")
 	if composite and bool(data.get("nextPaid", false)):
@@ -575,11 +568,8 @@ func present_tutorial_complete(has_saved_progress: bool) -> void:
 
 func composite_coin_text(reward: int, entry_cost: int, paid_entry: bool) -> String:
 	if paid_entry and entry_cost > 0:
-		return _t(
-			"入场扣除 %d 金币 · 通关奖励 %d 金币\n本局净增加 %d 金币",
-			[entry_cost, reward, reward - entry_cost]
-		)
-	return _t("本局使用每日免费额度 · 未扣除金币\n通关奖励 %d 金币", [reward])
+		return _t("返还 %d 金币", [reward])
+	return _t("奖励已加入金币余额") if reward > 0 else _t("本关已完成，继续挑战")
 
 
 func show_animated() -> void:
@@ -610,6 +600,7 @@ func play_coin_animation(reward: int, balance_before: int, balance_after: int) -
 	stop_coin_animation()
 	_pause_result_lion_for_coins()
 	result_coin_arrival_sound_values = _coin_arrival_sound_milestones(reward)
+	result_coin_roll_row.show()
 	result_coin_roll_display.show()
 	balance_before = maxi(0, balance_before)
 	balance_after = maxi(0, balance_after)

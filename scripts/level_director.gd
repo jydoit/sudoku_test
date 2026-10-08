@@ -41,7 +41,7 @@ const KING_SOLUTION_ORDINALS := [2, 4, 6, 8]
 const DIFFICULTY_ORDER := ["simple", "medium", "hard", "challenge"]
 const SIZE_UNLOCK_DISPLAY_LEVELS := {
 	5: 1,
-	6: 30,
+	6: 11,
 	7: 80,
 	8: 160,
 	9: 240
@@ -357,7 +357,7 @@ static func unlocked_sizes(display_level: int) -> Array:
 	return [5]
 
 
-static func record_completion(progress: Dictionary, level: Dictionary, schedule: Dictionary, elapsed_seconds: float, moves: int, hints: int, completed_date: String = "", completed_unix: int = 0, direct_finds: int = 0) -> void:
+static func record_completion(progress: Dictionary, level: Dictionary, schedule: Dictionary, elapsed_seconds: float, moves: int, hints: int, completed_date: String = "", completed_unix: int = 0, direct_finds: int = 0, lost_life: Variant = null) -> void:
 	record_level_started(progress, int(level.get("levelId", -1)), schedule)
 	var size := int(level.get("rows", schedule.get("selectedSize", 0)))
 	var difficulty := str(level.get("difficulty", schedule.get("selectedDifficulty", "normal")))
@@ -402,6 +402,8 @@ static func record_completion(progress: Dictionary, level: Dictionary, schedule:
 	})
 	while runs.size() > MAX_RUN_HISTORY:
 		runs.pop_front()
+	if lost_life is bool:
+		runs.back()["lostLife"] = lost_life
 	_attach_normal_feedback(progress, runs.back(), schedule)
 
 
@@ -437,6 +439,7 @@ static func record_failure(progress: Dictionary, level: Dictionary, schedule: Di
 		"directFinds": direct_finds,
 		"toolUses": hints + direct_finds,
 		"completed": false,
+		"lostLife": true,
 		"reward": 0.0,
 		"openedNextLevel": false,
 		"retainedNextDay": false,
@@ -530,7 +533,7 @@ static func _observe_normal_feedback(progress: Dictionary, run: Dictionary) -> b
 		for dimension in NormalFeaturesScript.DIMENSIONS:
 			entries.append(["normalFeatureStats", NormalFeaturesScript.stats_key(size, difficulty, dimension, buckets[dimension])])
 		var count := int(run.get("openingHintCount", 0))
-		if count in [1, 2]:
+		if run.has("openingHintCount") and count in [0, 1, 2]:
 			entries.append(["openingHintStats", NormalFeaturesScript.hint_key(size, difficulty, buckets["spatialEntropy"], count)])
 		for entry in entries:
 			var stats: Dictionary = progress[entry[0]].get(entry[1], {})
@@ -566,23 +569,22 @@ static func _apply_opening_king_hint_policy(schedule: Dictionary, level: Diction
 	if bool(schedule.get("isMilestoneChallenge", false)):
 		schedule["openingKingPolicy"] = "milestone_preserved"
 		return
-	if str(schedule.get("mode", "")) == "post_challenge":
-		schedule["openingKingPolicy"] = "post_challenge_preserved"
-		return
 	var display := int(schedule.get("displayLevel", 1))
 	var level_id := int(level.get("levelId", schedule.get("levelId", -1)))
 	var rng := _make_rng(display, "opening_hint_policy:%d:%d" % [level_id, _progress_signature(progress)])
-	var count := NormalFeaturesScript.choose_hint_count(
+	decided_count = NormalFeaturesScript.choose_hint_count(
 		level, schedule.get("normalFeatureBuckets", {}), progress, rng, sample_engagement_reward
 	)
+	var count := OpeningKingHintControllerScript.adjusted_hint_count(decided_count, progress)
 	var candidates := _opening_king_candidates(level)
 	var positions: Array = []
 	while positions.size() < count and not candidates.is_empty():
 		var pick := rng.randi_range(0, candidates.size() - 1)
 		positions.append(candidates.pop_at(pick))
 	schedule["kingPositions"] = positions
-	schedule["openingKingDecidedCount"] = positions.size()
+	schedule["openingKingDecidedCount"] = decided_count
 	schedule["openingKingDisplayedCount"] = positions.size()
+	schedule["openingKingNoLifeLossStreak"] = OpeningKingHintControllerScript.consecutive_no_life_loss_wins(progress)
 	schedule["openingKingPolicy"] = "engagement_posterior"
 
 
@@ -628,20 +630,8 @@ static func _opening_king_candidates(level: Dictionary) -> Array:
 
 
 static func _opening_king_count_for_size(size: int, rng: RandomNumberGenerator) -> int:
-	if size <= 5:
-		return 1
-	var roll := rng.randf()
-	if size == 6:
-		return 1 if roll < 0.9 else 2
-	if size >= 7 and size <=8:
-		if roll < 0.5:
-			return 1
-		return 2 if roll < 0.9 else 3
-	if size >=9:
-		if roll < 0.3:
-			return 1
-		return 2 if roll < 0.7 else 3
-	return 1 
+	var counts := NormalFeaturesScript.hint_counts_for_size(size)
+	return int(counts[rng.randi_range(0, counts.size() - 1)])
 
 
 

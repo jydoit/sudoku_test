@@ -14,14 +14,24 @@ static func formal_completion(display_level: int, heart_limit: int, remaining_he
 
 
 
-static func composite_completion(active_schedule: Dictionary, heart_limit: int, remaining_hearts: int, accuracy: Dictionary = {}) -> Dictionary:
-	var excellent := CoinRewardPolicyScript.is_excellent_completion(heart_limit, remaining_hearts, accuracy)
+static func composite_completion(active_schedule: Dictionary, _heart_limit: int, remaining_hearts: int, accuracy: Dictionary = {}) -> Dictionary:
+	var excellent := CompositeCoinPolicyScript.is_excellent_completion(remaining_hearts, accuracy)
+	var entry_cost := maxi(0, int(active_schedule.get("compositeEntryCost", 0)))
+	var paid_entry := bool(active_schedule.get("compositePaidEntry", false))
 	return {
-		"reward": CompositeCoinPolicyScript.completion_reward(excellent),
+		"reward": CompositeCoinPolicyScript.completion_reward(excellent, entry_cost, paid_entry) if remaining_hearts > 0 else 0,
 		"excellent": excellent,
-		"entryCost": int(active_schedule.get("compositeEntryCost", 0)),
-		"paidEntry": bool(active_schedule.get("compositePaidEntry", false))
+		"entryCost": entry_cost,
+		"paidEntry": paid_entry
 	}
+
+
+static func save_coin_settlement(schedule: Dictionary, result: Dictionary, transaction: Dictionary) -> void:
+	var receipt := result.duplicate(true)
+	receipt["version"] = 1
+	receipt["balanceBefore"] = int(transaction["balanceBefore"])
+	receipt["balanceAfter"] = int(transaction["balanceAfter"])
+	schedule["coinSettlement"] = receipt
 
 
 static func record_formal(
@@ -40,7 +50,8 @@ static func record_formal(
 			int(run_context.get("hintCount", 0)),
 			str(run_context.get("today", "")),
 			completed_unix,
-			int(run_context.get("directFindCount", 0))
+			int(run_context.get("directFindCount", 0)),
+			run_context.get("lostLife")
 		)
 	else:
 		LevelDirectorScript.record_failure(

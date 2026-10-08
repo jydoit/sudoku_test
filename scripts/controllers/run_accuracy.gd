@@ -5,6 +5,7 @@ extends RefCounted
 var _tracked := false
 var _excluded_lion := false
 var _wrong_crown := false
+var _lost_life: Variant = null
 var _pending_cell := Vector2i(-1, -1)
 var _pending_until := 0
 
@@ -15,15 +16,20 @@ static func normalize_state(value) -> Dictionary:
 	for key in ["tracked", "excludedLion", "wrongCrown"]:
 		if not value.get(key) is bool:
 			return {}
-	return {
+	var normalized := {
 		"tracked": value["tracked"],
 		"excludedLion": value["excludedLion"],
 		"wrongCrown": value["wrongCrown"]
 	}
+	if value.get("lostLife") is bool:
+		normalized["lostLife"] = value["lostLife"] or value["wrongCrown"]
+	elif value["wrongCrown"]:
+		normalized["lostLife"] = true
+	return normalized
 
 
 func reset() -> void:
-	restore({"tracked": true, "excludedLion": false, "wrongCrown": false})
+	restore({"tracked": true, "excludedLion": false, "wrongCrown": false, "lostLife": false})
 
 
 func restore(state: Dictionary) -> void:
@@ -31,6 +37,7 @@ func restore(state: Dictionary) -> void:
 	_tracked = bool(normalized.get("tracked", false))
 	_excluded_lion = bool(normalized.get("excludedLion", false))
 	_wrong_crown = bool(normalized.get("wrongCrown", false))
+	_lost_life = normalized.get("lostLife")
 	_clear_pending()
 
 
@@ -38,11 +45,19 @@ func save_state() -> Dictionary:
 	# A first tap is a real X if the app closes before the second tap arrives.
 	# Serializing must not commit it in memory: a normal double tap can still
 	# cancel only this provisional mark, never an earlier genuine exclusion.
-	return {
+	var state := {
 		"tracked": _tracked,
 		"excludedLion": _excluded_lion or _pending_cell.x >= 0,
 		"wrongCrown": _wrong_crown
 	}
+	if _lost_life is bool:
+		state["lostLife"] = _lost_life
+	return state
+
+
+func record_life_loss() -> void:
+	# Sticky across undo, revival and same-level retries; only a new level resets it.
+	_lost_life = true
 
 
 func record_mark(cell: Vector2i, is_solution: bool, is_blocked: bool, is_tap: bool = false, double_tap_window_ms: int = 320) -> void:
@@ -63,6 +78,7 @@ func record_double(cell: Vector2i, correct: bool) -> void:
 		commit_pending()
 	if not correct:
 		_wrong_crown = true
+		record_life_loss()
 
 
 func commit_pending() -> void:

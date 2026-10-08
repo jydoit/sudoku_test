@@ -3,8 +3,8 @@ extends RefCounted
 
 const DAILY_FREE_ROUNDS := 3
 const PAID_ENTRY_COST := 2
-const GOOD_COMPLETION_REWARD := 2
-const EXCELLENT_COMPLETION_REWARD := 4
+const MIN_COMPLETION_REWARD := 1
+const FREE_EXCELLENT_REWARD := 2
 
 
 static func default_progress() -> Dictionary:
@@ -30,8 +30,17 @@ static func normalize_progress(progress: Dictionary, today: String = "") -> Dict
 	return progress
 
 
-static func completion_reward(excellent: bool) -> int:
-	return EXCELLENT_COMPLETION_REWARD if excellent else GOOD_COMPLETION_REWARD
+static func is_excellent_completion(remaining_hearts: int, accuracy: Dictionary) -> bool:
+	return remaining_hearts > 0 and bool(accuracy.get("tracked", false)) and not bool(accuracy.get("excludedLion", true))
+
+
+static func completion_reward(excellent: bool, entry_cost: int = 0, paid_entry: bool = false) -> int:
+	if not paid_entry:
+		return FREE_EXCELLENT_REWARD if excellent else MIN_COMPLETION_REWARD
+	var paid := maxi(0, entry_cost)
+	if excellent:
+		return maxi(MIN_COMPLETION_REWARD, paid)
+	return maxi(MIN_COMPLETION_REWARD, floori(float(paid) * 0.5))
 
 
 static func entry_cost_for_round(_round_number: int) -> int:
@@ -47,11 +56,6 @@ static func round_quote(round_number: int, progress: Dictionary, today: String) 
 		"round": maxi(1, round_number),
 		"paid": paid,
 		"entryCost": entry_cost,
-		"goodReward": GOOD_COMPLETION_REWARD,
-		"excellentReward": EXCELLENT_COMPLETION_REWARD,
-		# Keep the legacy quote field as the guaranteed Good reward. The actual
-		# completion reward is selected only after the run's heart result is known.
-		"reward": GOOD_COMPLETION_REWARD,
 		"dailyFreeRemaining": maxi(0, DAILY_FREE_ROUNDS - free_used)
 	}
 

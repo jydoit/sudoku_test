@@ -378,4 +378,4 @@ func _test_recovery_after_corrected_challenge() -> void:
 	var recovery: Dictionary = Director.schedule_for_display_level(_levels, 41, progress)
 	_expect(str(recovery.get("mode", "")) == "post_challenge", "The next level must retain its recovery branch")
 	_expect(int(recovery.get("selectedSize", 0)) == 6, "Recovery must follow the corrected challenge's actual 6x6 size")
-	_expect(not recovery.get("kingPositions", []).is_empty(), "Recovery must retain its opening lion hint")
+	_expect(recovery.get("kingPositions", []).size() in [0, 1], "6x6 recovery must obey the zero/one opening hint limit")

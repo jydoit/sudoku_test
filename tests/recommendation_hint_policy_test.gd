@@ -34,7 +34,7 @@ func _run() -> void:
 	var skilled_progress := _progress_with_no_tool_wins(6)
 	var normal_schedule := LevelDirectorScript.schedule_for_display_level(levels, 15, skilled_progress)
 	assert(["hard", "challenge"].has(str(normal_schedule.get("selectedDifficulty", ""))), "A six-win no-tool streak should keep ordinary pre-size-six recommendations at Hard or above")
-	assert(int(normal_schedule.get("openingKingDisplayedCount", -1)) in [1, 2], "Ordinary dynamic hints must learn one/two choices after level selection")
+	assert(int(normal_schedule.get("openingKingDisplayedCount", -1)) in [0, 1], "5x5/6x6 dynamic hints must stay within zero/one")
 	assert(str(normal_schedule.get("openingKingPolicy", "")) == "engagement_posterior", "No-tool streak must not override the learned opening hint action")
 
 	var post_challenge_progress := _progress_with_no_tool_wins(2)
@@ -45,11 +45,12 @@ func _run() -> void:
 		"difficulty": "hard",
 		"isMilestoneChallenge": true,
 		"completed": true,
+		"lostLife": false,
 		"toolUses": 0,
 	})
 	var recovery_schedule := LevelDirectorScript.schedule_for_display_level(levels, 11, post_challenge_progress)
 	assert(str(recovery_schedule.get("mode", "")) == "post_challenge", "The level after a ten-step milestone should keep the recovery branch")
-	assert(recovery_schedule.get("kingPositions", []).size() == 1 and str(recovery_schedule.get("openingKingPolicy", "")) == "post_challenge_preserved", "The hint controller must not alter post-challenge recovery hints")
+	assert(recovery_schedule.get("kingPositions", []).is_empty() and str(recovery_schedule.get("openingKingPolicy", "")) == "engagement_posterior", "A clean challenge win reduces the size-five recovery hint to zero")
 
 	var milestone_schedule := LevelDirectorScript.schedule_for_display_level(levels, 20, skilled_progress)
 	assert(bool(milestone_schedule.get("isMilestoneChallenge", false)) and milestone_schedule.get("kingPositions", []).is_empty(), "Ten-step milestone challenge handling must remain unchanged")

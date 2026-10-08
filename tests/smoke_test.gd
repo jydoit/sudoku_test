@@ -321,8 +321,9 @@ func _run() -> void:
 	assert(game.INITIAL_COIN_COUNT == 2, "New users should start with two coins")
 	assert(game.INITIAL_HINT_COUNT == 2 and game.INITIAL_CROWN_FIND_COUNT == 1, "New users should start with two hints and one crown find")
 	assert(game._heart_limit_for_display_level(10) == 3, "The first ten display levels should keep three hearts")
-	assert(game._heart_limit_for_display_level(11) == 2 and game._heart_limit_for_display_level(30) == 2, "Display levels 11-30 should use two hearts")
-	assert(game._heart_limit_for_display_level(31) == 1, "Display level 31 onward should use one heart")
+	assert(game._heart_limit_for_display_level(11) == 2 and game._heart_limit_for_display_level(20) == 2, "Display levels 11-20 should use two hearts")
+	assert(game._heart_limit_for_display_level(21) == 1, "Display level 21 onward should use one heart")
+	assert(game._heart_limit_for_composite_round(1) == 2 and game._heart_limit_for_composite_round(5) == 2 and game._heart_limit_for_composite_round(6) == 1, "Block rounds 1-5 have two hearts, later rounds have one")
 	game.tutorial_completed = true
 	game.tutorial_started = false
 	if game.dialog_controller:
@@ -544,7 +545,7 @@ func _run() -> void:
 	var level_index: Dictionary = LevelDirectorScript.build_level_index(game.levels)
 	assert(level_index[5]["simple"].slice(0, 5) == [0, 1, 2, 10, 11], "Level index should group levels by size and difficulty")
 	var composite_unlock_display := int(LevelDirectorScript.SIZE_UNLOCK_DISPLAY_LEVELS[6])
-	assert(composite_unlock_display == 30, "6x6 and block gameplay should unlock together at display level 30")
+	assert(composite_unlock_display == 11, "6x6 and block gameplay should unlock together at display level 11")
 	assert(LevelDirectorScript.minimum_display_for_size(6) == composite_unlock_display, "The 6x6 unlock display should have one shared source of truth")
 	assert(not LevelDirectorScript.is_size_unlocked(6, composite_unlock_display - 1), "6x6 should stay locked before its configured display level")
 	assert(LevelDirectorScript.is_size_unlocked(6, composite_unlock_display), "6x6 should unlock at its configured display level")
@@ -591,14 +592,14 @@ func _run() -> void:
 	], "statsByArm": recent_probe_stats}
 	var recent_probe_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, size_six_probe_display + 2, recent_probe_progress)
 	assert(int(recent_probe_schedule.get("selectedSize", 0)) == 6 and str(recent_probe_schedule.get("selectedDifficulty", "")) == "hard", "Three no-tool runs should raise the recent-size probe to Hard")
-	assert(LevelDirectorScript._opening_king_count_for_size(5, RandomNumberGenerator.new()) == 1, "5x5 dynamic levels should reveal exactly one opening king")
+	assert(LevelDirectorScript._opening_king_count_for_size(5, RandomNumberGenerator.new()) in [0, 1], "5x5 dynamic levels should reveal zero or one opening king")
 	for size in [6, 7, 8, 9]:
 		var count_rng := RandomNumberGenerator.new()
 		count_rng.seed = size
 		var king_count: int = LevelDirectorScript._opening_king_count_for_size(size, count_rng)
-		assert(king_count >= 1 and king_count <= 3, "Dynamic opening king count should stay in the supported 1-3 range")
+		assert(king_count >= 0 and king_count <= 2, "Dynamic opening king count should stay in the supported 0-2 range")
 		if size == 6:
-			assert(king_count <= 2, "6x6 dynamic levels should reveal at most two opening kings")
+			assert(king_count <= 1, "6x6 dynamic levels should reveal at most one opening king")
 	var post_challenge_progress := {
 		"completedLevelIds": [1, 2, 3, 11, 12, 4, 5, 6, 13, 7],
 		"recentRuns": [
@@ -610,7 +611,7 @@ func _run() -> void:
 	assert(str(post_challenge_schedule["mode"]) == "post_challenge", "The level after a challenge should use the easier recovery branch")
 	assert(int(post_challenge_schedule["selectedSize"]) == 5, "The post-challenge level should keep the challenge size")
 	assert(str(post_challenge_schedule["selectedDifficulty"]) == "medium", "The post-challenge level should lower difficulty by one step")
-	assert(post_challenge_schedule.get("kingPositions", []).size() >= 1, "The post-challenge level should reveal opening kings")
+	_validate_dynamic_king_positions(game.levels[int(post_challenge_schedule["levelIndex"])], post_challenge_schedule)
 	var no_king_progress := {
 		"completedLevelIds": [],
 		"recentRuns": [
@@ -623,7 +624,7 @@ func _run() -> void:
 	if bool(no_king_schedule["isMilestoneChallenge"]):
 		assert(no_king_schedule.get("kingPositions", []).is_empty(), "Optional challenge display levels should hide opening kings")
 	else:
-		assert(no_king_schedule.get("kingPositions", []).size() >= 1, "Optional non-challenge display levels should keep opening kings")
+		_validate_dynamic_king_positions(game.levels[int(no_king_schedule["levelIndex"])], no_king_schedule)
 	var challenge_progress := {
 		"completedLevelIds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
 		"recentRuns": [
@@ -641,7 +642,7 @@ func _run() -> void:
 		assert(not formal_schedule.has("assemblyEnabled"), "Mainline schedules must never enable block gameplay, including large milestone boards")
 	var pre_optional_five_schedule := LevelDirectorScript.schedule_for_display_level(game.levels, 15, challenge_progress)
 	assert(not bool(pre_optional_five_schedule["isMilestoneChallenge"]), "Five-step challenge candidates should not start before display level 31")
-	assert(pre_optional_five_schedule.get("kingPositions", []).size() >= 1, "Pre-31 five-step display levels should keep opening kings")
+	_validate_dynamic_king_positions(game.levels[int(pre_optional_five_schedule["levelIndex"])], pre_optional_five_schedule)
 	var optional_challenge_seen := false
 	var optional_regular_seen := false
 	for salt in range(0, 60):
@@ -662,7 +663,7 @@ func _run() -> void:
 		else:
 			optional_regular_seen = true
 			assert(str(optional_schedule["mode"]) != "challenge", "Optional five-step misses should stay on the regular branch")
-			assert(optional_schedule.get("kingPositions", []).size() >= 1, "Optional five-step misses should keep opening kings")
+			_validate_dynamic_king_positions(game.levels[int(optional_schedule["levelIndex"])], optional_schedule)
 		if optional_challenge_seen and optional_regular_seen:
 			break
 	assert(optional_challenge_seen, "The optional five-step challenge roll should be able to produce a challenge")
@@ -1436,7 +1437,8 @@ func _contains_cjk(value: String) -> bool:
 
 func _validate_dynamic_king_positions(level: Dictionary, schedule: Dictionary) -> void:
 	var kings: Array = schedule.get("kingPositions", [])
-	assert(kings.size() >= 1 and kings.size() <= 3, "Dynamic levels should reveal 1-3 opening kings")
+	var maximum := 1 if int(level["rows"]) <= 6 else 2
+	assert(kings.size() >= 0 and kings.size() <= maximum, "Dynamic opening hints must obey the size-specific zero/one/two range")
 	var allowed := {}
 	for ordinal in [2, 4, 6, 8]:
 		var index := int(ordinal) - 1

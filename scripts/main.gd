@@ -816,7 +816,7 @@ func _load_level(index: int, allow_resume: bool = false, schedule: Dictionary = 
 
 	var rows := int(current_level["rows"])
 	var cols := int(current_level["cols"])
-	current_heart_limit = _heart_limit_for_display_level(player_level_number)
+	current_heart_limit = _heart_limit_for_composite_round(home_composite_round) if home_composite_entry_active else _heart_limit_for_display_level(player_level_number)
 	var can_resume := allow_resume and _can_restore_saved_level(rows, cols, force_resume)
 	if can_resume:
 		cell_states = resume_states.duplicate(true)
@@ -2292,6 +2292,7 @@ func _complete_level() -> void:
 		var result: Dictionary = RunResultServiceScript.composite_completion(active_schedule, current_heart_limit, heart_count, run_accuracy.save_state())
 		var composite_reward := int(result["reward"])
 		var composite_reward_transaction := player_wallet.grant(composite_reward, "composite_completion")
+		RunResultServiceScript.save_coin_settlement(active_schedule, result, composite_reward_transaction)
 		CompositeCoinPolicyScript.record_round_completed(composite_coin_progress, composite_reward)
 		_sync_home_composite_shared_coin_balance()
 		_record_home_composite_result(true)
@@ -2309,6 +2310,7 @@ func _complete_level() -> void:
 	var result: Dictionary = RunResultServiceScript.formal_completion(player_level_number, current_heart_limit, heart_count, run_accuracy.save_state())
 	var reward := int(result["reward"])
 	var reward_transaction := player_wallet.grant(reward, "formal_completion")
+	RunResultServiceScript.save_coin_settlement(active_schedule, result, reward_transaction)
 	CoinEconomyScript.record_completion(
 		economy_progress,
 		level_id,
@@ -2330,14 +2332,26 @@ func _complete_level() -> void:
 	result_page.show_animated()
 
 
-func _prepare_success_result_page(reward: int = 0, reward_transaction: Dictionary = {}) -> void:
+func _prepare_success_result_page(reward: int = -1, reward_transaction: Dictionary = {}) -> void:
 	_set_result_overlay_mode("success")
-	var excellent := CoinRewardPolicyScript.is_excellent_completion(current_heart_limit, heart_count, run_accuracy.save_state())
-	if reward <= 0:
-		if home_composite_entry_active:
-			reward = CompositeCoinPolicyScript.completion_reward(excellent)
-		else:
-			reward = CoinRewardPolicyScript.completion_reward(player_level_number, current_heart_limit, heart_count, run_accuracy.save_state())
+	var settlement: Dictionary = active_schedule.get("coinSettlement", {})
+	# Old completed saves have no receipt. Reuse their actual ledger amount,
+	# never re-run a stochastic reward policy merely to display a result page.
+	if settlement.is_empty() and not home_composite_entry_active:
+		var recent: Array = economy_progress.get("recentCompletions", [])
+		if not recent.is_empty():
+			var last = recent.back()
+			if last is Dictionary and int(last.get("levelId", -1)) == int(current_level["levelId"]) and int(last.get("displayLevel", -1)) == player_level_number:
+				settlement = last
+	var current_excellent := (
+		CompositeCoinPolicyScript.is_excellent_completion(heart_count, run_accuracy.save_state())
+		if home_composite_entry_active else CoinRewardPolicyScript.is_excellent_completion(current_heart_limit, heart_count, run_accuracy.save_state())
+	)
+	var excellent := bool(settlement.get("excellent", current_excellent))
+	if reward < 0:
+		reward = maxi(0, int(settlement.get("reward", 0)))
+	if reward_transaction.is_empty():
+		reward_transaction = settlement
 	var balance_after := maxi(0, int(reward_transaction.get("balanceAfter", coin_count)))
 	var balance_before := maxi(0, int(reward_transaction.get("balanceBefore", balance_after - reward)))
 	var next_quote := _home_composite_round_quote(home_composite_round + 1) if home_composite_entry_active else {}
@@ -2395,12 +2409,16 @@ func _record_home_composite_result(completed: bool) -> void:
 
 
 func _run_result_context() -> Dictionary:
+	var lost_life: Variant = run_accuracy.save_state().get("lostLife")
+	if heart_count < current_heart_limit:
+		lost_life = true
 	return {
 		"startedUnix": run_started_unix,
 		"finishedUnix": int(Time.get_unix_time_from_system()),
 		"moveCount": run_move_count,
 		"hintCount": run_hint_count,
 		"directFindCount": run_direct_find_count,
+		"lostLife": lost_life,
 		"today": _today_string()
 	}
 
@@ -2511,7 +2529,12 @@ func _replay_level() -> void:
 	if in_tutorial:
 		_start_tutorial_step(tutorial_step_index)
 		return
-	_load_level(current_level_index, false, active_schedule)
+	var replay_schedule := active_schedule.duplicate(true)
+	replay_schedule.erase("coinSettlement")
+	_load_level(current_level_index, false, replay_schedule)
+	# Retrying the same level is not a no-loss run, even after hearts refill.
+	run_accuracy.record_life_loss()
+	_save_game()
 
 
 func _on_settings() -> void:
@@ -3029,13 +3052,18 @@ func _update_heart_label() -> void:
 func _heart_limit_for_display_level(display_level: int) -> int:
 	if display_level <= 10:
 		return 3
-	if display_level <= 30:
+	if display_level <= 20:
 		return 2
 	return 1
 
 
+func _heart_limit_for_composite_round(round_number: int) -> int:
+	return 2 if round_number <= 5 else 1
+
+
 func _consume_heart_for_wrong_crown() -> void:
 	if heart_count > 0:
+		run_accuracy.record_life_loss()
 		heart_count -= 1
 	_update_heart_label()
 	_update_home()

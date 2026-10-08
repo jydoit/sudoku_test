@@ -124,14 +124,18 @@ static func select_index(levels: Array, candidates: Array, progress: Dictionary,
 	return int(shortlist[rng.randi_range(0, shortlist.size() - 1)]["index"])
 
 
+static func hint_counts_for_size(size: int) -> Array:
+	return [0, 1] if size <= 6 else [0, 1, 2]
+
+
 static func choose_hint_count(level: Dictionary, feature_buckets: Dictionary, progress: Dictionary, rng: RandomNumberGenerator, sampler: Callable) -> int:
 	var stats: Dictionary = progress.get("openingHintStats", {})
 	var size := int(level["rows"])
 	var difficulty := str(level["difficulty"])
 	var entropy_bucket := str(feature_buckets.get("spatialEntropy", "unknown"))
 	var best := -INF
-	var chosen := 1
-	for count in [1, 2]:
+	var chosen := 0
+	for count in hint_counts_for_size(size):
 		var key := hint_key(size, difficulty, entropy_bucket, count)
 		var score := float(sampler.call(stats.get(key, {}), rng))
 		if score > best:
